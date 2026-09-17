@@ -1,0 +1,79 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+/keystore.properties
+/device-agent/keystore.properties
+*.jks
+*.keystore
+/update-server/bin
+/update-server/obj
+/update-server/data
+/update-server.Tests/bin
+/update-server.Tests/obj
+/artifacts/update-server
+
+# Archivos generados en cualquier módulo
+**/build/
+**/bin/
+**/obj/
+**/publish/
+**/publish-*/
+**/verify-build*/
+**/.gradle/
+**/.kotlin/
+**/.idea/
+**/.vs/
+**/.claude/
+**/.impeccable/
+**/.codex-logs/
+
+# Material temporal o de diseño que no pertenece al código del producto
+/.diagnostics/
+/.tmp/
+/.tmp-*/
+/tmp/
+/captures/
+/artifacts/
+/output/
+/mockups/
+/docs/
+/project/
+/Rediseño de pantalla Entrada Bodega/
+/test-print/
+/DESIGN.md
+/PRODUCT.md
+/Mapa de Bodega - standalone.html
+/adb
+
+# Respaldos y archivos locales
+*.bak
+*.user
+*.suo
+*.zip
+
+# Secretos y configuración local
+**/local.properties
+**/appsettings.Local.json
+**/firebase-service-account.json
+/grupo-pmm-pmmovil-firebase-adminsdk-*.json
+/google-services-pmmovil.json
+**/*.jks
+**/*.keystore
+**/*.p12
+**/*.pfx
+
+# Configuración privada del servidor de actualizaciones
+/update-server/appsettings.json
+/update-server/appsettings.Production.json

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="agent_app_name">Administrador PMMovil</string>
+    <string name="agent_app_description">Instalación y actualización administrada de PMMovil</string>
+    <string name="agent_status_title">Estado del dispositivo</string>
+    <string name="agent_header_subtitle">Actualizaciones seguras para PMMovil</string>
+    <string name="agent_status_section">Estado del servicio</string>
+    <string name="agent_status_ready">Listo para revisar</string>
+    <string name="agent_status_checking">Buscando actualización</string>
+    <string name="agent_status_installing">Instalando actualización</string>
+    <string name="agent_status_up_to_date">La tableta está actualizada</string>
+    <string name="agent_status_error">No se pudo completar</string>
+    <string name="agent_status_active">Protección activa</string>
+    <string name="agent_status_attention">Requiere atención</string>
+    <string name="agent_status_in_progress">En curso</string>
+    <string name="agent_status_updated">Sin cambios pendientes</string>
+    <string name="agent_status_failed">Error</string>
+    <string name="agent_device_section">Información de la tableta</string>
+    <string name="agent_eyebrow_managed_device">Tableta administrada</string>
+    <string name="agent_version_chip_label">Versión</string>
+    <string name="agent_auto_update_title">Actualización automática</string>
+    <string name="agent_auto_update_detail">El administrador revisa nuevas versiones periódicamente cuando hay red y batería suficiente.</string>
+    <string name="agent_version_label">Versión instalada</string>
+    <string name="agent_last_check_label">Última revisión</string>
+    <string name="agent_result_label">Resultado</string>
+    <string name="agent_check_started">Revisión solicitada</string>
+    <string name="agent_no_version">No instalada</string>
+    <string name="agent_check_now">Buscar actualización</string>
+    <string name="agent_open_pmmovil">Abrir PMMovil</string>
+    <string name="agent_no_device_owner">El agente aún no es administrador del dispositivo</string>
+    <string name="agent_device_owner">Agente configurado como administrador del dispositivo</string>
+</resources>

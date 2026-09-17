@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.PMMovil" parent="Theme.Material3.Light.NoActionBar">
+        <item name="colorPrimary">@color/pmm_blue</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <item name="colorSecondary">@color/pmm_yellow</item>
+        <item name="colorOnSecondary">@color/pmm_blue_dark</item>
+        <item name="colorSurface">@color/pmm_surface</item>
+        <item name="colorOnSurface">@color/pmm_text_primary</item>
+        <item name="colorOnSurfaceVariant">@color/pmm_text_secondary</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">@color/pmm_surface</item>
+    </style>
+
+    <!-- Tema de arranque (SplashScreen API). Se aplica al iniciar y luego
+         cede el control al tema normal vía postSplashScreenTheme. -->
+    <style name="Theme.PMMovil.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/white</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/pmmovil_symbol_vector</item>
+        <item name="postSplashScreenTheme">@style/Theme.PMMovil</item>
+    </style>
+</resources>

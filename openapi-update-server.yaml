@@ -1,0 +1,253 @@
+openapi: 3.1.0
+info:
+  title: PMMovil Update Server
+  version: 1.0.0
+  description: API privada para publicar y distribuir actualizaciones de PMMovil.
+servers:
+  - url: https://updates.example.com/api/v1
+tags:
+  - name: Mobile updates
+  - name: Devices
+  - name: Administration
+paths:
+  /mobile-updates/manifest:
+    get:
+      operationId: getMobileUpdateManifest
+      tags: [Mobile updates]
+      security: [{DeviceBearer: []}]
+      responses:
+        '200':
+          description: Última versión publicada.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReleaseManifest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /releases/{fileName}:
+    get:
+      operationId: downloadMobileRelease
+      tags: [Mobile updates]
+      security: [{DeviceBearer: []}]
+      parameters:
+        - {$ref: '#/components/parameters/FileName'}
+      responses:
+        '200':
+          description: APK firmado.
+          content:
+            application/vnd.android.package-archive: {schema: {type: string, format: binary}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /devices/heartbeat:
+    post:
+      operationId: recordDeviceHeartbeat
+      tags: [Devices]
+      security: [{DeviceBearer: []}]
+      requestBody:
+        required: true
+        content:
+          application/json: {schema: {$ref: '#/components/schemas/HeartbeatRequest'}}
+      responses:
+        '204': {description: Heartbeat registrado.}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /admin/devices:
+    post:
+      operationId: createDevice
+      tags: [Administration]
+      security: [{AdminBearer: []}]
+      requestBody:
+        required: true
+        content:
+          application/json: {schema: {$ref: '#/components/schemas/CreateDeviceRequest'}}
+      responses:
+        '201':
+          description: Dispositivo creado; el token se entrega una sola vez.
+          content:
+            application/json: {schema: {$ref: '#/components/schemas/DeviceProvisioningResponse'}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+    get:
+      operationId: listDevices
+      tags: [Administration]
+      security: [{AdminBearer: []}]
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Offset'}
+      responses:
+        '200':
+          description: Dispositivos paginados.
+          content:
+            application/json: {schema: {$ref: '#/components/schemas/PagedDevices'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /admin/devices/{deviceId}:
+    delete:
+      operationId: revokeDevice
+      tags: [Administration]
+      security: [{AdminBearer: []}]
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema: {type: string, pattern: '^dev_[A-Za-z0-9]+$'}
+      responses:
+        '204': {description: Dispositivo revocado; su historial se conserva.}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/releases:
+    post:
+      operationId: publishRelease
+      tags: [Administration]
+      security: [{AdminBearer: []}]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data: {schema: {$ref: '#/components/schemas/PublishReleaseForm'}}
+      responses:
+        '201':
+          description: Release publicada.
+          content:
+            application/json: {schema: {$ref: '#/components/schemas/Release'}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '409': {$ref: '#/components/responses/Conflict'}
+    get:
+      operationId: listReleases
+      tags: [Administration]
+      security: [{AdminBearer: []}]
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Offset'}
+      responses:
+        '200':
+          description: Releases paginadas.
+          content:
+            application/json: {schema: {$ref: '#/components/schemas/PagedReleases'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+components:
+  parameters:
+    FileName:
+      name: fileName
+      in: path
+      required: true
+      schema: {type: string, pattern: '^pmmovil-[0-9]+\\.apk$'}
+    Limit:
+      name: limit
+      in: query
+      schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+    Offset:
+      name: offset
+      in: query
+      schema: {type: integer, minimum: 0, default: 0}
+  schemas:
+    CreateDeviceRequest:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string, maxLength: 120}
+    DeviceProvisioningResponse:
+      type: object
+      required: [deviceId, name, deviceToken, createdAt]
+      properties:
+        deviceId: {type: string}
+        name: {type: string}
+        deviceToken: {type: string}
+        createdAt: {type: string, format: date-time}
+    HeartbeatRequest:
+      type: object
+      required: [packageName, versionCode]
+      properties:
+        packageName: {type: string, example: com.example.pmmovil}
+        versionCode: {type: integer, format: int64, minimum: 0}
+        versionName: {type: string, nullable: true}
+    ReleaseManifest:
+      type: object
+      required: [packageName, versionCode, versionName, apkUrl, sha256, mandatory, releaseNotes]
+      properties:
+        packageName: {type: string}
+        versionCode: {type: integer, format: int64}
+        versionName: {type: string}
+        apkUrl: {type: string, format: uri, pattern: '^https://'}
+        sha256: {type: string, pattern: '^[0-9A-Fa-f]{64}$'}
+        mandatory: {type: boolean}
+        releaseNotes: {type: string}
+    PublishReleaseForm:
+      type: object
+      required: [packageName, versionCode, versionName, apk]
+      properties:
+        packageName: {type: string, enum: [com.example.pmmovil]}
+        versionCode: {type: integer, format: int64, minimum: 1}
+        versionName: {type: string}
+        mandatory: {type: boolean, default: false}
+        releaseNotes: {type: string}
+        apk: {type: string, format: binary}
+    Release:
+      allOf:
+        - {$ref: '#/components/schemas/ReleaseManifest'}
+        - type: object
+          required: [id, fileName, fileSize, createdAt]
+          properties:
+            id: {type: integer, format: int64}
+            fileName: {type: string}
+            fileSize: {type: integer, format: int64}
+            createdAt: {type: string, format: date-time}
+    Pagination:
+      type: object
+      required: [limit, offset, total, hasMore]
+      properties:
+        limit: {type: integer}
+        offset: {type: integer}
+        total: {type: integer}
+        hasMore: {type: boolean}
+    Device:
+      type: object
+      required: [deviceId, name, active, createdAt]
+      properties:
+        deviceId: {type: string}
+        name: {type: string}
+        active: {type: boolean}
+        createdAt: {type: string, format: date-time}
+        lastSeenAt: {type: string, format: date-time, nullable: true}
+        lastVersionCode: {type: integer, format: int64, nullable: true}
+        lastVersionName: {type: string, nullable: true}
+        lastIpAddress: {type: string, nullable: true}
+    PagedDevices:
+      type: object
+      required: [data, pagination]
+      properties:
+        data: {type: array, items: {$ref: '#/components/schemas/Device'}}
+        pagination: {$ref: '#/components/schemas/Pagination'}
+    PagedReleases:
+      type: object
+      required: [data, pagination]
+      properties:
+        data: {type: array, items: {$ref: '#/components/schemas/Release'}}
+        pagination: {$ref: '#/components/schemas/Pagination'}
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type: {type: string, format: uri}
+        title: {type: string}
+        status: {type: integer}
+        detail: {type: string}
+        instance: {type: string}
+  responses:
+    BadRequest:
+      description: Solicitud inválida.
+      content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
+    Unauthorized:
+      description: Token ausente o inválido.
+      content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
+    NotFound:
+      description: Recurso no encontrado.
+      content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
+    Conflict:
+      description: Recurso duplicado.
+      content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
+    ServiceUnavailable:
+      description: Servicio temporalmente sin release.
+      content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
+  securitySchemes:
+    DeviceBearer: {type: http, scheme: bearer}
+    AdminBearer: {type: http, scheme: bearer}

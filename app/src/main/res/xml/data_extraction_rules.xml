@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+   Sample data extraction rules file; uncomment and customize as necessary.
+   See https://developer.android.com/about/versions/12/backup-restore#xml-changes
+   for details.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="PMMovilSecurePrefs.xml" />
+        <exclude domain="sharedpref" path="PMMovilPrefs.xml" />
+        <exclude domain="database" path="pmmovil_database" />
+        <exclude domain="file" path="entrada_photos/" />
+        <exclude domain="file" path="caseta_entrada_photos/" />
+        <exclude domain="file" path="crash_reports/" />
+        <exclude domain="external" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="PMMovilSecurePrefs.xml" />
+        <exclude domain="sharedpref" path="PMMovilPrefs.xml" />
+        <exclude domain="database" path="pmmovil_database" />
+        <exclude domain="file" path="entrada_photos/" />
+        <exclude domain="file" path="caseta_entrada_photos/" />
+        <exclude domain="file" path="crash_reports/" />
+        <exclude domain="external" path="." />
+    </device-transfer>
+</data-extraction-rules>
