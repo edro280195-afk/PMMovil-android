@@ -2,6 +2,7 @@ package com.example.pmmovil.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.pmmovil.R
 import com.example.pmmovil.data.model.ModuloPermisoDto
 import com.example.pmmovil.data.repository.AuthRepository
 import com.example.pmmovil.data.repository.NotificationInboxRepository
@@ -163,12 +164,12 @@ class HomeViewModel @Inject constructor(
 }
 
 // ── Helper para saludo time-aware (buenos días/tardes/noches) ───────────────
-fun smartGreeting(): String {
+fun smartGreetingRes(): Int {
     val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
     return when (hour) {
-        in 5..11  -> "Buenos días"
-        in 12..18 -> "Buenas tardes"
-        in 19..23 -> "Buenas noches"
-        else      -> "Buenas madrugadas"
+        in 5..11  -> R.string.home_greeting_morning
+        in 12..18 -> R.string.home_greeting_afternoon
+        in 19..23 -> R.string.home_greeting_evening
+        else      -> R.string.home_greeting_late_night
     }
 }

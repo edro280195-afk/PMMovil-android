@@ -1,5 +1,6 @@
 package com.example.pmmovil.ui.home.components
 
+import com.example.pmmovil.R
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
@@ -43,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -75,12 +77,12 @@ import kotlinx.coroutines.delay
 // ═════════════════════════════════════════════════════════════════════════════
 
 /** Frases del arranque, en el orden en que ocurren las cosas. */
-private val loadingPhrases = listOf(
-    "Verificando tu sesión",
-    "Revisando tus permisos",
-    "Preparando tus módulos",
-    "Personalizando tu experiencia",
-    "Un momento más"
+private val loadingPhraseRes = listOf(
+    R.string.home_loading_session,
+    R.string.home_loading_permissions,
+    R.string.home_loading_modules,
+    R.string.home_loading_personalizing,
+    R.string.home_loading_wait
 )
 
 /**
@@ -172,7 +174,7 @@ private fun PreparingPill(
     var index by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(Unit) {
-        while (index < loadingPhrases.lastIndex) {
+        while (index < loadingPhraseRes.lastIndex) {
             delay(PHRASE_INTERVAL)
             index++
         }
@@ -207,16 +209,16 @@ private fun PreparingPill(
             BouncingDots(color = PmmBlueDeep)
 
             AnimatedContent(
-                targetState = loadingPhrases[index],
+                targetState = loadingPhraseRes[index],
                 transitionSpec = {
                     (fadeIn(tween(Motion.DurationMedium, easing = Motion.EmphasizedDecelerate)) +
                         slideInVertically { it / 2 }) togetherWith
                         (fadeOut(tween(Motion.DurationQuick)) + slideOutVertically { -it / 2 })
                 },
                 label = "frase-carga"
-            ) { texto ->
+            ) { textRes ->
                 Text(
-                    text = texto,
+                    text = stringResource(textRes),
                     color = PmmTextSecondary,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -253,7 +255,7 @@ fun HomeModulesError(
         )
         Spacer(Modifier.height(14.dp))
         Text(
-            text = "No pudimos cargar tus módulos",
+            text = stringResource(R.string.home_modules_error_title),
             color = PmmTextPrimary,
             fontSize = 16.sp,
             fontWeight = FontWeight.Bold,
@@ -261,7 +263,7 @@ fun HomeModulesError(
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            text = "Revisa tu conexión o la VPN e inténtalo de nuevo.",
+            text = stringResource(R.string.home_modules_error_message),
             color = PmmTextSecondary,
             fontSize = 13.sp,
             textAlign = TextAlign.Center
@@ -284,7 +286,7 @@ fun HomeModulesError(
                     modifier = Modifier.size(17.dp)
                 )
                 Text(
-                    text = "Reintentar",
+                    text = stringResource(R.string.home_retry),
                     color = PmmBgSurface,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold
@@ -328,20 +330,20 @@ fun HomeNoModulesAssigned(
                 )
             }
             Text(
-                text = "Sin módulos asignados",
+                text = stringResource(R.string.home_no_modules_title),
                 color = PmmTextPrimary,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center
             )
             Text(
-                text = "Tu usuario no tiene permisos para operar PMMovil en este momento. Solicita acceso al área de Sistemas.",
+                text = stringResource(R.string.home_no_modules_message),
                 color = PmmTextSecondary,
                 fontSize = 13.sp,
                 textAlign = TextAlign.Center
             )
             Text(
-                text = "Cuando te asignen un permiso, cierra sesión e inicia nuevamente para actualizar el menú.",
+                text = stringResource(R.string.home_no_modules_hint),
                 color = PmmTextMuted,
                 fontSize = 11.sp,
                 textAlign = TextAlign.Center

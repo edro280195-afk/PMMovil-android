@@ -61,11 +61,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.animation.AnimatedVisibility
 import com.example.pmmovil.data.model.MobileModuleIds
+import com.example.pmmovil.R
 import com.example.pmmovil.data.preferences.ModePreferences
 import com.example.pmmovil.ui.auth.AuthViewModel
 import com.example.pmmovil.ui.home.components.BrandedHeroHeader
@@ -122,6 +124,7 @@ fun HomeScreen(
     val state by homeViewModel.state.collectAsState()
     val lifecycleOwner = LocalLifecycleOwner.current
     val haptic = LocalHapticFeedback.current
+    val context = LocalContext.current
     val listState = rememberLazyListState()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -149,37 +152,37 @@ fun HomeScreen(
         // 1. Revisión (Mercancía)
         val reviewPerm = hasFullAccess || permissions.any { it.moduloId == MobileModuleIds.REVIEW && it.canRead }
         if (reviewPerm) {
-            list.add(ModuleItem(MobileModuleIds.REVIEW, "Revisión", "Mercancía", Icons.Default.QrCode, com.example.pmmovil.ui.theme.PmmBlueDeep, Color(0xFFEEF3FF), enabled = true))
+            list.add(ModuleItem(MobileModuleIds.REVIEW, R.string.home_module_review_title, R.string.home_module_review_subtitle, Icons.Default.QrCode, com.example.pmmovil.ui.theme.PmmBlueDeep, Color(0xFFEEF3FF), enabled = true))
         }
 
         // 2. Entradas (Recepción)
         val entriesPerm = hasFullAccess || permissions.any { it.moduloId == MobileModuleIds.WAREHOUSE_OPERATIONS && it.canRead }
         if (entriesPerm) {
-            list.add(ModuleItem(MobileModuleIds.WAREHOUSE_OPERATIONS, "Entradas", "Recepción", Icons.Default.Login, com.example.pmmovil.ui.theme.PmmBlueMid, Color(0xFFE0EBFF), enabled = true, routeKey = HomeModuleRouteKeys.WAREHOUSE_ENTRIES))
+            list.add(ModuleItem(MobileModuleIds.WAREHOUSE_OPERATIONS, R.string.home_module_entries_title, R.string.home_module_entries_subtitle, Icons.Default.Login, com.example.pmmovil.ui.theme.PmmBlueMid, Color(0xFFE0EBFF), enabled = true, routeKey = HomeModuleRouteKeys.WAREHOUSE_ENTRIES))
         }
 
         // 3. Cargar mercancía
         val exitsPerm = hasFullAccess || permissions.any { it.moduloId == MobileModuleIds.WAREHOUSE_EXIT && it.canRead }
         if (exitsPerm) {
-            list.add(ModuleItem(MobileModuleIds.WAREHOUSE_EXIT, "Cargar mercancía", "Carga y escaneo", Icons.Default.Logout, com.example.pmmovil.ui.theme.PmmBlueLight, Color(0xFFDBEAFE), enabled = true, routeKey = HomeModuleRouteKeys.WAREHOUSE_LOADS))
+            list.add(ModuleItem(MobileModuleIds.WAREHOUSE_EXIT, R.string.home_module_load_title, R.string.home_module_load_subtitle, Icons.Default.Logout, com.example.pmmovil.ui.theme.PmmBlueLight, Color(0xFFDBEAFE), enabled = true, routeKey = HomeModuleRouteKeys.WAREHOUSE_LOADS))
         }
 
         // 4. Relación (Supervisar)
         val relationPerm = hasFullAccess || permissions.any { it.moduloId == MobileModuleIds.WAREHOUSE_RELATION && it.canRead }
         if (relationPerm) {
-            list.add(ModuleItem(MobileModuleIds.WAREHOUSE_RELATION, "Relación", "Supervisar", Icons.Default.ViewModule, com.example.pmmovil.ui.theme.PmmNavyDark, Color(0xFFE0E7FF), enabled = true, routeKey = HomeModuleRouteKeys.WAREHOUSE_RELATION))
+            list.add(ModuleItem(MobileModuleIds.WAREHOUSE_RELATION, R.string.home_module_relation_title, R.string.home_module_relation_subtitle, Icons.Default.ViewModule, com.example.pmmovil.ui.theme.PmmNavyDark, Color(0xFFE0E7FF), enabled = true, routeKey = HomeModuleRouteKeys.WAREHOUSE_RELATION))
         }
 
         // 5. Mapa (Ubicaciones)
         val mapPerm = hasFullAccess || permissions.any { it.moduloId == MobileModuleIds.WAREHOUSE_OPERATIONS && it.canRead }
         if (mapPerm) {
-            list.add(ModuleItem(MobileModuleIds.WAREHOUSE_OPERATIONS, "Mapa", "Ubicaciones", Icons.Default.Map, com.example.pmmovil.ui.theme.PmmGreenDark, Color(0xFFD1FAE5), enabled = true, routeKey = HomeModuleRouteKeys.WAREHOUSE_MAP))
+            list.add(ModuleItem(MobileModuleIds.WAREHOUSE_OPERATIONS, R.string.home_module_map_title, R.string.home_module_map_subtitle, Icons.Default.Map, com.example.pmmovil.ui.theme.PmmGreenDark, Color(0xFFD1FAE5), enabled = true, routeKey = HomeModuleRouteKeys.WAREHOUSE_MAP))
         }
 
         // 6. Caseta (Vigilancia)
         val gatePerm = hasFullAccess || permissions.any { it.moduloId == MobileModuleIds.GATE && it.canRead }
         if (gatePerm) {
-            list.add(ModuleItem(MobileModuleIds.GATE, "Operación de caseta", "Entradas y control", Icons.Default.LocalShipping, com.example.pmmovil.ui.theme.PmmAmberDark, Color(0xFFFEF3C7), enabled = true, routeKey = HomeModuleRouteKeys.GATE_HUB))
+            list.add(ModuleItem(MobileModuleIds.GATE, R.string.home_module_gate_operation_title, R.string.home_module_gate_operation_subtitle, Icons.Default.LocalShipping, com.example.pmmovil.ui.theme.PmmAmberDark, Color(0xFFFEF3C7), enabled = true, routeKey = HomeModuleRouteKeys.GATE_HUB))
         }
 
         // Las dos salidas de caseta tienen permisos propios. Así el usuario
@@ -189,13 +192,13 @@ fun HomeScreen(
             it.moduloId == MobileModuleIds.GATE_RELATION_EXIT && it.canRead
         }
         if (relationExitPerm) {
-            list.add(ModuleItem(MobileModuleIds.GATE_RELATION_EXIT, "Salida de relación", "Autorizada · caseta", Icons.Default.ArrowUpward, com.example.pmmovil.ui.theme.PmmBlueDeep, Color(0xFFE0E7FF), enabled = true, routeKey = HomeModuleRouteKeys.GATE_RELATION_EXIT))
+            list.add(ModuleItem(MobileModuleIds.GATE_RELATION_EXIT, R.string.home_module_relation_exit_title, R.string.home_module_relation_exit_subtitle, Icons.Default.ArrowUpward, com.example.pmmovil.ui.theme.PmmBlueDeep, Color(0xFFE0E7FF), enabled = true, routeKey = HomeModuleRouteKeys.GATE_RELATION_EXIT))
         }
 
         // 7. Sistemas (Administración)
         val adminPerm = isSystemsArea
         if (adminPerm) {
-            list.add(ModuleItem(MobileModuleIds.SYSTEMS_MONITOR, "Sistemas", "Administración", Icons.Default.Settings, com.example.pmmovil.ui.theme.PmmRed, Color(0xFFFEE2E2), enabled = true, routeKey = HomeModuleRouteKeys.SYSTEMS_ADMIN))
+            list.add(ModuleItem(MobileModuleIds.SYSTEMS_MONITOR, R.string.home_module_systems_title, R.string.home_module_systems_subtitle, Icons.Default.Settings, com.example.pmmovil.ui.theme.PmmRed, Color(0xFFFEE2E2), enabled = true, routeKey = HomeModuleRouteKeys.SYSTEMS_ADMIN))
         }
 
         list
@@ -213,13 +216,18 @@ fun HomeScreen(
 
     val onModuleClick: (ModuleItem) -> Unit = { item ->
         if (item.enabled) {
-            when (item.title) {
-                "Revisión" -> onNavigateToAsignaciones()
+            when (item.moduleId) {
+                MobileModuleIds.REVIEW -> onNavigateToAsignaciones()
                 else       -> onModuleTap(item.routeKey)
             }
         } else {
             scope.launch {
-                snackbar.showSnackbar("${item.title} — próximamente")
+                snackbar.showSnackbar(
+                    context.getString(
+                        R.string.home_coming_soon,
+                        context.getString(item.titleRes)
+                    )
+                )
             }
         }
     }

@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.annotation.StringRes
+import com.example.pmmovil.R
 import com.example.pmmovil.data.db.FotoDao
 import com.example.pmmovil.data.diagnostics.RevisionDiagnostics
 import com.example.pmmovil.data.model.*
@@ -14,6 +16,7 @@ import com.example.pmmovil.data.scanner.StructuredLabelBarcodeParser
 import com.example.pmmovil.data.signalr.CierreForzosoMessage
 import com.example.pmmovil.data.signalr.WarehouseHubService
 import com.example.pmmovil.di.ApplicationScope
+import com.example.pmmovil.ui.localization.UiText
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -70,7 +73,7 @@ data class DeshacerAcumulacion(
     // escaneo, una edición manual) cambió el valor mientras tanto y no se
     // pisa a ciegas.
     val cantidadEsperadaActual: Double,
-    val mensaje: String
+    val mensaje: UiText
 )
 
 @HiltViewModel
@@ -109,18 +112,18 @@ class DetalleRevisionViewModel @Inject constructor(
         val valor = _observacionGeneral.value.trim()
         viewModelScope.launch {
             repository.guardarObservacionEntrada(crefAgrupada, valor)
-                .onFailure { _toast.value = "No se pudo guardar la observación general." }
+                .onFailure { _toast.value = resource(R.string.message_general_observation_failed) }
         }
     }
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    private val _error = MutableStateFlow<String?>(null)
-    val error: StateFlow<String?> = _error.asStateFlow()
+    private val _error = MutableStateFlow<UiText?>(null)
+    val error: StateFlow<UiText?> = _error.asStateFlow()
 
-    private val _toast = MutableStateFlow<String?>(null)
-    val toast: StateFlow<String?> = _toast.asStateFlow()
+    private val _toast = MutableStateFlow<UiText?>(null)
+    val toast: StateFlow<UiText?> = _toast.asStateFlow()
 
     // Evento de un solo uso para el snackbar con "Deshacer" tras un escaneo
     // que acumuló cantidad automáticamente (ver procesarCodigoEscaneado).
@@ -155,7 +158,8 @@ class DetalleRevisionViewModel @Inject constructor(
                 }
                 .onFailure { error ->
                     _isSharingLink.value = false
-                    _toast.value = error.message ?: "No se pudo generar el enlace."
+                    _toast.value = error.message?.takeIf(String::isNotBlank)?.let(UiText::Raw)
+                        ?: resource(R.string.message_share_failed)
                 }
         }
     }
@@ -194,6 +198,9 @@ class DetalleRevisionViewModel @Inject constructor(
 
     private val _tiposMaterial = MutableStateFlow(REVISION_TIPOS_MATERIAL)
     val tiposMaterial: StateFlow<List<TipoMaterialDto>> = _tiposMaterial.asStateFlow()
+
+    private val _unidadesComerciales = MutableStateFlow<List<UnidadComercialDto>>(emptyList())
+    val unidadesComerciales: StateFlow<List<UnidadComercialDto>> = _unidadesComerciales.asStateFlow()
 
     private val _fotos = MutableStateFlow<List<FotoRevisionDto>>(emptyList())
     val fotos: StateFlow<List<FotoRevisionDto>> = _fotos.asStateFlow()
@@ -397,6 +404,7 @@ class DetalleRevisionViewModel @Inject constructor(
         initializeReviewSession()
         cargarPaises()
         cargarPaisesFrecuentes()
+        cargarUnidadesComerciales()
         cargarFotos()
         observeSignalR()
         verificarAccesoPrevio()
@@ -445,9 +453,11 @@ class DetalleRevisionViewModel @Inject constructor(
         }
 
         if (mostrarToast) {
-            _toast.value = "Entrada autorizada" +
-                (supervisor.takeIf { it.isNotBlank() }?.let { " — $it te dio acceso" } ?: "") +
-                ". Ya puedes continuar."
+            _toast.value = if (supervisor.isBlank()) {
+                resource(R.string.notification_entry_authorized)
+            } else {
+                resource(R.string.message_unlock_approved, supervisor)
+            }
         }
     }
 
@@ -486,12 +496,14 @@ class DetalleRevisionViewModel @Inject constructor(
                             }
                         }
                     } catch (e: Exception) {
-                        _error.value = "Esta entrada tiene datos que la app no pudo procesar. " +
-                            "Repórtalo a sistemas con la referencia $crefAgrupada."
+                        _error.value = resource(
+                            R.string.message_data_processing_failed,
+                            crefAgrupada
+                        )
                     }
                 }
                 .onFailure {
-                _error.value = "Error al cargar datos. Verifica tu conexión."
+                _error.value = resource(R.string.message_load_failed)
             }
             _isLoading.value = false
         }
@@ -556,7 +568,10 @@ class DetalleRevisionViewModel @Inject constructor(
                 )
             }.onFailure { error ->
                 RevisionDiagnostics.record(appContext, "Error cargando catálogo de países", error)
-                _toast.value = "No se cargaron países: ${error.message ?: "revisa el API"}"
+                _toast.value = resource(
+                    R.string.message_countries_failed,
+                    error.message ?: appContext.getString(R.string.message_server_review_api)
+                )
             }
         }
     }
@@ -571,6 +586,26 @@ class DetalleRevisionViewModel @Inject constructor(
                 // Es una ayuda opcional: el buscador principal de países debe
                 // seguir disponible aunque esta consulta falle o tarde.
             }
+        }
+    }
+
+    private fun cargarUnidadesComerciales() {
+        viewModelScope.launch {
+            repository.getUnidadesComerciales()
+                .onSuccess { items ->
+                    _unidadesComerciales.value = items
+                    RevisionDiagnostics.record(
+                        appContext,
+                        "Catálogo UMC cargado items=${items.size}"
+                    )
+                }
+                .onFailure { error ->
+                    RevisionDiagnostics.record(appContext, "Error cargando catálogo UMC", error)
+                    _toast.value = resource(
+                        R.string.message_units_failed,
+                        error.message ?: appContext.getString(R.string.message_server_review_api)
+                    )
+                }
         }
     }
 
@@ -669,7 +704,7 @@ class DetalleRevisionViewModel @Inject constructor(
                 if (_desbloqueoSolicitado.value) {
                     _desbloqueoSolicitado.value = false
                     pollingJob?.cancel()
-                    _toast.value = "Solicitud rechazada por ${msg.supervisor}. La entrada sigue bloqueada."
+                    _toast.value = resource(R.string.message_unlock_rejected, msg.supervisor)
                 }
 
                 // El permiso también puede retirarse cuando ya estaba
@@ -686,9 +721,9 @@ class DetalleRevisionViewModel @Inject constructor(
                         unlockStore.clear(user, crefAgrupada, msg.cnofact)
                     }
                     _toast.value = if (msg.supervisor.equals("SYSTEM", ignoreCase = true)) {
-                        "La revisión ya fue finalizada. Tu permiso de edición ya no está vigente."
+                        UiText.Resource(R.string.revision_finished)
                     } else {
-                        "${msg.supervisor} retiró tu permiso de edición. La entrada vuelve a estar bloqueada."
+                        resource(R.string.message_unlock_revoked, msg.supervisor)
                     }
                 }
             }
@@ -733,14 +768,14 @@ class DetalleRevisionViewModel @Inject constructor(
 
     fun canDelete(): Boolean = authRepository.hasPermission(159, "Borrar")
 
-    private fun denyPermission(action: String) {
-        _toast.value = "✗ No tienes permiso para $action en Revisión."
+    private fun denyPermission(@StringRes actionRes: Int) {
+        _toast.value = resource(R.string.message_permission_denied, appContext.getString(actionRes))
     }
 
     // --- Facturas Logic ---
     fun guardarCampoFactura(cnofact: String, campo: String, valor: Any) {
         if (!canEdit()) {
-            denyPermission("modificar campos")
+            denyPermission(R.string.permission_modify_fields)
             return
         }
         viewModelScope.launch {
@@ -782,7 +817,7 @@ class DetalleRevisionViewModel @Inject constructor(
                     registrarActividadFactura(cnofact, "Campo actualizado: $campo")
                     refreshFactura(cnofact)
                 }
-                .onFailure { _toast.value = "Error al guardar campo" }
+                .onFailure { _toast.value = resource(R.string.message_save_field_error) }
         }
     }
 
@@ -799,7 +834,7 @@ class DetalleRevisionViewModel @Inject constructor(
     // --- Validation Completa flow ---
     fun setStatusFactura(cnofact: String, status: Int, skipChecks: Boolean = false) {
         if (!canEdit()) {
-            denyPermission("actualizar el estado")
+            denyPermission(R.string.permission_update_status)
             return
         }
         val fac = _facturas.value.find { it.Cnofact == cnofact } ?: return
@@ -863,7 +898,7 @@ class DetalleRevisionViewModel @Inject constructor(
 
     fun onConfirmHazmatAlerta(cnofact: String) {
         if (!canEdit()) {
-            denyPermission("actualizar el estado")
+            denyPermission(R.string.permission_update_status)
             return
         }
         _validationState.value = null
@@ -883,7 +918,7 @@ class DetalleRevisionViewModel @Inject constructor(
     // evidencia de discrepancia, la factura sí quedó bien y sigue el flujo normal.
     fun onConfirmEvidenciaDiscrepancia(cnofact: String) {
         if (!canEdit()) {
-            denyPermission("actualizar el estado")
+            denyPermission(R.string.permission_update_status)
             return
         }
         _validationState.value = null
@@ -902,7 +937,7 @@ class DetalleRevisionViewModel @Inject constructor(
 
     fun onConfirmPartidasSinRevisar(cnofact: String, motivo: String) {
         if (!canEdit()) {
-            denyPermission("solicitar desbloqueos")
+            denyPermission(R.string.permission_request_unlock)
             return
         }
         _validationState.value = null
@@ -920,7 +955,7 @@ class DetalleRevisionViewModel @Inject constructor(
 
     fun onConfirmAclararDiscrepancias(cnofact: String, autorizada: Boolean) {
         if (!canEdit()) {
-            denyPermission("aclarar discrepancias")
+            denyPermission(R.string.permission_clarify_discrepancies)
             return
         }
         _validationState.value = null
@@ -950,7 +985,7 @@ class DetalleRevisionViewModel @Inject constructor(
 
     private fun saveStatusFactura(cnofact: String, status: Int) {
         if (!canEdit()) {
-            denyPermission("actualizar el estado")
+            denyPermission(R.string.permission_update_status)
             return
         }
         viewModelScope.launch {
@@ -960,7 +995,7 @@ class DetalleRevisionViewModel @Inject constructor(
                     refreshFactura(cnofact)
                     checkAutoFinish()
                 }
-                .onFailure { _toast.value = "Error al actualizar status" }
+                .onFailure { _toast.value = resource(R.string.message_update_status_failed) }
         }
     }
 
@@ -1016,9 +1051,14 @@ class DetalleRevisionViewModel @Inject constructor(
         _busquedaParte.value = ""
         _jumpPulseSeq.value++
         _toast.value = if (resultado.tipo == TipoResultadoBusqueda.PRODUCTO) {
-            "📍 Partida ${resultado.posicion} de ${resultado.totalFactura} · Factura ${resultado.factura.Cnofact}"
+            resource(
+                R.string.message_search_part_selected,
+                resultado.posicion ?: 0,
+                resultado.totalFactura,
+                resultado.factura.Cnofact
+            )
         } else {
-            "📄 Factura ${resultado.factura.Cnofact} seleccionada"
+            resource(R.string.message_search_invoice_selected, resultado.factura.Cnofact)
         }
     }
 
@@ -1081,9 +1121,9 @@ class DetalleRevisionViewModel @Inject constructor(
             // buscador normal muestre coincidencias parciales.
             setBusquedaParte(articulo)
             _toast.value = if (candidatos.size > 1) {
-                "Hay ${candidatos.size} partidas con el artículo $articulo — elige la correcta en la lista."
+                resource(R.string.message_search_multiple_parts, candidatos.size, articulo)
             } else {
-                "No se encontró ninguna partida con el artículo $articulo"
+                resource(R.string.message_search_no_part, articulo)
             }
             return
         }
@@ -1116,7 +1156,14 @@ class DetalleRevisionViewModel @Inject constructor(
                 idRevdet = partida.IdRevdet,
                 cantidadPrevia = cantidadPrevia,
                 cantidadEsperadaActual = nuevoTotal,
-                mensaje = "📦 Partida ${posicion.takeIf { it > 0 } ?: "?"} · artículo $articulo · +$cantidad → acumulado $nuevoTotal de ${partida.nCantFactura}"
+                mensaje = resource(
+                    R.string.message_scan_accumulated,
+                    posicion.takeIf { it > 0 } ?: "?",
+                    articulo,
+                    quantityText(cantidad),
+                    quantityText(nuevoTotal),
+                    quantityText(partida.nCantFactura)
+                )
             )
         }
     }
@@ -1129,16 +1176,16 @@ class DetalleRevisionViewModel @Inject constructor(
     fun deshacerAcumulacion(evento: DeshacerAcumulacion) {
         val partida = _partidas.value.find { it.IdRevdet == evento.idRevdet }
         if (partida == null) {
-            _toast.value = "No se pudo deshacer: la partida ya no está cargada."
+            _toast.value = resource(R.string.message_undo_not_loaded)
             return
         }
         val actual = partida.nCantOut ?: 0.0
         if (kotlin.math.abs(actual - evento.cantidadEsperadaActual) > 0.0001) {
-            _toast.value = "No se deshizo: la cantidad ya cambió desde el escaneo."
+            _toast.value = resource(R.string.message_undo_changed)
             return
         }
         actualizarDatoPartida(partida, "nCantOut", evento.cantidadPrevia)
-        _toast.value = "↩️ Deshecho — cantidad regresada a ${evento.cantidadPrevia}"
+        _toast.value = resource(R.string.message_undone, quantityText(evento.cantidadPrevia))
     }
 
     private fun scoreCoincidencia(valor: String, query: String): Int? {
@@ -1165,7 +1212,7 @@ class DetalleRevisionViewModel @Inject constructor(
 
     fun actualizarDatoPartida(partida: PartidaRevisionDto, campo: String, valor: Any) {
         if (!canEdit()) {
-            denyPermission("modificar partidas")
+            denyPermission(R.string.permission_modify_parts)
             return
         }
         viewModelScope.launch {
@@ -1201,7 +1248,73 @@ class DetalleRevisionViewModel @Inject constructor(
                         "Error guardando partida id=${partida.IdRevdet} campo=$campo",
                         error
                     )
-                    _toast.value = "No se pudo guardar '$campo': ${error.message ?: "revisa el API"}"
+                    _toast.value = resource(
+                        R.string.message_save_field_failed,
+                        campo,
+                        error.message ?: appContext.getString(R.string.message_server_review_api)
+                    )
+                    loadData()
+                }
+        }
+    }
+
+    /**
+     * Guarda el par cantidad + unidad con la misma validación del servidor
+     * que usa PMM legacy. La unidad visible (por ejemplo PIES) se transforma
+     * en el API a su UMC interna (LF) y a cunidadfactura en una sola operación.
+     */
+    fun actualizarCantidadComercial(
+        partida: PartidaRevisionDto,
+        cantidad: Double,
+        codigoUnidad: String
+    ) {
+        if (!canEdit()) {
+            denyPermission(R.string.permission_modify_parts)
+            return
+        }
+
+        val unidad = _unidadesComerciales.value.firstOrNull {
+            it.codigo.equals(codigoUnidad.trim(), ignoreCase = true)
+        }
+        if (unidad == null) {
+            _toast.value = resource(R.string.message_invalid_commercial_unit)
+            return
+        }
+        if (!cantidad.isFinite() || cantidad < 0) {
+            _toast.value = resource(R.string.message_negative_commercial_quantity)
+            return
+        }
+
+        viewModelScope.launch {
+            _partidas.value = _partidas.value.map { p ->
+                if (p.IdRevdet == partida.IdRevdet) {
+                    p.copy(
+                        CantidadComercial = cantidad,
+                        UnidadComercial = unidad.codigoInterno,
+                        UnidadFactura = unidad.codigo
+                    )
+                } else {
+                    p
+                }
+            }
+
+            repository.guardarCantidadComercial(partida.IdRevdet, cantidad, unidad.codigo)
+                .onSuccess {
+                    registrarActividadFactura(
+                        partida.Cnofact,
+                        "Partida · cantidad comercial actualizada"
+                    )
+                }
+                .onFailure { error ->
+                    RevisionDiagnostics.record(
+                        appContext,
+                        "Error guardando cantidad comercial id=${partida.IdRevdet}",
+                        error
+                    )
+                    _toast.value = resource(
+                        R.string.message_save_commercial_failed,
+                        error.message ?: appContext.getString(R.string.message_server_review_api)
+                    )
                     loadData()
                 }
         }
@@ -1213,7 +1326,7 @@ class DetalleRevisionViewModel @Inject constructor(
 
     fun toggleRevisadoPartida(partida: PartidaRevisionDto) {
         if (!canEdit()) {
-            denyPermission("marcar partidas")
+            denyPermission(R.string.permission_mark_parts)
             return
         }
         val nuevoEstado = !partida.Revisada
@@ -1231,7 +1344,7 @@ class DetalleRevisionViewModel @Inject constructor(
                     }
                 }
                 .onFailure {
-                    _toast.value = "Error al actualizar partida"
+                    _toast.value = resource(R.string.message_part_update_failed)
                     loadData()
                 }
         }
@@ -1239,7 +1352,7 @@ class DetalleRevisionViewModel @Inject constructor(
 
     fun agregarPartida(cnofact: String) {
         if (!canCreate()) {
-            denyPermission("agregar partidas")
+            denyPermission(R.string.permission_add_parts)
             return
         }
         viewModelScope.launch {
@@ -1255,15 +1368,15 @@ class DetalleRevisionViewModel @Inject constructor(
                             if (idx != -1) _partidaActivaIndex.value = idx + 1
                         }
                     }
-                    _toast.value = "Partida agregada"
+                    _toast.value = resource(R.string.message_part_added)
                 }
-                .onFailure { _toast.value = "Error al agregar partida" }
+                .onFailure { _toast.value = resource(R.string.message_part_add_failed) }
         }
     }
 
     fun eliminarPartida(id: Int) {
         if (!canDelete()) {
-            denyPermission("borrar partidas")
+            denyPermission(R.string.permission_delete_parts)
             return
         }
         _partidas.value = _partidas.value.filter { it.IdRevdet != id }
@@ -1274,11 +1387,11 @@ class DetalleRevisionViewModel @Inject constructor(
                         registrarActividadFactura(cnofact, "Partida eliminada")
                     }
                     _partidaActivaIndex.value = 1
-                    _toast.value = "Partida eliminada"
+                    _toast.value = resource(R.string.message_part_deleted)
                 }
                 .onFailure {
                     repository.getPartidas(crefAgrupada).onSuccess { _partidas.value = it }
-                    _toast.value = "Error al eliminar partida"
+                    _toast.value = resource(R.string.message_part_delete_failed)
                 }
         }
     }
@@ -1286,7 +1399,7 @@ class DetalleRevisionViewModel @Inject constructor(
     // --- Desbloqueos ---
     fun solicitarDesbloqueo(motivo: String) {
         if (!canEdit()) {
-            denyPermission("solicitar desbloqueos")
+            denyPermission(R.string.permission_request_unlock)
             return
         }
         val fac = _facturas.value.getOrNull(_selectedFacturaIndex.value)
@@ -1295,12 +1408,13 @@ class DetalleRevisionViewModel @Inject constructor(
         viewModelScope.launch {
             repository.solicitarDesbloqueo(cnofact, motivo)
                 .onSuccess {
-                    _toast.value = "Solicitud de desbloqueo enviada"
+                    _toast.value = resource(R.string.message_unlock_sent)
                     startDesbloqueoPolling(cnofact)
                 }
                 .onFailure {
                     _desbloqueoSolicitado.value = false
-                    _toast.value = it.message ?: "Error al solicitar desbloqueo"
+                    _toast.value = it.message?.takeIf(String::isNotBlank)?.let(UiText::Raw)
+                        ?: resource(R.string.message_unlock_failed)
                 }
         }
     }
@@ -1327,7 +1441,7 @@ class DetalleRevisionViewModel @Inject constructor(
     // --- Fotos Gallery ---
     fun subirFoto(base64Image: String, extension: String, cclienteid: String) {
         if (!canCreate()) {
-            denyPermission("agregar fotografías")
+            denyPermission(R.string.permission_add_photos)
             return
         }
         _isUploadingFoto.value = true
@@ -1336,33 +1450,33 @@ class DetalleRevisionViewModel @Inject constructor(
                 .onSuccess {
                     _isUploadingFoto.value = false
                     cargarFotos()
-                    _toast.value = "Foto subida con éxito"
+                    _toast.value = resource(R.string.message_photo_uploaded)
                 }
                 .onFailure {
                     _isUploadingFoto.value = false
-                    _toast.value = "Error al subir foto"
+                    _toast.value = resource(R.string.message_photo_upload_failed)
                 }
         }
     }
 
     fun eliminarFoto(fotoId: Int) {
         if (!canDelete()) {
-            denyPermission("borrar fotografías")
+            denyPermission(R.string.permission_delete_photos)
             return
         }
         viewModelScope.launch {
             repository.eliminarFoto(fotoId)
                 .onSuccess {
                     _fotos.value = _fotos.value.filter { it.idFotos != fotoId }
-                    _toast.value = "Foto eliminada"
+                    _toast.value = resource(R.string.message_photo_deleted)
                 }
-                .onFailure { _toast.value = "Error al eliminar foto" }
+                .onFailure { _toast.value = resource(R.string.message_photo_delete_failed) }
         }
     }
 
     fun terminarRevision() {
         if (!canEdit()) {
-            denyPermission("cerrar revisiones")
+            denyPermission(R.string.permission_close_reviews)
             return
         }
         // Sin al menos 1 foto (ya subida o todavía pendiente de subir) no se
@@ -1374,14 +1488,17 @@ class DetalleRevisionViewModel @Inject constructor(
         // sin ese segundo check, tomar una foto y darle "Terminar" de
         // inmediato bloquearía en falso mientras sube.
         if (_fotos.value.isEmpty() && pendingPhotoCount.value == 0) {
-            _toast.value = "No se puede terminar la revisión: no se ha tomado ninguna foto de evidencia."
+            _toast.value = resource(R.string.message_finish_without_photo)
             return
         }
         viewModelScope.launch {
             repository.validarCierre(crefAgrupada)
                 .onSuccess { resp ->
                     if (!resp.facturasSinRevisor.isNullOrEmpty()) {
-                        _toast.value = "Sin revisor: ${resp.facturasSinRevisor.joinToString(", ")}"
+                        _toast.value = resource(
+                            R.string.message_no_reviewer,
+                            resp.facturasSinRevisor.joinToString(", ")
+                        )
                         return@launch
                     }
                     val completas = _facturas.value.count { it.StatusRev == 1 }
@@ -1412,9 +1529,9 @@ class DetalleRevisionViewModel @Inject constructor(
                             _celebrateOnExit.value = true
                             _navegarAtras.value = true
                         }
-                        .onFailure { _toast.value = "Error al cerrar revisión" }
+                        .onFailure { _toast.value = resource(R.string.message_close_failed) }
                 }
-                .onFailure { _toast.value = "Error al cerrar revisión" }
+                .onFailure { _toast.value = resource(R.string.message_close_failed) }
         }
     }
 
@@ -1424,6 +1541,11 @@ class DetalleRevisionViewModel @Inject constructor(
 
     fun getToken(): String = authRepository.getToken() ?: ""
     fun isHubConnected(): Boolean = hubService.isConnected()
+
+    private fun resource(@StringRes id: Int, vararg args: Any): UiText =
+        UiText.Resource(id, args.toList())
+
+    private fun quantityText(value: Double): String = value.toString()
 
     /**
      * Reglas de bloqueo de campos de una factura — alineadas con la web

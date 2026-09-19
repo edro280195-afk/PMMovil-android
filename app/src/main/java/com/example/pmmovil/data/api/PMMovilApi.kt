@@ -212,8 +212,14 @@ interface PMMovilApi {
     @GET("Revision/partidas/{cref_agrupada}")
     suspend fun getPartidasEntrada(@Path("cref_agrupada") crefAgrupada: String): Response<PartidaResponse>
 
+    @GET("Revision/catalogos/unidades-comerciales")
+    suspend fun getUnidadesComerciales(): Response<UnidadesComercialesResponse>
+
     @PATCH("Revision/partida/campo")
     suspend fun guardarCampoPartida(@Body request: GuardarCampoPartidaRequest): Response<SimpleSuccessResponse>
+
+    @PATCH("Revision/partida/cantidad-comercial")
+    suspend fun guardarCantidadComercial(@Body request: GuardarCantidadComercialRequest): Response<SimpleSuccessResponse>
 
     @POST("Revision/partida/agregar")
     suspend fun agregarPartida(@Body request: AgregarPartidaRequest): Response<AgregarPartidaResponse>

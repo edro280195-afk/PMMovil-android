@@ -3,6 +3,7 @@ package com.example.pmmovil.agent.update
 import android.content.Context
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
+import android.os.Build
 import com.example.pmmovil.agent.AgentConstants
 import java.io.File
 import java.io.FileInputStream
@@ -31,16 +32,40 @@ class ApkIntegrityVerifier(private val context: Context) {
     }
 
     private fun packageInfoFromArchive(apkFile: File): PackageInfo {
-        return context.packageManager.getPackageArchiveInfo(
+        val packageManager = context.packageManager
+        val modernInfo = packageManager.getPackageArchiveInfo(
             apkFile.absolutePath,
             PackageManager.GET_SIGNING_CERTIFICATES
         )
+
+        // Android 10 en algunos dispositivos devuelve PackageInfo válido pero
+        // deja signingInfo vacío al leer un APK externo firmado con v2. El
+        // flag legacy todavía devuelve la firma del archivo y permite validar
+        // el mismo certificado sin relajar la comprobación.
+        if (modernInfo != null && modernInfo.signingInfo?.apkContentsSigners
+                ?.isNotEmpty() == true
+        ) {
+            return modernInfo
+        }
+
+        @Suppress("DEPRECATION")
+        val legacyInfo = packageManager.getPackageArchiveInfo(
+            apkFile.absolutePath,
+            PackageManager.GET_SIGNATURES
+        )
+
+        return legacyInfo ?: modernInfo
             ?: throw IllegalArgumentException("Android no pudo leer el APK descargado")
     }
 
     private fun certificateSha256(packageInfo: PackageInfo): String {
-        val signatures = packageInfo.signingInfo?.apkContentsSigners.orEmpty()
-        val signature = signatures.firstOrNull()
+        val modernSignature = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            packageInfo.signingInfo?.apkContentsSigners?.firstOrNull()
+        } else {
+            null
+        }
+        @Suppress("DEPRECATION")
+        val signature = modernSignature ?: packageInfo.signatures?.firstOrNull()
             ?: throw IllegalArgumentException("El APK no tiene certificado de firma")
         return sha256Hex(
             MessageDigest.getInstance("SHA-256").digest(signature.toByteArray())

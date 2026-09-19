@@ -2,6 +2,8 @@ package com.example.pmmovil.ui.asignaciones
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.annotation.StringRes
+import com.example.pmmovil.R
 import com.example.pmmovil.data.model.AsignacionEntity
 import com.example.pmmovil.data.model.EntradaPendienteDto
 import com.example.pmmovil.data.preferences.ModePreferences
@@ -10,6 +12,7 @@ import com.example.pmmovil.data.repository.AuthRepository
 import com.example.pmmovil.data.repository.RevisionRepository
 import com.example.pmmovil.data.scanner.ScanEventBus
 import com.example.pmmovil.data.signalr.WarehouseHubService
+import com.example.pmmovil.ui.localization.UiText
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.IOException
 import java.net.ConnectException
@@ -37,7 +40,7 @@ enum class PendingMessageKind { INFO, SUCCESS, WARNING, ERROR }
 
 sealed interface AsignacionesEvent {
     data class ShowMessage(
-        val message: String,
+        val message: UiText,
         val kind: PendingMessageKind
     ) : AsignacionesEvent
 
@@ -134,7 +137,7 @@ class AsignacionesViewModel @Inject constructor(
                     loadData(showLoading = false)
                     _events.tryEmit(AsignacionesEvent.RevisionAssigned)
                     showMessage(
-                        message = "Revisión asignada: ${assignment.crefAgrupada}. Ya está en tu lista.",
+                        message = resource(R.string.message_assignment_received, assignment.crefAgrupada),
                         kind = PendingMessageKind.WARNING
                     )
                 }
@@ -147,7 +150,7 @@ class AsignacionesViewModel @Inject constructor(
                     removeAssignmentFromPending(assignment.idAsignacion, assignment.crefAgrupada)
                     loadData(showLoading = false)
                     showMessage(
-                        message = "La asignación ${assignment.crefAgrupada} fue retirada.",
+                        message = resource(R.string.message_assignment_removed, assignment.crefAgrupada),
                         kind = PendingMessageKind.INFO
                     )
                 }
@@ -161,7 +164,7 @@ class AsignacionesViewModel @Inject constructor(
                     loadData(showLoading = false)
                     _events.tryEmit(AsignacionesEvent.UnlockApproved(message.supervisor))
                     showMessage(
-                        message = "Entrada autorizada — ${message.supervisor} te dio acceso. Ya puedes continuar.",
+                        message = resource(R.string.message_unlock_approved, message.supervisor),
                         kind = PendingMessageKind.SUCCESS
                     )
                 }
@@ -173,7 +176,7 @@ class AsignacionesViewModel @Inject constructor(
                     val reference = message.cnofact.entryReferenceOrNull() ?: return@runCatching
                     removeUnlockRequest(reference)
                     showMessage(
-                        message = "Solicitud rechazada por ${message.supervisor}. La entrada sigue bloqueada.",
+                        message = resource(R.string.message_unlock_rejected, message.supervisor),
                         kind = PendingMessageKind.ERROR
                     )
                 }
@@ -210,14 +213,14 @@ class AsignacionesViewModel @Inject constructor(
         val reference = normalizeScannedReference(rawValue)
         if (reference.isNullOrBlank()) {
             showMessage(
-                message = "No se pudo leer la referencia. Vuelve a escanear.",
+                message = resource(R.string.message_reference_unreadable),
                 kind = PendingMessageKind.ERROR
             )
             return
         }
         if (reference.length < 2) {
             showMessage(
-                message = "La referencia es demasiado corta.",
+                message = resource(R.string.message_reference_short),
                 kind = PendingMessageKind.WARNING
             )
             return
@@ -229,7 +232,7 @@ class AsignacionesViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(isSearching = false)
                 if (entry == null) {
                     showMessage(
-                        message = "La referencia $reference no existe o no es una entrada agrupada.",
+                        message = resource(R.string.message_reference_not_found, reference),
                         kind = PendingMessageKind.ERROR
                     )
                 } else {
@@ -277,7 +280,7 @@ class AsignacionesViewModel @Inject constructor(
                 )
             } else if (showLoading && current.todasEntradas.isNotEmpty()) {
                 showMessage(
-                    message = "Lista actualizada.",
+                    message = resource(R.string.message_list_updated),
                     kind = PendingMessageKind.SUCCESS
                 )
             }
@@ -309,7 +312,9 @@ class AsignacionesViewModel @Inject constructor(
             val activeOwner = entry.usuarioRevisando?.takeIf { it.isNotBlank() }
                 ?: entry.usuarioTomoDocumento
             showMessage(
-                message = "Esta entrada está siendo utilizada por ${activeOwner ?: "otro usuario"}.",
+                message = activeOwner?.let {
+                    resource(R.string.message_entry_in_use, it)
+                } ?: resource(R.string.message_entry_in_use_other),
                 kind = PendingMessageKind.WARNING
             )
             return
@@ -345,7 +350,7 @@ class AsignacionesViewModel @Inject constructor(
                     asignacionRepository.markViewed(assignmentId)
                         .onFailure {
                             showMessage(
-                                message = "La revisión se abrió, pero no se pudo marcar la asignación como vista.",
+                                message = resource(R.string.message_open_warning),
                                 kind = PendingMessageKind.WARNING
                             )
                         }
@@ -379,7 +384,7 @@ class AsignacionesViewModel @Inject constructor(
                     } catch (e: Exception) {
                         _uiState.value = _uiState.value.copy(isOpeningEntry = false)
                         showMessage(
-                            message = "No se pudo abrir la entrada ${entry.crefAgrupada}. Intenta de nuevo.",
+                            message = resource(R.string.message_open_failed, entry.crefAgrupada),
                             kind = PendingMessageKind.ERROR
                         )
                     }
@@ -408,7 +413,7 @@ class AsignacionesViewModel @Inject constructor(
         val cleanReason = motivo.trim()
         if (cleanReason.length < 5) {
             showMessage(
-                message = "Escribe un motivo de al menos 5 caracteres.",
+                message = resource(R.string.message_reason_required),
                 kind = PendingMessageKind.WARNING
             )
             return
@@ -426,13 +431,14 @@ class AsignacionesViewModel @Inject constructor(
                     unlockRequests = _uiState.value.unlockRequests + entry.crefAgrupada
                 )
                 showMessage(
-                    message = "Solicitud enviada. Te avisaremos cuando el supervisor responda.",
+                    message = resource(R.string.message_unlock_request_sent),
                     kind = PendingMessageKind.SUCCESS
                 )
             }.onFailure { error ->
                 _uiState.value = _uiState.value.copy(isSubmittingUnlock = false)
                 showMessage(
-                    message = error.message ?: "No se pudo enviar la solicitud.",
+                    message = error.message?.takeIf(String::isNotBlank)?.let(UiText::Raw)
+                        ?: resource(R.string.message_unlock_request_failed),
                     kind = PendingMessageKind.ERROR
                 )
             }
@@ -554,22 +560,25 @@ class AsignacionesViewModel @Inject constructor(
         )
     }
 
-    private fun showMessage(message: String, kind: PendingMessageKind) {
+    private fun showMessage(message: UiText, kind: PendingMessageKind) {
         _events.tryEmit(AsignacionesEvent.ShowMessage(message, kind))
     }
 
-    private fun networkMessage(error: Throwable?): String {
+    private fun networkMessage(error: Throwable?): UiText {
         return when (error) {
             is UnknownHostException,
             is ConnectException,
             is SocketTimeoutException,
-            is IOException -> "No hay conexión con el servidor. Verifica tu red e inténtalo de nuevo."
+            is IOException -> resource(R.string.message_no_connection)
 
-            null -> "No se pudo completar la operación."
-            else -> error.message?.takeIf { it.isNotBlank() }
-                ?: "No se pudo completar la operación."
+            null -> resource(R.string.message_operation_failed)
+            else -> error.message?.takeIf { it.isNotBlank() }?.let(UiText::Raw)
+                ?: resource(R.string.message_operation_failed)
         }
     }
+
+    private fun resource(@StringRes id: Int, vararg args: Any): UiText =
+        UiText.Resource(id, args.toList())
 
     private companion object {
         val entryComparator = compareByDescending<EntradaPendienteDto> {

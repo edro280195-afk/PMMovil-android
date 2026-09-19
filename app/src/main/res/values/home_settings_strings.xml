@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Ajustes -->
+    <string name="settings_back">Volver</string>
+    <string name="settings_title">Ajustes</string>
+    <string name="settings_user_default">Usuario</string>
+    <string name="settings_access_group">Cómo entras</string>
+    <string name="settings_face_title">Acceso con rostro</string>
+    <string name="settings_face_login_subtitle">Entrar sin gafete ni contraseña</string>
+    <plurals name="settings_face_captures">
+        <item quantity="one">Registrado · %d toma</item>
+        <item quantity="other">Registrado · %d tomas</item>
+    </plurals>
+    <string name="settings_face_unconfigured_subtitle">Sin configurar · te toma 30 segundos</string>
+    <string name="settings_status_active">Activo</string>
+    <string name="settings_status_configure">Configurar</string>
+    <string name="settings_nfc_title">Gafete NFC</string>
+    <string name="settings_nfc_associated_at">Asociado a este equipo · %1$s</string>
+    <string name="settings_nfc_associated">Asociado a este equipo</string>
+    <string name="settings_nfc_unassociated">No asociado a este equipo</string>
+    <string name="settings_nfc_status_pending">Pendiente</string>
+    <string name="settings_qr_title">Gafete QR</string>
+    <string name="settings_qr_subtitle">Impreso · siempre disponible</string>
+
+    <!-- Home -->
+    <string name="home_user_default">Usuario</string>
+    <string name="home_greeting_morning">Buenos días</string>
+    <string name="home_greeting_afternoon">Buenas tardes</string>
+    <string name="home_greeting_evening">Buenas noches</string>
+    <string name="home_greeting_late_night">Buenas madrugadas</string>
+    <string name="home_action_printers">Etiquetas e impresoras</string>
+    <string name="home_action_identity">Mi identificación</string>
+    <string name="home_action_logout">Cerrar sesión</string>
+    <string name="home_action_notifications">Notificaciones</string>
+    <string name="home_coming_soon">%1$s — próximamente</string>
+    <string name="home_module_review_title">Revisión</string>
+    <string name="home_module_review_subtitle">Mercancía</string>
+    <string name="home_module_entries_title">Entradas</string>
+    <string name="home_module_entries_subtitle">Recepción</string>
+    <string name="home_module_load_title">Cargar mercancía</string>
+    <string name="home_module_load_subtitle">Carga y escaneo</string>
+    <string name="home_module_relation_title">Relación</string>
+    <string name="home_module_relation_subtitle">Supervisar</string>
+    <string name="home_module_map_title">Mapa</string>
+    <string name="home_module_map_subtitle">Ubicaciones</string>
+    <string name="home_module_gate_operation_title">Operación de caseta</string>
+    <string name="home_module_gate_operation_subtitle">Entradas y control</string>
+    <string name="home_module_relation_exit_title">Salida de relación</string>
+    <string name="home_module_relation_exit_subtitle">Autorizada · caseta</string>
+    <string name="home_module_systems_title">Sistemas</string>
+    <string name="home_module_systems_subtitle">Administración</string>
+    <string name="home_module_gate_title">Control</string>
+    <string name="home_module_gate_subtitle">Autorización</string>
+    <string name="home_module_gate_card_title">Caseta</string>
+    <string name="home_module_gate_card_subtitle">Entrada, salida y edición</string>
+    <string name="home_gate_label">CASETA</string>
+    <string name="home_gate_security_label">CASETA · SEGURIDAD</string>
+    <string name="home_main_module_label">MÓDULO PRINCIPAL</string>
+    <string name="home_open">Abrir</string>
+    <string name="home_open_module">Abrir módulo</string>
+    <string name="home_open_workflow">Abrir flujo de trabajo</string>
+    <string name="home_review_hero_description">Mercancía, bultos y validación física</string>
+    <string name="home_gate_hero_description">Entrada, salida y control vehicular</string>
+    <string name="home_operation_hero_description">Operación: %1$s</string>
+    <string name="home_gate_description_full">Entrada, salida y edición en la caseta de seguridad</string>
+    <string name="home_sync">Sync %1$s</string>
+    <string name="home_version">v2.0.0</string>
+    <string name="home_coming_soon_label">Próximamente</string>
+
+    <!-- Estados de carga del Home -->
+    <string name="home_loading_session">Verificando tu sesión</string>
+    <string name="home_loading_permissions">Revisando tus permisos</string>
+    <string name="home_loading_modules">Preparando tus módulos</string>
+    <string name="home_loading_personalizing">Personalizando tu experiencia</string>
+    <string name="home_loading_wait">Un momento más</string>
+    <string name="home_modules_error_title">No pudimos cargar tus módulos</string>
+    <string name="home_modules_error_message">Revisa tu conexión o la VPN e inténtalo de nuevo.</string>
+    <string name="home_retry">Reintentar</string>
+    <string name="home_no_modules_title">Sin módulos asignados</string>
+    <string name="home_no_modules_message">Tu usuario no tiene permisos para operar PMMovil en este momento. Solicita acceso al área de Sistemas.</string>
+    <string name="home_no_modules_hint">Cuando te asignen un permiso, cierra sesión e inicia nuevamente para actualizar el menú.</string>
+</resources>

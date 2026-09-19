@@ -76,6 +76,19 @@ data class PartidaResponse(
     val message: String?
 )
 
+/** Unidad visible del catálogo legacy y su código interno UMC. */
+data class UnidadComercialDto(
+    @SerializedName("codigo") val codigo: String,
+    @SerializedName("nombre") val nombre: String,
+    @SerializedName("codigoInterno") val codigoInterno: String
+)
+
+data class UnidadesComercialesResponse(
+    val success: Boolean,
+    val items: List<UnidadComercialDto>?,
+    val message: String?
+)
+
 /** Respuesta atómica de la pantalla de revisión normal. */
 data class EntradaCompletaRevisionResponse(
     val success: Boolean,

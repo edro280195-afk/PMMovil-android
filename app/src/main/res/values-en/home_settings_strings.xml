@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Settings -->
+    <string name="settings_back">Back</string>
+    <string name="settings_title">Settings</string>
+    <string name="settings_user_default">User</string>
+    <string name="settings_access_group">How you sign in</string>
+    <string name="settings_face_title">Face access</string>
+    <string name="settings_face_login_subtitle">Sign in without a badge or password</string>
+    <plurals name="settings_face_captures">
+        <item quantity="one">Registered · %d capture</item>
+        <item quantity="other">Registered · %d captures</item>
+    </plurals>
+    <string name="settings_face_unconfigured_subtitle">Not configured · takes 30 seconds</string>
+    <string name="settings_status_active">Active</string>
+    <string name="settings_status_configure">Configure</string>
+    <string name="settings_nfc_title">NFC badge</string>
+    <string name="settings_nfc_associated_at">Associated with this device · %1$s</string>
+    <string name="settings_nfc_associated">Associated with this device</string>
+    <string name="settings_nfc_unassociated">Not associated with this device</string>
+    <string name="settings_nfc_status_pending">Pending</string>
+    <string name="settings_qr_title">QR badge</string>
+    <string name="settings_qr_subtitle">Printed · always available</string>
+
+    <!-- Home -->
+    <string name="home_user_default">User</string>
+    <string name="home_greeting_morning">Good morning</string>
+    <string name="home_greeting_afternoon">Good afternoon</string>
+    <string name="home_greeting_evening">Good evening</string>
+    <string name="home_greeting_late_night">Good night</string>
+    <string name="home_action_printers">Labels and printers</string>
+    <string name="home_action_identity">My identification</string>
+    <string name="home_action_logout">Sign out</string>
+    <string name="home_action_notifications">Notifications</string>
+    <string name="home_coming_soon">%1$s — coming soon</string>
+    <string name="home_module_review_title">Inspection</string>
+    <string name="home_module_review_subtitle">Merchandise</string>
+    <string name="home_module_entries_title">Receiving</string>
+    <string name="home_module_entries_subtitle">Warehouse intake</string>
+    <string name="home_module_load_title">Load merchandise</string>
+    <string name="home_module_load_subtitle">Loading and scanning</string>
+    <string name="home_module_relation_title">Manifest</string>
+    <string name="home_module_relation_subtitle">Supervision</string>
+    <string name="home_module_map_title">Map</string>
+    <string name="home_module_map_subtitle">Locations</string>
+    <string name="home_module_gate_operation_title">Gatehouse operation</string>
+    <string name="home_module_gate_operation_subtitle">Entry and control</string>
+    <string name="home_module_relation_exit_title">Manifest exit</string>
+    <string name="home_module_relation_exit_subtitle">Authorized · gatehouse</string>
+    <string name="home_module_systems_title">Systems</string>
+    <string name="home_module_systems_subtitle">Administration</string>
+    <string name="home_module_gate_title">Control</string>
+    <string name="home_module_gate_subtitle">Authorization</string>
+    <string name="home_module_gate_card_title">Gatehouse</string>
+    <string name="home_module_gate_card_subtitle">Entry, exit, and editing</string>
+    <string name="home_gate_label">GATEHOUSE</string>
+    <string name="home_gate_security_label">GATEHOUSE · SECURITY</string>
+    <string name="home_main_module_label">MAIN MODULE</string>
+    <string name="home_open">Open</string>
+    <string name="home_open_module">Open module</string>
+    <string name="home_open_workflow">Open workflow</string>
+    <string name="home_review_hero_description">Merchandise, packages, and physical validation</string>
+    <string name="home_gate_hero_description">Entry, exit, and vehicle control</string>
+    <string name="home_operation_hero_description">Operation: %1$s</string>
+    <string name="home_gate_description_full">Entry, exit, and editing at the security gatehouse</string>
+    <string name="home_sync">Sync %1$s</string>
+    <string name="home_version">v2.0.0</string>
+    <string name="home_coming_soon_label">Coming soon</string>
+
+    <!-- Home loading states -->
+    <string name="home_loading_session">Verifying your session</string>
+    <string name="home_loading_permissions">Checking your permissions</string>
+    <string name="home_loading_modules">Preparing your modules</string>
+    <string name="home_loading_personalizing">Personalizing your experience</string>
+    <string name="home_loading_wait">One more moment</string>
+    <string name="home_modules_error_title">We could not load your modules</string>
+    <string name="home_modules_error_message">Check your connection or VPN and try again.</string>
+    <string name="home_retry">Retry</string>
+    <string name="home_no_modules_title">No modules assigned</string>
+    <string name="home_no_modules_message">Your user does not currently have permission to operate PMMovil. Request access from Systems.</string>
+    <string name="home_no_modules_hint">When you receive a permission, sign out and sign in again to refresh the menu.</string>
+</resources>

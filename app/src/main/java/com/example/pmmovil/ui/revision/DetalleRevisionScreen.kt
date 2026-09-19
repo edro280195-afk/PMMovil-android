@@ -69,12 +69,15 @@ import androidx.compose.ui.window.Dialog
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.compose.ui.res.stringResource
+import com.example.pmmovil.R
 import com.example.pmmovil.data.diagnostics.RevisionDiagnostics
 import com.example.pmmovil.data.model.FacturaRevisionDto
 import com.example.pmmovil.data.model.PartidaRevisionDto
 import com.example.pmmovil.data.model.PaisDto
 import com.example.pmmovil.data.model.PaisFrecuenteDto
 import com.example.pmmovil.data.model.TipoMaterialDto
+import com.example.pmmovil.data.model.UnidadComercialDto
 import com.example.pmmovil.data.scanner.BarcodeValueNormalizer
 import com.example.pmmovil.ui.components.ConfettiOverlay
 import com.example.pmmovil.ui.components.PmmSnackbarHost
@@ -84,6 +87,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.example.pmmovil.ui.pdf.InlinePdfWorkspace
 import com.example.pmmovil.ui.theme.*
+import com.example.pmmovil.ui.localization.asString
 import java.util.Locale
 
 private data class ReviewClosureSummary(
@@ -96,7 +100,9 @@ private data class ReviewClosureSummary(
 
 private fun buildReviewClosureSummary(
     invoices: List<FacturaRevisionDto>,
-    parts: List<PartidaRevisionDto>
+    parts: List<PartidaRevisionDto>,
+    unknownInvoiceLabel: String,
+    unknownPartLabel: String
 ): ReviewClosureSummary {
     val incompleteInvoices = invoices
         .filter { it.StatusRev != 1 && it.StatusRev != 2 }
@@ -106,8 +112,8 @@ private fun buildReviewClosureSummary(
     val pendingPartDescriptions = parts
         .filterNot(PartidaRevisionDto::Revisada)
         .map { part ->
-            val invoice = part.Cnofact.trim().ifEmpty { "Factura desconocida" }
-            val number = part.CnoParte?.trim().orEmpty().ifEmpty { "Partida sin número" }
+            val invoice = part.Cnofact.trim().ifEmpty { unknownInvoiceLabel }
+            val number = part.CnoParte?.trim().orEmpty().ifEmpty { unknownPartLabel }
             "$invoice · $number"
         }
 
@@ -148,6 +154,7 @@ fun DetalleRevisionScreen(
     val paisesList    by viewModel.paises.collectAsState()
     val paisesFrecuentesList by viewModel.paisesFrecuentes.collectAsState()
     val tiposMaterialList by viewModel.tiposMaterial.collectAsState()
+    val unidadesComercialesList by viewModel.unidadesComerciales.collectAsState()
     val isEspectador  by viewModel.isEspectador.collectAsState()
     val entradaCerrada by viewModel.entradaCerrada.collectAsState()
     val relacionCerrada by viewModel.relacionCerrada.collectAsState()
@@ -157,9 +164,15 @@ fun DetalleRevisionScreen(
     val autoFinishPrompt by viewModel.autoFinishPrompt.collectAsState()
     val unlockApprovedSeq by viewModel.unlockApprovedSeq.collectAsState()
     val playUnlockApprovedAlert = rememberUnlockApprovedAlert()
+    val authorizedAlertText = stringResource(R.string.notification_entry_authorized)
+    val undoActionLabel = stringResource(R.string.revision_undo)
+    val toastText = toast?.asString()
+    val ultimaAcumulacionText = ultimaAcumulacion?.mensaje?.asString()
 
     LaunchedEffect(unlockApprovedSeq) {
-        if (unlockApprovedSeq > 0) playUnlockApprovedAlert("Entrada autorizada")
+        if (unlockApprovedSeq > 0) {
+            playUnlockApprovedAlert(authorizedAlertText)
+        }
     }
 
     val activePartidaIndex by viewModel.partidaActivaIndex.collectAsState()
@@ -189,7 +202,12 @@ fun DetalleRevisionScreen(
     var pdfPaneFraction by rememberSaveable { mutableFloatStateOf(0.48f) }
 
     val reviewClosureSummary = remember(facturas, todasLasPartidas) {
-        buildReviewClosureSummary(facturas, todasLasPartidas)
+        buildReviewClosureSummary(
+            facturas,
+            todasLasPartidas,
+            context.getString(R.string.revision_unknown_invoice),
+            context.getString(R.string.revision_part_without_number)
+        )
     }
 
     LaunchedEffect(showTerminarDialog, reviewClosureSummary.hasWarnings) {
@@ -225,8 +243,8 @@ fun DetalleRevisionScreen(
         }
     }
 
-    LaunchedEffect(toast) {
-        toast?.let {
+    LaunchedEffect(toast, toastText) {
+        toastText?.let {
             snackbarHostState.showSnackbar(it, duration = SnackbarDuration.Short)
             viewModel.clearToast()
         }
@@ -239,8 +257,8 @@ fun DetalleRevisionScreen(
     LaunchedEffect(ultimaAcumulacion) {
         ultimaAcumulacion?.let { evento ->
             val resultado = snackbarHostState.showSnackbar(
-                message = evento.mensaje,
-                actionLabel = "Deshacer",
+                message = ultimaAcumulacionText.orEmpty(),
+                actionLabel = undoActionLabel,
                 duration = SnackbarDuration.Long
             )
             if (resultado == SnackbarResult.ActionPerformed) {
@@ -258,9 +276,17 @@ fun DetalleRevisionScreen(
         shareUrl?.let { url ->
             val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                 type = "text/plain"
-                putExtra(android.content.Intent.EXTRA_TEXT, "Seguimiento de la revisión ${viewModel.crefAgrupada}: $url")
+                putExtra(
+                    android.content.Intent.EXTRA_TEXT,
+                    context.getString(R.string.revision_share_subject, viewModel.crefAgrupada, url)
+                )
             }
-            context.startActivity(android.content.Intent.createChooser(sendIntent, "Compartir seguimiento de revisión"))
+            context.startActivity(
+                android.content.Intent.createChooser(
+                    sendIntent,
+                    context.getString(R.string.revision_share_chooser)
+                )
+            )
             viewModel.consumeShareUrl()
         }
     }
@@ -283,9 +309,15 @@ fun DetalleRevisionScreen(
                 viewModel.procesarCodigoEscaneado(cleanCode)
             } else if (activePartida != null && field != null) {
                 viewModel.actualizarDatoPartida(activePartida, field, cleanCode)
-                snackbarHostState.showSnackbar("✓ Campo $field actualizado", duration = SnackbarDuration.Short)
+                snackbarHostState.showSnackbar(
+                    context.getString(R.string.revision_field_updated, field),
+                    duration = SnackbarDuration.Short
+                )
             } else {
-                snackbarHostState.showSnackbar("Escaneado: $cleanCode", duration = SnackbarDuration.Short)
+                snackbarHostState.showSnackbar(
+                    context.getString(R.string.revision_scanned, cleanCode),
+                    duration = SnackbarDuration.Short
+                )
             }
             fieldBeingScanned = null
             onBarcodeScanConsumed()
@@ -307,7 +339,7 @@ fun DetalleRevisionScreen(
             containerColor = PmmNavySurface,
             title = {
                 Text(
-                    "Revisión cerrada por supervisión",
+                    stringResource(R.string.revision_force_closed_title),
                     color = PmmTextPrimary,
                     fontWeight = FontWeight.Bold
                 )
@@ -316,16 +348,24 @@ fun DetalleRevisionScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         cierre.mensaje?.takeIf(String::isNotBlank)
-                            ?: "Tu sesión de revisión fue cerrada desde el panel de supervisión.",
+                            ?: stringResource(R.string.revision_force_closed_message),
                         color = PmmTextSecondary
                     )
                     Text(
-                        "Supervisor: ${cierre.supervisor?.takeIf(String::isNotBlank) ?: "No indicado"}",
+                        stringResource(
+                            R.string.revision_supervisor,
+                            cierre.supervisor?.takeIf(String::isNotBlank)
+                                ?: stringResource(R.string.revision_not_indicated)
+                        ),
                         color = PmmTextPrimary,
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        "Motivo: ${cierre.motivo?.takeIf(String::isNotBlank) ?: "No se indicó un motivo."}",
+                        stringResource(
+                            R.string.revision_reason,
+                            cierre.motivo?.takeIf(String::isNotBlank)
+                                ?: stringResource(R.string.revision_reason_not_indicated)
+                        ),
                         color = PmmTextSecondary
                     )
                 }
@@ -338,7 +378,10 @@ fun DetalleRevisionScreen(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = PmmBlueDeep)
                 ) {
-                    Text("Entendido", fontWeight = FontWeight.Bold)
+                    Text(
+                        stringResource(R.string.common_understood),
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         )
@@ -348,39 +391,52 @@ fun DetalleRevisionScreen(
         AlertDialog(
             onDismissRequest = { showTerminarDialog = false },
             containerColor = PmmNavySurface,
-            title = { Text("Terminar Revisión", color = PmmTextPrimary, fontWeight = FontWeight.Bold) },
+            title = {
+                Text(
+                    stringResource(R.string.revision_finish_title),
+                    color = PmmTextPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+            },
             text = {
                 if (reviewClosureSummary.hasWarnings) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
-                            "Hay información pendiente en esta revisión:",
+                            stringResource(R.string.revision_pending_information),
                             color = PmmTextPrimary,
                             fontWeight = FontWeight.SemiBold
                         )
                         if (reviewClosureSummary.incompleteInvoices.isNotEmpty()) {
                             Text(
-                                "Facturas pendientes o en proceso: ${reviewClosureSummary.incompleteInvoices.joinToString(", ")}",
+                                stringResource(
+                                    R.string.revision_incomplete_invoices,
+                                    reviewClosureSummary.incompleteInvoices.joinToString(", ")
+                                ),
                                 color = PmmTextSecondary
                             )
                             Text(
-                                "Al finalizar así se cerrará tu sesión, pero el correo de finalización no se enviará.",
+                                stringResource(R.string.revision_finish_without_email),
                                 color = PmmYellow
                             )
                         }
                         if (reviewClosureSummary.pendingPartDescriptions.isNotEmpty()) {
                             Text(
-                                "Partidas sin revisar (${reviewClosureSummary.pendingPartDescriptions.size}): ${reviewClosureSummary.pendingPartDescriptions.take(8).joinToString(", ")}",
+                                stringResource(
+                                    R.string.revision_unreviewed_parts,
+                                    reviewClosureSummary.pendingPartDescriptions.size,
+                                    reviewClosureSummary.pendingPartDescriptions.take(8).joinToString(", ")
+                                ),
                                 color = PmmTextSecondary
                             )
                         }
                         Text(
-                            "Revisa los datos antes de continuar.",
+                            stringResource(R.string.revision_review_before_continue),
                             color = PmmTextSecondary
                         )
                     }
                 } else {
                     Text(
-                        "Todas las facturas están completas. ¿Confirmas que deseas finalizar la revisión?",
+                        stringResource(R.string.revision_all_invoices_complete),
                         color = PmmTextSecondary
                     )
                 }
@@ -399,15 +455,15 @@ fun DetalleRevisionScreen(
                     if (finishCountdown > 0) {
                         Icon(Icons.Default.Timer, contentDescription = null)
                         Spacer(Modifier.width(6.dp))
-                        Text("Leer aviso (${finishCountdown}s)")
+                        Text(stringResource(R.string.revision_read_notice, finishCountdown))
                     } else {
-                        Text("Finalizar revisión")
+                        Text(stringResource(R.string.revision_finish))
                     }
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showTerminarDialog = false }) {
-                    Text("Cancelar", color = PmmTextSecondary)
+                    Text(stringResource(R.string.common_cancel), color = PmmTextSecondary)
                 }
             }
         )
@@ -417,10 +473,16 @@ fun DetalleRevisionScreen(
         AlertDialog(
             onDismissRequest = { viewModel.dismissAutoFinish() },
             containerColor = PmmNavySurface,
-            title = { Text("Todo listo", color = PmmTextPrimary, fontWeight = FontWeight.Bold) },
+            title = {
+                Text(
+                    stringResource(R.string.revision_all_done),
+                    color = PmmTextPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+            },
             text = {
                 Text(
-                    "Todas las facturas y partidas quedaron completas y revisadas. ¿Finalizar la revisión ahora?",
+                    stringResource(R.string.revision_all_complete_confirm),
                     color = PmmTextSecondary
                 )
             },
@@ -428,11 +490,13 @@ fun DetalleRevisionScreen(
                 Button(
                     onClick = { viewModel.confirmAutoFinish() },
                     colors = ButtonDefaults.buttonColors(containerColor = PmmGreen)
-                ) { Text("Finalizar revisión", fontWeight = FontWeight.Bold) }
+                ) {
+                    Text(stringResource(R.string.revision_finish), fontWeight = FontWeight.Bold)
+                }
             },
             dismissButton = {
                 TextButton(onClick = { viewModel.dismissAutoFinish() }) {
-                    Text("Todavía no", color = PmmTextSecondary)
+                    Text(stringResource(R.string.revision_not_yet), color = PmmTextSecondary)
                 }
             }
         )
@@ -443,10 +507,20 @@ fun DetalleRevisionScreen(
         AlertDialog(
             onDismissRequest = { showDiscrepanciaModal = false },
             containerColor = PmmNavySurface,
-            title = { Text("Registrar Discrepancia", color = PmmTextPrimary, fontWeight = FontWeight.Bold) },
+            title = {
+                Text(
+                    stringResource(R.string.revision_register_discrepancy),
+                    color = PmmTextPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+            },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Describe el problema detalladamente:", color = PmmTextSecondary, fontSize = 16.sp)
+                    Text(
+                        stringResource(R.string.revision_describe_problem),
+                        color = PmmTextSecondary,
+                        fontSize = 16.sp
+                    )
                     OutlinedTextField(
                         value = discText,
                         onValueChange = { discText = it },
@@ -472,11 +546,16 @@ fun DetalleRevisionScreen(
                         showDiscrepanciaModal = false
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = PmmRed)
-                ) { Text("Reportar Discrepancia", fontWeight = FontWeight.Bold) }
+                ) {
+                    Text(
+                        stringResource(R.string.revision_report_discrepancy),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             },
             dismissButton = {
                 TextButton(onClick = { showDiscrepanciaModal = false }) {
-                    Text("Cancelar", color = PmmTextSecondary)
+                    Text(stringResource(R.string.common_cancel), color = PmmTextSecondary)
                 }
             }
         )
@@ -488,17 +567,32 @@ fun DetalleRevisionScreen(
                 AlertDialog(
                     onDismissRequest = { viewModel.dismissValidationDialog() },
                     containerColor = PmmNavySurface,
-                    title = { Text("Diferencia de Bultos", color = PmmTextPrimary, fontWeight = FontWeight.Bold) },
-                    text = { Text("Los bultos físicos (${valState.bultos}) difieren del documento (${valState.bultosDoc}).\n¿Deseas marcarla como completa de todas formas?", color = PmmTextSecondary) },
+                    title = {
+                        Text(
+                            stringResource(R.string.revision_package_difference),
+                            color = PmmTextPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    },
+                    text = {
+                        Text(
+                            stringResource(
+                                R.string.revision_package_difference_message,
+                                valState.bultos,
+                                valState.bultosDoc
+                            ),
+                            color = PmmTextSecondary
+                        )
+                    },
                     confirmButton = {
                         Button(
                             onClick = { viewModel.onConfirmBultosDiferencia(valState.cnofact) },
                             colors = ButtonDefaults.buttonColors(containerColor = PmmYellow, contentColor = PmmBlueDeep)
-                        ) { Text("Completar", fontWeight = FontWeight.Bold) }
+                        ) { Text(stringResource(R.string.revision_complete), fontWeight = FontWeight.Bold) }
                     },
                     dismissButton = {
                         TextButton(onClick = { viewModel.dismissValidationDialog() }) {
-                            Text("Cancelar", color = PmmTextSecondary)
+                            Text(stringResource(R.string.common_cancel), color = PmmTextSecondary)
                         }
                     }
                 )
@@ -507,11 +601,19 @@ fun DetalleRevisionScreen(
                 AlertDialog(
                     onDismissRequest = { viewModel.dismissValidationDialog() },
                     containerColor = PmmNavySurface,
-                    title = { Text("Tomaste evidencia de discrepancia", color = PmmTextPrimary, fontWeight = FontWeight.Bold) },
+                    title = {
+                        Text(
+                            stringResource(R.string.revision_discrepancy_evidence_title),
+                            color = PmmTextPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    },
                     text = {
                         Text(
-                            "Esta factura tiene ${valState.cantidadFotos} foto(s) guardadas como evidencia de discrepancia, " +
-                                "pero la estás marcando como COMPLETA.\n\n¿El estado correcto no debería ser DISCREPANCIA?",
+                            stringResource(
+                                R.string.revision_discrepancy_evidence_message,
+                                valState.cantidadFotos
+                            ),
                             color = PmmTextSecondary
                         )
                     },
@@ -522,11 +624,19 @@ fun DetalleRevisionScreen(
                                 showDiscrepanciaModal = true
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = PmmRed)
-                        ) { Text("Marcar discrepancia", fontWeight = FontWeight.Bold) }
+                        ) {
+                            Text(
+                                stringResource(R.string.revision_mark_discrepancy),
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     },
                     dismissButton = {
                         TextButton(onClick = { viewModel.onConfirmEvidenciaDiscrepancia(valState.cnofact) }) {
-                            Text("Continuar como completa", color = PmmTextSecondary)
+                            Text(
+                                stringResource(R.string.revision_continue_complete),
+                                color = PmmTextSecondary
+                            )
                         }
                     }
                 )
@@ -535,22 +645,39 @@ fun DetalleRevisionScreen(
                 AlertDialog(
                     onDismissRequest = { viewModel.dismissValidationDialog() },
                     containerColor = PmmNavySurface,
-                    title = { Text("Materiales Peligrosos", color = PmmTextPrimary, fontWeight = FontWeight.Bold) },
+                    title = {
+                        Text(
+                            stringResource(R.string.revision_hazmat_title),
+                            color = PmmTextPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    },
                     text = {
                         Column {
-                            Text("Sin hojas de seguridad en las siguientes partidas:\n", color = PmmTextSecondary)
+                            Text(
+                                stringResource(R.string.revision_missing_safety_sheets),
+                                color = PmmTextSecondary
+                            )
                             valState.problemas.forEach { prob ->
                                 Text("• $prob", color = PmmAmber, fontSize = 15.sp)
                             }
                             Spacer(Modifier.height(8.dp))
-                            Text("Resuelve estos problemas en cuanto sea posible.", color = PmmTextSecondary)
+                            Text(
+                                stringResource(R.string.revision_resolve_issues),
+                                color = PmmTextSecondary
+                            )
                         }
                     },
                     confirmButton = {
                         Button(
                             onClick = { viewModel.onConfirmHazmatAlerta(valState.cnofact) },
                             colors = ButtonDefaults.buttonColors(containerColor = PmmYellow, contentColor = PmmBlueDeep)
-                        ) { Text("Entendido", fontWeight = FontWeight.Bold) }
+                        ) {
+                            Text(
+                                stringResource(R.string.common_understood),
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 )
             }
@@ -559,14 +686,33 @@ fun DetalleRevisionScreen(
                 AlertDialog(
                     onDismissRequest = { viewModel.dismissValidationDialog() },
                     containerColor = PmmNavySurface,
-                    title = { Text("Partidas sin Revisar", color = PmmTextPrimary, fontWeight = FontWeight.Bold) },
+                    title = {
+                        Text(
+                            stringResource(R.string.revision_unreviewed_parts_title),
+                            color = PmmTextPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    },
                     text = {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Existen ${valState.totalSinRevisar} partidas sin marcar como revisadas (ej: ${valState.ejemplos.joinToString(", ")}).\n\nExplique al supervisor por qué no se revisaron todas las partidas:", color = PmmTextSecondary)
+                            Text(
+                                stringResource(
+                                    R.string.revision_unreviewed_parts_message,
+                                    valState.totalSinRevisar,
+                                    valState.ejemplos.joinToString(", ")
+                                ),
+                                color = PmmTextSecondary
+                            )
                             OutlinedTextField(
                                 value = motivo,
                                 onValueChange = { motivo = it },
-                                label = { Text("Motivo de Cierre Incompleto", color = PmmTextMuted, fontSize = 15.sp) },
+                                label = {
+                                    Text(
+                                        stringResource(R.string.revision_incomplete_close_reason),
+                                        color = PmmTextMuted,
+                                        fontSize = 15.sp
+                                    )
+                                },
                                 modifier = Modifier.fillMaxWidth(),
                                 minLines = 2,
                                 colors = OutlinedTextFieldDefaults.colors(
@@ -584,11 +730,16 @@ fun DetalleRevisionScreen(
                             onClick = { viewModel.onConfirmPartidasSinRevisar(valState.cnofact, motivo) },
                             enabled = motivo.isNotBlank(),
                             colors = ButtonDefaults.buttonColors(containerColor = PmmYellow, contentColor = PmmBlueDeep)
-                        ) { Text("Enviar Solicitud", fontWeight = FontWeight.Bold) }
+                        ) {
+                            Text(
+                                stringResource(R.string.revision_send_request),
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     },
                     dismissButton = {
                         TextButton(onClick = { viewModel.dismissValidationDialog() }) {
-                            Text("Cancelar", color = PmmTextSecondary)
+                            Text(stringResource(R.string.common_cancel), color = PmmTextSecondary)
                         }
                     }
                 )
@@ -597,25 +748,50 @@ fun DetalleRevisionScreen(
                 AlertDialog(
                     onDismissRequest = { viewModel.dismissValidationDialog() },
                     containerColor = PmmNavySurface,
-                    title = { Text("Discrepancias Capturadas", color = PmmTextPrimary, fontWeight = FontWeight.Bold) },
-                    text = { Text("Tienes discrepancias: \"${valState.discrepancias}\"\n\n¿Ya fueron aclaradas?", color = PmmTextSecondary) },
+                    title = {
+                        Text(
+                            stringResource(R.string.revision_captured_discrepancies),
+                            color = PmmTextPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    },
+                    text = {
+                        Text(
+                            stringResource(
+                                R.string.revision_captured_discrepancies_message,
+                                valState.discrepancias
+                            ),
+                            color = PmmTextSecondary
+                        )
+                    },
                     confirmButton = {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             Button(
                                 onClick = { viewModel.onConfirmAclararDiscrepancias(valState.cnofact, false) },
                                 colors = ButtonDefaults.buttonColors(containerColor = PmmRed),
                                 modifier = Modifier.weight(1f)
-                            ) { Text("Sigue como discrepancia", color = Color.White) }
+                            ) {
+                                Text(
+                                    stringResource(R.string.revision_keep_discrepancy),
+                                    color = Color.White
+                                )
+                            }
                             Button(
                                 onClick = { viewModel.onConfirmAclararDiscrepancias(valState.cnofact, true) },
                                 colors = ButtonDefaults.buttonColors(containerColor = PmmGreen),
                                 modifier = Modifier.weight(1f)
-                            ) { Text("Aclaradas", color = Color.White, fontWeight = FontWeight.Bold) }
+                            ) {
+                                Text(
+                                    stringResource(R.string.revision_clarified),
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     },
                     dismissButton = {
                         TextButton(onClick = { viewModel.dismissValidationDialog() }) {
-                            Text("Cancelar", color = PmmTextSecondary)
+                            Text(stringResource(R.string.common_cancel), color = PmmTextSecondary)
                         }
                     }
                 )
@@ -733,7 +909,7 @@ fun DetalleRevisionScreen(
                     }
 
                     facturas.isEmpty() -> {
-                        RevisionEmptyState(error)
+                        RevisionEmptyState(error?.asString())
                     }
 
                     showInvoicePane -> {
@@ -801,7 +977,8 @@ fun DetalleRevisionScreen(
                                 paises = paisesList,
                                 paisesFrecuentes = paisesFrecuentesList,
                                 tiposMaterial = tiposMaterialList,
-                                error = error,
+                                unidadesComerciales = unidadesComercialesList,
+                                error = error?.asString(),
                                 isLocked = isFacturaLocked,
                                 isWorkflowLocked = revisionBloqueada,
                                 canAddPartida = puedeAgregarRevision,
@@ -863,6 +1040,9 @@ fun DetalleRevisionScreen(
                                         field,
                                         value
                                     )
+                                },
+                                onUpdateCantidadComercial = { partida, cantidad, unidad ->
+                                    viewModel.actualizarCantidadComercial(partida, cantidad, unidad)
                                 },
                                 onQuickFill = { partida, field, value ->
                                     viewModel.quickFillPartida(
@@ -960,7 +1140,8 @@ fun DetalleRevisionScreen(
                             paises = paisesList,
                             paisesFrecuentes = paisesFrecuentesList,
                             tiposMaterial = tiposMaterialList,
-                            error = error,
+                            unidadesComerciales = unidadesComercialesList,
+                            error = error?.asString(),
                             isLocked = isFacturaLocked,
                             isWorkflowLocked = revisionBloqueada,
                             canAddPartida = puedeAgregarRevision,
@@ -1022,6 +1203,9 @@ fun DetalleRevisionScreen(
                                     field,
                                     value
                                 )
+                            },
+                            onUpdateCantidadComercial = { partida, cantidad, unidad ->
+                                viewModel.actualizarCantidadComercial(partida, cantidad, unidad)
                             },
                             onQuickFill = { partida, field, value ->
                                 viewModel.quickFillPartida(
@@ -1111,7 +1295,7 @@ private fun RevisionTopBar(
                     IconButton(onClick = onBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Volver",
+                            contentDescription = stringResource(R.string.common_back),
                             tint = Color.White
                         )
                     }
@@ -1130,7 +1314,7 @@ private fun RevisionTopBar(
                         ) {
                             if (!compact) {
                                 Text(
-                                    text = "Revisión normal",
+                                    text = stringResource(R.string.revision_normal_mode),
                                     color = Color.White.copy(alpha = 0.66f),
                                     fontSize = 14.sp,
                                     maxLines = 1,
@@ -1151,7 +1335,10 @@ private fun RevisionTopBar(
                             )
                             if (!compact) {
                                 Text(
-                                    text = if (isConnected) "En línea" else "Reconectando",
+                                    text = stringResource(
+                                        if (isConnected) R.string.revision_online
+                                        else R.string.revision_reconnecting
+                                    ),
                                     color = if (isConnected) {
                                         Color(0xFF86EFAC)
                                     } else {
@@ -1184,7 +1371,7 @@ private fun RevisionTopBar(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Timer,
-                                contentDescription = "Tiempo de revisión",
+                                contentDescription = stringResource(R.string.revision_timer_content_description),
                                 tint = PmmYellow,
                                 modifier = Modifier.size(15.dp)
                             )
@@ -1223,7 +1410,7 @@ private fun RevisionTopBar(
                     ) {
                         Icon(
                             imageVector = Icons.Default.PhotoCamera,
-                            contentDescription = "Fotos de la revisión",
+                                contentDescription = stringResource(R.string.revision_photos_content_description),
                                 tint = if (hasActiveInvoice && canAddPhoto) {
                                     Color.White
                                 } else {
@@ -1234,7 +1421,7 @@ private fun RevisionTopBar(
                         if (!compact) {
                             Spacer(Modifier.width(6.dp))
                             Text(
-                                text = "Fotos",
+                            text = stringResource(R.string.revision_photos),
                                 color = if (hasActiveInvoice && canAddPhoto) {
                                     Color.White
                                 } else {
@@ -1269,7 +1456,7 @@ private fun RevisionTopBar(
                     ) {
                         Icon(
                             imageVector = Icons.Default.PhotoLibrary,
-                            contentDescription = "Galería de fotos",
+                                contentDescription = stringResource(R.string.revision_gallery_content_description),
                             tint = if (hasActiveInvoice) {
                                 Color.White
                             } else {
@@ -1290,9 +1477,9 @@ private fun RevisionTopBar(
                         Icon(
                             imageVector = Icons.Default.PictureAsPdf,
                             contentDescription = if (isPdfOpen) {
-                                "Cerrar PDF"
+                                stringResource(R.string.common_close_message)
                             } else {
-                                "Abrir PDF junto a la captura"
+                                stringResource(R.string.revision_open_pdf)
                             },
                             tint = if (isPdfOpen) PmmYellow else Color.White
                         )
@@ -1303,7 +1490,7 @@ private fun RevisionTopBar(
                         } else {
                             Icon(
                                 imageVector = Icons.Default.Share,
-                                contentDescription = "Compartir seguimiento de la entrada",
+                                contentDescription = stringResource(R.string.revision_share_entry_content_description),
                                 tint = Color.White
                             )
                         }
@@ -1343,7 +1530,7 @@ private fun RevisionCompletionBar(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "Progreso de revisión",
+                        text = stringResource(R.string.revision_progress),
                         color = PmmTextSecondary,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold,
@@ -1351,7 +1538,7 @@ private fun RevisionCompletionBar(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = "$completed de $total facturas",
+                        text = stringResource(R.string.revision_invoice_progress, completed, total),
                         color = if (progress >= 1f) PmmGreen else PmmBlueDeep,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
@@ -1391,9 +1578,9 @@ private fun RevisionCompletionBar(
                 Spacer(Modifier.width(7.dp))
                 Text(
                     text = when {
-                        enabled -> "Finalizar"
-                        isSpectator -> "Solo lectura"
-                        else -> "Finalizada"
+                        enabled -> stringResource(R.string.revision_finish_short)
+                        isSpectator -> stringResource(R.string.revision_read_only)
+                        else -> stringResource(R.string.revision_finished)
                     },
                     fontWeight = FontWeight.Bold
                 )
@@ -1445,7 +1632,7 @@ private fun RevisionContextBanner(
                 )
                 Spacer(Modifier.width(7.dp))
                 Text(
-                    text = "$name está observando esta sesión",
+                    text = stringResource(R.string.revision_observing, name),
                     color = PmmBlueDeep,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold
@@ -1494,13 +1681,13 @@ private fun RevisionContextBanner(
                     Spacer(Modifier.width(8.dp))
                     Column {
                         Text(
-                            text = "Revisión finalizada",
+                            text = stringResource(R.string.revision_finished),
                             color = PmmAmberDark,
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp
                         )
                         Text(
-                            text = "Editando con autorización especial.",
+                            text = stringResource(R.string.revision_special_authorization),
                             color = PmmTextSecondary,
                             fontSize = 13.sp
                         )
@@ -1509,9 +1696,11 @@ private fun RevisionContextBanner(
 
                 else -> {
                     val titulo = if (isClosed) {
-                        "Revisión finalizada"
+                        stringResource(R.string.revision_finished)
                     } else {
-                        assignedUser?.let { "En uso por $it" } ?: "En uso por otro usuario"
+                        assignedUser?.let {
+                            stringResource(R.string.assignments_in_use, it)
+                        } ?: stringResource(R.string.revision_in_use_by_other)
                     }
                     UnlockActionBanner(titulo = titulo, mostrarPulso = state == "esperando") {
                         when (state) {
@@ -1712,7 +1901,7 @@ private fun RelacionCerradaChip() {
         )
         Spacer(Modifier.width(7.dp))
         Text(
-            text = "Relación cerrada · no se puede solicitar edición",
+            text = stringResource(R.string.revision_closed_no_edit),
             color = PmmRedDark,
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold
@@ -1740,7 +1929,7 @@ private fun EsperandoAutorizacionChip(onCancelUnlock: () -> Unit) {
         )
         Spacer(Modifier.width(8.dp))
         Text(
-            text = "Esperando autorización",
+            text = stringResource(R.string.revision_waiting_authorization),
             color = PmmAmberDark,
             fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold,
@@ -1754,7 +1943,11 @@ private fun EsperandoAutorizacionChip(onCancelUnlock: () -> Unit) {
             ),
             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
         ) {
-            Text("Cancelar", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text(
+                stringResource(R.string.common_cancel),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
@@ -1785,7 +1978,7 @@ private fun SolicitarAccesoForm(
             },
             placeholder = {
                 Text(
-                    text = "Motivo para solicitar acceso",
+                    text = stringResource(R.string.revision_access_reason_hint),
                     fontSize = 13.sp
                 )
             },
@@ -1810,7 +2003,11 @@ private fun SolicitarAccesoForm(
                 spotColor = PmmRed.copy(alpha = 0.4f)
             )
         ) {
-            Text("Solicitar", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            Text(
+                stringResource(R.string.common_request),
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp
+            )
         }
     }
 }
@@ -1825,7 +2022,7 @@ private fun RevisionLoadingState() {
             CircularProgressIndicator(color = PmmBlueDeep)
             Spacer(Modifier.height(12.dp))
             Text(
-                text = "Preparando revisión...",
+                text = stringResource(R.string.common_preparing_review),
                 color = PmmTextSecondary,
                 fontSize = 15.sp
             )
@@ -1851,7 +2048,7 @@ private fun RevisionEmptyState(error: String?) {
             )
             Spacer(Modifier.height(12.dp))
             Text(
-                text = "No hay facturas disponibles",
+                text = stringResource(R.string.common_no_invoices),
                 color = PmmTextPrimary,
                 fontWeight = FontWeight.Bold
             )
@@ -1917,13 +2114,17 @@ private fun InvoiceSidebar(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    text = "Facturas",
+                    text = stringResource(R.string.revision_invoices),
                     color = PmmTextPrimary,
                     fontWeight = FontWeight.Bold,
                     fontSize = 19.sp
                 )
                 Text(
-                    text = "$completed de ${facturas.size} completas",
+                    text = stringResource(
+                        R.string.assignments_progress_count,
+                        completed,
+                        facturas.size
+                    ),
                     color = PmmTextSecondary,
                     fontSize = 14.sp
                 )
@@ -1941,12 +2142,12 @@ private fun InvoiceSidebar(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     RevisionMetric(
-                        label = "Bultos",
+                        label = stringResource(R.string.revision_physical_packages),
                         value = bultos.toString(),
                         modifier = Modifier.weight(1f)
                     )
                     RevisionMetric(
-                        label = "Peso",
+                        label = stringResource(R.string.revision_weight_kg),
                         value = "${String.format(Locale.US, "%.0f", weight)} kg",
                         modifier = Modifier.weight(1f)
                     )
@@ -1973,7 +2174,7 @@ private fun InvoiceSidebar(
                 if (facturas.isEmpty()) {
                     item {
                         Text(
-                            text = "No hay facturas disponibles",
+                            text = stringResource(R.string.common_no_invoices),
                             color = PmmTextSecondary,
                             fontSize = 12.sp,
                             modifier = Modifier.padding(8.dp)
@@ -2024,10 +2225,10 @@ private fun InvoiceSidebarItem(
         else -> PmmTextMuted
     }
     val statusLabel = when (invoice.StatusRev) {
-        1 -> "Completa"
-        2 -> "Diferencia"
-        3 -> "En proceso"
-        else -> "Pendiente"
+        1 -> stringResource(R.string.assignments_status_review_finished)
+        2 -> stringResource(R.string.revision_status_discrepancy)
+        3 -> stringResource(R.string.assignments_status_in_progress_label)
+        else -> stringResource(R.string.assignments_status_pending)
     }
 
     Surface(
@@ -2063,7 +2264,7 @@ private fun InvoiceSidebarItem(
                 )
             }
             Text(
-                text = invoice.NombreProveedor ?: "Proveedor sin nombre",
+                text = invoice.NombreProveedor ?: stringResource(R.string.revision_supplier),
                 color = PmmTextSecondary,
                 fontSize = 13.sp,
                 maxLines = 2,
@@ -2090,6 +2291,7 @@ private fun RevisionMainContent(
     paises: List<PaisDto>,
     paisesFrecuentes: List<PaisFrecuenteDto>,
     tiposMaterial: List<TipoMaterialDto>,
+    unidadesComerciales: List<UnidadComercialDto>,
     error: String?,
     isLocked: Boolean,
     isWorkflowLocked: Boolean,
@@ -2116,6 +2318,7 @@ private fun RevisionMainContent(
     onBusquedaScan: () -> Unit,
     onJumpPartida: (Int) -> Unit,
     onUpdatePartida: (PartidaRevisionDto, String, Any) -> Unit,
+    onUpdateCantidadComercial: (PartidaRevisionDto, Double, String) -> Unit,
     onQuickFill: (PartidaRevisionDto, String, String) -> Unit,
     onScan: (String) -> Unit,
     onTogglePartida: (PartidaRevisionDto) -> Unit,
@@ -2207,6 +2410,7 @@ private fun RevisionMainContent(
                     paises = paises,
                     paisesFrecuentes = paisesFrecuentes,
                     tiposMaterial = tiposMaterial,
+                    unidadesComerciales = unidadesComerciales,
                     isLocked = isLocked,
                     canAddPartida = canAddPartida,
                     canDeletePartida = canDeletePartida,
@@ -2214,6 +2418,7 @@ private fun RevisionMainContent(
                     onFiltroChange = onFilterPartidas,
                     onJump = onJumpPartida,
                     onValueChange = onUpdatePartida,
+                    onCantidadComercialChange = onUpdateCantidadComercial,
                     onQuickFill = onQuickFill,
                     onScan = onScan,
                     onTogglePartida = { partida ->
@@ -2288,6 +2493,7 @@ private fun PartidasSection(
     paises: List<PaisDto>,
     paisesFrecuentes: List<PaisFrecuenteDto>,
     tiposMaterial: List<TipoMaterialDto>,
+    unidadesComerciales: List<UnidadComercialDto>,
     isLocked: Boolean,
     canAddPartida: Boolean,
     canDeletePartida: Boolean,
@@ -2295,6 +2501,7 @@ private fun PartidasSection(
     onFiltroChange: (String) -> Unit,
     onJump: (Int) -> Unit,
     onValueChange: (PartidaRevisionDto, String, Any) -> Unit,
+    onCantidadComercialChange: (PartidaRevisionDto, Double, String) -> Unit,
     onQuickFill: (PartidaRevisionDto, String, String) -> Unit,
     onScan: (String) -> Unit,
     onTogglePartida: (PartidaRevisionDto) -> Unit,
@@ -2344,7 +2551,7 @@ private fun PartidasSection(
                         )
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            text = "No hay partidas en este filtro",
+                            text = stringResource(R.string.revision_no_parts_in_filter),
                             color = PmmTextSecondary,
                             fontSize = 15.sp
                         )
@@ -2399,9 +2606,13 @@ private fun PartidasSection(
                                 paises = paises,
                                 paisesFrecuentes = paisesFrecuentes,
                                 tiposMaterial = tiposMaterial,
+                                unidadesComerciales = unidadesComerciales,
                                 isLocked = isLocked,
                                 onValueChange = { field, value ->
                                     onValueChange(partida, field, value)
+                                },
+                                onCantidadComercialChange = { cantidad, unidad ->
+                                    onCantidadComercialChange(partida, cantidad, unidad)
                                 },
                                 onQuickFill = { field, value ->
                                     onQuickFill(partida, field, value)
@@ -2476,7 +2687,7 @@ private fun BuscadorPartidaBar(
                 modifier = Modifier.size(17.dp)
             )
             Text(
-                text = "Buscar en toda la revisión",
+                text = stringResource(R.string.revision_search_all),
                 color = PmmBlueDeep,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold
@@ -2496,9 +2707,11 @@ private fun BuscadorPartidaBar(
                     }
                 },
             singleLine = true,
-            label = { Text("Factura, producto o proveedor", fontSize = 12.sp) },
+            label = {
+                Text(stringResource(R.string.revision_invoice_product_supplier), fontSize = 12.sp)
+            },
             placeholder = {
-                Text("Escribe o escanea para ubicarlo", fontSize = 13.sp)
+                Text(stringResource(R.string.revision_search_help), fontSize = 13.sp)
             },
             leadingIcon = {
                 Icon(Icons.Default.Search, contentDescription = null)
@@ -2511,7 +2724,7 @@ private fun BuscadorPartidaBar(
                     }) {
                         Icon(
                             Icons.Default.QrCodeScanner,
-                            contentDescription = "Escanear número de parte",
+                            contentDescription = stringResource(R.string.revision_scan_part_number),
                         )
                     }
                     if (query.isNotEmpty()) {
@@ -2519,7 +2732,10 @@ private fun BuscadorPartidaBar(
                             resultadosExpandidos = false
                             onQueryChange("")
                         }) {
-                            Icon(Icons.Default.Close, contentDescription = "Limpiar búsqueda")
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = stringResource(R.string.common_clear_search)
+                            )
                         }
                     }
                 }
@@ -2577,8 +2793,16 @@ private fun BuscadorPartidaBar(
                             modifier = Modifier.size(26.dp)
                         )
                         Spacer(Modifier.height(6.dp))
-                        Text("Sin coincidencias para \"$query\"", color = PmmTextSecondary, fontSize = 13.sp)
-                        Text("Revisa mayúsculas o guiones", color = PmmTextMuted, fontSize = 11.sp)
+                        Text(
+                            stringResource(R.string.revision_no_matches_for, query),
+                            color = PmmTextSecondary,
+                            fontSize = 13.sp
+                        )
+                        Text(
+                            stringResource(R.string.revision_check_case_or_dashes),
+                            color = PmmTextMuted,
+                            fontSize = 11.sp
+                        )
                     }
                 } else {
                     LazyColumn(
@@ -2589,7 +2813,7 @@ private fun BuscadorPartidaBar(
                         if (resultadosFactura.isNotEmpty()) {
                             item(key = "busqueda-header-facturas") {
                                 BusquedaResultadosHeader(
-                                    title = "FACTURAS",
+                                    title = stringResource(R.string.revision_search_invoices),
                                     count = resultadosFactura.size
                                 )
                             }
@@ -2611,7 +2835,7 @@ private fun BuscadorPartidaBar(
                         if (resultadosProducto.isNotEmpty()) {
                             item(key = "busqueda-header-productos") {
                                 BusquedaResultadosHeader(
-                                    title = "PRODUCTOS / PARTIDAS",
+                                    title = stringResource(R.string.revision_search_products),
                                     count = resultadosProducto.size
                                 )
                             }
@@ -2637,7 +2861,7 @@ private fun BuscadorPartidaBar(
                         if (resultados.size == 1) {
                             item(key = "busqueda-footer") {
                                 Text(
-                                    text = "Coincidencia única — toca el resultado para abrirlo",
+                                    text = stringResource(R.string.revision_unique_match),
                                     color = PmmBlueMid,
                                     fontSize = 10.5.sp,
                                     modifier = Modifier
@@ -2707,9 +2931,10 @@ private fun ResultadoBusquedaRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = if (resultado.tipo == TipoResultadoBusqueda.FACTURA) {
-                    "Factura ${resultado.factura.Cnofact}"
+                    stringResource(R.string.revision_invoice_found, resultado.factura.Cnofact)
                 } else {
-                    partida?.CnoParte?.takeIf(String::isNotBlank) ?: "Sin número de parte"
+                    partida?.CnoParte?.takeIf(String::isNotBlank)
+                        ?: stringResource(R.string.revision_part_without_number)
                 },
                 color = PmmTextPrimary,
                 fontWeight = FontWeight.Bold,
@@ -2718,10 +2943,10 @@ private fun ResultadoBusquedaRow(
             Text(
                 text = if (resultado.tipo == TipoResultadoBusqueda.FACTURA) {
                     resultado.factura.NombreProveedor?.takeIf(String::isNotBlank)
-                        ?.let { "Proveedor: $it" }
-                        ?: "Factura encontrada"
+                        ?.let { stringResource(R.string.revision_supplier_found, it) }
+                        ?: stringResource(R.string.revision_invoice_result)
                 } else {
-                    partida?.cDescripcion ?: "Sin descripción"
+                    partida?.cDescripcion ?: stringResource(R.string.revision_without_description)
                 },
                 color = PmmTextSecondary,
                 fontSize = 11.5.sp,
@@ -2734,9 +2959,9 @@ private fun ResultadoBusquedaRow(
             Surface(shape = RoundedCornerShape(999.dp), color = PmmNavyVariant) {
                 Text(
                     text = if (resultado.tipo == TipoResultadoBusqueda.FACTURA) {
-                        "FACTURA"
+                        stringResource(R.string.revision_invoices).uppercase()
                     } else {
-                        "Fact. ${resultado.factura.Cnofact}"
+                        stringResource(R.string.revision_invoice_short, resultado.factura.Cnofact)
                     },
                     color = PmmBlueMid,
                     fontSize = 9.5.sp,
@@ -2746,9 +2971,9 @@ private fun ResultadoBusquedaRow(
             }
             Text(
                 text = if (resultado.tipo == TipoResultadoBusqueda.FACTURA) {
-                    "Toca para abrir"
+                    stringResource(R.string.revision_tap_to_open)
                 } else {
-                    "Partida ${resultado.posicion}"
+                    stringResource(R.string.revision_part_result, resultado.posicion ?: 0)
                 },
                 color = PmmTextMuted,
                 fontSize = 10.sp,
@@ -2815,7 +3040,7 @@ private fun PartidaNavigatorAgrupado(
             }
 
             Text(
-                text = "Toca un rango para ver sus partidas",
+                text = stringResource(R.string.revision_tap_range),
                 color = PmmTextMuted,
                 fontSize = 12.sp
             )
@@ -2869,10 +3094,10 @@ private fun PartidaNavigatorAgrupado(
                     imageVector = Icons.Default.ChevronLeft,
                     contentDescription = null
                 )
-                Text("Anterior")
+                Text(stringResource(R.string.revision_previous))
             }
             Text(
-                text = "Partida $activeIndex de ${partidas.size}",
+                text = stringResource(R.string.revision_part_counter, activeIndex, partidas.size),
                 color = PmmTextSecondary,
                 fontSize = 14.sp,
                 textAlign = TextAlign.Center,
@@ -2882,7 +3107,7 @@ private fun PartidaNavigatorAgrupado(
                 onClick = { onJump(1) },
                 enabled = activeIndex < partidas.size
             ) {
-                Text("Siguiente")
+                Text(stringResource(R.string.revision_next))
                 Icon(
                     imageVector = Icons.Default.ChevronRight,
                     contentDescription = null
@@ -2998,7 +3223,7 @@ private fun PartidaActions(
                 modifier = Modifier.size(17.dp)
             )
             Spacer(Modifier.width(5.dp))
-            Text("Eliminar")
+            Text(stringResource(R.string.revision_delete))
         }
         OutlinedButton(
             onClick = onAdd,
@@ -3015,7 +3240,7 @@ private fun PartidaActions(
                 modifier = Modifier.size(17.dp)
             )
             Spacer(Modifier.width(5.dp))
-            Text("Agregar partida")
+            Text(stringResource(R.string.revision_add_part))
         }
     }
 }
@@ -3045,7 +3270,12 @@ private fun FacturaCarrusel(
         ) {
             Icon(Icons.Default.Description, null, modifier = Modifier.size(16.dp), tint = PmmYellow)
             Spacer(Modifier.width(6.dp))
-            Text("Facturas", color = PmmTextPrimary, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            Text(
+                stringResource(R.string.revision_invoices),
+                color = PmmTextPrimary,
+                fontWeight = FontWeight.Bold,
+                fontSize = 17.sp
+            )
             Spacer(Modifier.width(6.dp))
             Text(
                 text = "(${facturas.size})",
@@ -3142,7 +3372,7 @@ private fun FacturaCarrusel(
         }
         if (facturas.isEmpty()) {
             Text(
-                text = "No hay facturas que coincidan con el filtro",
+                text = stringResource(R.string.revision_no_matching_invoices),
                 color = PmmTextSecondary,
                 fontSize = 12.sp,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -3170,7 +3400,7 @@ private fun FacturaDetalle(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Factura ${factura.Cnofact}",
+                            text = stringResource(R.string.revision_invoice_found, factura.Cnofact),
                     color = PmmTextPrimary,
                     fontWeight = FontWeight.Bold,
                     fontSize = 24.sp,
@@ -3181,7 +3411,7 @@ private fun FacturaDetalle(
                     text = listOfNotNull(
                         factura.dFecha,
                         factura.Cpedido?.takeIf { it.isNotBlank() }
-                            ?.let { "Pedido $it" }
+                            ?.let { stringResource(R.string.revision_order, it) }
                     ).joinToString(" · "),
                     color = PmmTextSecondary,
                     fontSize = 15.sp,
@@ -3209,7 +3439,7 @@ private fun FacturaDetalle(
                         )
                         Spacer(Modifier.width(5.dp))
                         Text(
-                            text = "Solo lectura",
+                            text = stringResource(R.string.revision_read_only),
                             color = PmmAmberDark,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
@@ -3230,8 +3460,8 @@ private fun FacturaDetalle(
             ) {
                 SectionHeading(
                     icon = Icons.Default.Description,
-                    title = "Documento",
-                    subtitle = "Información declarada en la factura"
+                    title = stringResource(R.string.revision_document),
+                    subtitle = stringResource(R.string.revision_declared_invoice_info)
                 )
                 Button(
                     onClick = onOpenPdf,
@@ -3250,20 +3480,20 @@ private fun FacturaDetalle(
                         modifier = Modifier.size(19.dp)
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text("Abrir documento PDF", fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.revision_open_pdf), fontWeight = FontWeight.Bold)
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     DataField(
-                        label = "Proveedor",
-                        value = factura.NombreProveedor ?: "Sin información",
+                        label = stringResource(R.string.revision_supplier),
+                        value = factura.NombreProveedor ?: stringResource(R.string.common_no_data),
                         modifier = Modifier.weight(1f)
                     )
                     DataField(
-                        label = "Cliente",
-                        value = factura.NombreCliente ?: "Sin información",
+                        label = stringResource(R.string.revision_customer),
+                        value = factura.NombreCliente ?: stringResource(R.string.common_no_data),
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -3272,12 +3502,12 @@ private fun FacturaDetalle(
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     DataField(
-                        label = "Bultos documento",
+                        label = stringResource(R.string.revision_document_packages),
                         value = factura.TotBultosDoc.toString(),
                         modifier = Modifier.weight(1f)
                     )
                     DataField(
-                        label = "Peso documento",
+                        label = stringResource(R.string.revision_document_weight),
                         value = "${String.format(Locale.US, "%.2f", factura.nPesoKgs)} kg",
                         modifier = Modifier.weight(1f)
                     )
@@ -3340,8 +3570,8 @@ private fun InspeccionFisicaCard(
         ) {
             SectionHeading(
                 icon = Icons.Default.Inventory2,
-                title = "Inspección física",
-                subtitle = "Captura lo encontrado en bodega"
+                title = stringResource(R.string.revision_physical_inspection),
+                subtitle = stringResource(R.string.revision_warehouse_capture)
             )
 
             BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
@@ -3351,7 +3581,7 @@ private fun InspeccionFisicaCard(
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         RevisionInput(
-                            label = "Peso lb",
+                            label = stringResource(R.string.revision_weight_lb),
                             value = localPesoLbs,
                             onValueChange = ::onPesoLbsChanged,
                             onCommit = {
@@ -3365,7 +3595,7 @@ private fun InspeccionFisicaCard(
                             modifier = Modifier.weight(1f)
                         )
                         RevisionInput(
-                            label = "Peso kg",
+                            label = stringResource(R.string.revision_weight_kg),
                             value = localPesoKgs,
                             onValueChange = ::onPesoKgsChanged,
                             onCommit = {
@@ -3379,7 +3609,7 @@ private fun InspeccionFisicaCard(
                             modifier = Modifier.weight(1f)
                         )
                         RevisionInput(
-                            label = "Bultos físicos",
+                            label = stringResource(R.string.revision_physical_packages),
                             value = localBultos,
                             onValueChange = { localBultos = it },
                             onCommit = {
@@ -3393,7 +3623,7 @@ private fun InspeccionFisicaCard(
                             modifier = Modifier.weight(1f)
                         )
                         RevisionInput(
-                            label = "Bultos documento",
+                            label = stringResource(R.string.revision_document_packages),
                             value = localBultosDoc,
                             onValueChange = { localBultosDoc = it },
                             onCommit = {
@@ -3415,7 +3645,7 @@ private fun InspeccionFisicaCard(
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             RevisionInput(
-                                label = "Peso lb",
+                                label = stringResource(R.string.revision_weight_lb),
                                 value = localPesoLbs,
                                 onValueChange = ::onPesoLbsChanged,
                                 onCommit = {
@@ -3429,7 +3659,7 @@ private fun InspeccionFisicaCard(
                                 modifier = Modifier.weight(1f)
                             )
                             RevisionInput(
-                                label = "Peso kg",
+                                label = stringResource(R.string.revision_weight_kg),
                                 value = localPesoKgs,
                                 onValueChange = ::onPesoKgsChanged,
                                 onCommit = {
@@ -3444,7 +3674,7 @@ private fun InspeccionFisicaCard(
                             )
                         }
                         RevisionInput(
-                            label = "Bultos físicos",
+                            label = stringResource(R.string.revision_physical_packages),
                             value = localBultos,
                             onValueChange = { localBultos = it },
                             onCommit = {
@@ -3458,7 +3688,7 @@ private fun InspeccionFisicaCard(
                             modifier = Modifier.fillMaxWidth()
                         )
                         RevisionInput(
-                            label = "Bultos documento",
+                            label = stringResource(R.string.revision_document_packages),
                             value = localBultosDoc,
                             onValueChange = { localBultosDoc = it },
                             onCommit = {
@@ -3481,7 +3711,7 @@ private fun InspeccionFisicaCard(
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         RevisionInput(
-                            label = "Marcas",
+                            label = stringResource(R.string.revision_marks),
                             value = localMarcas,
                             onValueChange = { localMarcas = it },
                             onCommit = {
@@ -3496,7 +3726,7 @@ private fun InspeccionFisicaCard(
                             modifier = Modifier.weight(1f)
                         )
                         RevisionInput(
-                            label = "Números",
+                            label = stringResource(R.string.revision_numbers),
                             value = localNumeros,
                             onValueChange = { localNumeros = it },
                             onCommit = {
@@ -3516,7 +3746,7 @@ private fun InspeccionFisicaCard(
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         RevisionInput(
-                            label = "Marcas",
+                            label = stringResource(R.string.revision_marks),
                             value = localMarcas,
                             onValueChange = { localMarcas = it },
                             onCommit = {
@@ -3531,7 +3761,7 @@ private fun InspeccionFisicaCard(
                             modifier = Modifier.fillMaxWidth()
                         )
                         RevisionInput(
-                            label = "Números",
+                            label = stringResource(R.string.revision_numbers),
                             value = localNumeros,
                             onValueChange = { localNumeros = it },
                             onCommit = {
@@ -3550,7 +3780,7 @@ private fun InspeccionFisicaCard(
             }
 
             RevisionInput(
-                label = "Observaciones de revisión",
+                label = stringResource(R.string.revision_review_notes),
                 value = localObs,
                 onValueChange = { localObs = it },
                 onCommit = {
@@ -3594,7 +3824,7 @@ private fun DiscrepanciaInfoBanners(factura: FacturaRevisionDto) {
                     Spacer(Modifier.width(9.dp))
                     Column {
                         Text(
-                            text = "Discrepancia registrada",
+                            text = stringResource(R.string.revision_discrepancy_registered),
                             color = PmmRedDark,
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp
@@ -3616,7 +3846,7 @@ private fun DiscrepanciaInfoBanners(factura: FacturaRevisionDto) {
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     Text(
-                        text = "Historial de aclaraciones",
+                        text = stringResource(R.string.revision_clarification_history),
                         color = PmmBlueDeep,
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp
@@ -3656,19 +3886,19 @@ private fun ObservacionGeneralCard(
         ) {
             Column {
                 Text(
-                    text = "Observación general de la revisión",
+                    text = stringResource(R.string.revision_general_observation_title),
                     color = PmmTextPrimary,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Aplica a toda la entrada, no a una factura en particular",
+                    text = stringResource(R.string.revision_general_observation_subtitle),
                     color = PmmTextMuted,
                     fontSize = 13.sp
                 )
             }
             RevisionInput(
-                label = "Observación general",
+                label = stringResource(R.string.revision_general_observation),
                 value = valor,
                 onValueChange = onValueChange,
                 onCommit = onCommit,
@@ -3706,13 +3936,13 @@ private fun EstadoRevisionCard(
         ) {
             Column {
                 Text(
-                    text = "Estado de revisión",
+                    text = stringResource(R.string.revision_status_title),
                     color = PmmTextPrimary,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Último paso: marca el resultado de esta factura",
+                    text = stringResource(R.string.revision_status_subtitle),
                     color = PmmTextMuted,
                     fontSize = 13.sp
                 )
@@ -3722,7 +3952,7 @@ private fun EstadoRevisionCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 StatusButton(
-                    label = "EN PROCESO",
+                    label = stringResource(R.string.revision_status_in_progress),
                     color = PmmAmber,
                     isSelected = isProceso,
                     modifier = Modifier.weight(1f),
@@ -3731,7 +3961,7 @@ private fun EstadoRevisionCard(
                     onSetStatus(3)
                 }
                 StatusButton(
-                    label = "COMPLETA",
+                    label = stringResource(R.string.revision_status_complete),
                     color = PmmGreen,
                     isSelected = isRevisada,
                     modifier = Modifier.weight(1f),
@@ -3740,7 +3970,7 @@ private fun EstadoRevisionCard(
                     onSetStatus(1)
                 }
                 StatusButton(
-                    label = "DISCREPANCIA",
+                    label = stringResource(R.string.revision_status_discrepancy),
                     color = PmmRed,
                     isSelected = isDiferencia,
                     modifier = Modifier.weight(1f),
@@ -3798,7 +4028,7 @@ private fun EvidenciaDiscrepanciaButton(
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Evidencia de discrepancia",
+                    text = stringResource(R.string.revision_discrepancy_evidence),
                     color = PmmTextPrimary,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
@@ -3807,9 +4037,9 @@ private fun EvidenciaDiscrepanciaButton(
                 )
                 Text(
                     text = if (tieneEvidencia) {
-                        "$cantidadFotos foto(s) guardadas · toca para agregar más"
+                        stringResource(R.string.revision_photos_saved, cantidadFotos)
                     } else {
-                        "Fotografía aquí el problema encontrado en esta factura"
+                        stringResource(R.string.revision_photo_problem)
                     },
                     color = PmmTextSecondary,
                     fontSize = 13.sp,
@@ -3857,7 +4087,7 @@ private fun EditorActivoBadge(editor: String) {
         )
         Spacer(Modifier.width(7.dp))
         Text(
-            text = "Editor activo: $editor",
+            text = stringResource(R.string.revision_editor_active, editor),
             color = PmmBlueDeep,
             fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold
@@ -3869,7 +4099,7 @@ private fun EditorActivoBadge(editor: String) {
 private fun SectionHeading(
     icon: ImageVector,
     title: String,
-    subtitle: String
+    subtitle: String? = null
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
@@ -3894,11 +4124,13 @@ private fun SectionHeading(
                 fontWeight = FontWeight.Bold,
                 fontSize = 17.sp
             )
-            Text(
-                text = subtitle,
-                color = PmmTextSecondary,
-                fontSize = 13.sp
-            )
+            if (!subtitle.isNullOrBlank()) {
+                Text(
+                    text = subtitle,
+                    color = PmmTextSecondary,
+                    fontSize = 13.sp
+                )
+            }
         }
     }
 }
@@ -4136,7 +4368,12 @@ private fun PartidasHeaderSection(
         ) {
             Icon(Icons.AutoMirrored.Filled.FormatListBulleted, null, modifier = Modifier.size(16.dp), tint = PmmYellow)
             Spacer(Modifier.width(6.dp))
-            Text("Partidas", color = PmmTextPrimary, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            Text(
+                stringResource(R.string.revision_parts_title),
+                color = PmmTextPrimary,
+                fontWeight = FontWeight.Bold,
+                fontSize = 17.sp
+            )
             Spacer(Modifier.width(6.dp))
             Text("($revisadas/$total)", color = PmmTextSecondary, fontSize = 16.sp)
             Spacer(Modifier.weight(1f))
@@ -4163,7 +4400,11 @@ private fun PartidasHeaderSection(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            val filters = listOf("todas" to "Todas", "pendientes" to "Pendientes", "revisadas" to "Revisadas")
+            val filters = listOf(
+                "todas" to stringResource(R.string.assignments_filter_all),
+                "pendientes" to stringResource(R.string.assignments_filter_pending),
+                "revisadas" to stringResource(R.string.revision_filter_reviewed)
+            )
             filters.forEach { (key, title) ->
                 val active = filtroPartidas == key
                 Box(
@@ -4194,14 +4435,29 @@ private fun PartidasHeaderSection(
 // convierte antes de enviar el valor al API.
 private val CLIENTES_PESO_LIBRAS = setOf("2944", "CL7168", "CL7480", "CL7481", "CL7482")
 
+private fun unidadVisibleDePartida(
+    partida: PartidaRevisionDto,
+    opciones: List<UnidadComercialDto>
+): String {
+    val unidadFactura = partida.UnidadFactura.orEmpty().trim()
+    if (unidadFactura.isNotEmpty()) return unidadFactura
+
+    val unidadInterna = partida.UnidadComercial.orEmpty().trim()
+    return opciones.firstOrNull {
+        it.codigoInterno.equals(unidadInterna, ignoreCase = true)
+    }?.codigo ?: unidadInterna
+}
+
 @Composable
 private fun PartidaForm(
     partida: PartidaRevisionDto,
     paises: List<PaisDto>,
     paisesFrecuentes: List<PaisFrecuenteDto>,
     tiposMaterial: List<TipoMaterialDto>,
+    unidadesComerciales: List<UnidadComercialDto>,
     isLocked: Boolean,
     onValueChange: (String, Any) -> Unit,
+    onCantidadComercialChange: (Double, String) -> Unit,
     onQuickFill: (String, String) -> Unit,
     onTriggerScan: (String) -> Unit,
     onToggleRevisada: () -> Unit
@@ -4212,6 +4468,12 @@ private fun PartidaForm(
     var localNumLote by remember(partida.IdRevdet) { mutableStateOf(partida.NumLote ?: "") }
     var localTipoMaterial by remember(partida.IdRevdet) { mutableStateOf(partida.TipoMaterial.orEmpty()) }
     var localCantOut by remember(partida.IdRevdet) { mutableStateOf(partida.nCantOut?.let { formatQuantity(it) } ?: "0") }
+    var localCantidadComercial by remember(partida.IdRevdet) {
+        mutableStateOf(partida.CantidadComercial?.let { formatQuantity(it) } ?: "0")
+    }
+    var localUnidadComercial by remember(partida.IdRevdet) {
+        mutableStateOf(unidadVisibleDePartida(partida, unidadesComerciales))
+    }
     var localObsPartida by remember(partida.IdRevdet) { mutableStateOf(partida.Obsrevpartida ?: "") }
     var localNotaPartida by remember(partida.IdRevdet) { mutableStateOf(partida.Mnotapartida ?: "") }
     var localPeso by remember(partida.IdRevdet) { mutableStateOf(partida.nPeso?.let { formatQuantity(it) } ?: "0") }
@@ -4254,6 +4516,17 @@ private fun PartidaForm(
     LaunchedEffect(partida.IdRevdet, partida.TipoMaterial) {
         localTipoMaterial = partida.TipoMaterial.orEmpty()
     }
+    LaunchedEffect(partida.IdRevdet, partida.CantidadComercial) {
+        localCantidadComercial = partida.CantidadComercial?.let { formatQuantity(it) } ?: "0"
+    }
+    LaunchedEffect(
+        partida.IdRevdet,
+        partida.UnidadFactura,
+        partida.UnidadComercial,
+        unidadesComerciales
+    ) {
+        localUnidadComercial = unidadVisibleDePartida(partida, unidadesComerciales)
+    }
 
     Column(
         modifier = Modifier
@@ -4284,7 +4557,7 @@ private fun PartidaForm(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = partida.cDescripcion ?: "Sin descripción",
+                        text = partida.cDescripcion ?: stringResource(R.string.revision_without_description),
                         color = PmmTextPrimary,
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
@@ -4294,7 +4567,10 @@ private fun PartidaForm(
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "No. parte: ${partida.CnoParte ?: "Sin dato"}",
+                        text = stringResource(
+                            R.string.revision_part_number,
+                            partida.CnoParte ?: stringResource(R.string.common_no_data)
+                        ),
                         color = PmmTextSecondary,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold,
@@ -4309,7 +4585,10 @@ private fun PartidaForm(
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         Text(
-                            text = "DOC ${formatQuantity(partida.nCantFactura)}",
+                            text = stringResource(
+                                R.string.revision_document_quantity,
+                                formatQuantity(partida.nCantFactura)
+                            ),
                             color = PmmBlueDeep,
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,
@@ -4321,7 +4600,10 @@ private fun PartidaForm(
                     }
                     Spacer(Modifier.height(5.dp))
                     Text(
-                        text = if (partida.Revisada) "Revisada" else "Pendiente",
+                        text = stringResource(
+                            if (partida.Revisada) R.string.revision_part_reviewed
+                            else R.string.assignments_status_pending
+                        ),
                         color = if (partida.Revisada) PmmGreen else PmmAmber,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
@@ -4341,8 +4623,8 @@ private fun PartidaForm(
             ) {
                 SectionHeading(
                     icon = Icons.AutoMirrored.Filled.FactCheck,
-                    title = "Identificación física",
-                    subtitle = "Marca, modelo, serie y procedencia"
+                    title = stringResource(R.string.revision_parts_identification),
+                    subtitle = stringResource(R.string.revision_parts_identification_subtitle)
                 )
 
                 TipoMaterialSelector(
@@ -4356,7 +4638,7 @@ private fun PartidaForm(
                 )
 
                 PartidaEditableField(
-                    label = "Marca",
+                    label = stringResource(R.string.revision_brand),
                     value = localMarca,
                     onValueChange = { localMarca = it },
                     onCommit = {
@@ -4377,7 +4659,7 @@ private fun PartidaForm(
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             PartidaEditableField(
-                                label = "Modelo",
+                                label = stringResource(R.string.revision_model),
                                 value = localModelo,
                                 onValueChange = { localModelo = it },
                                 onCommit = {
@@ -4393,7 +4675,7 @@ private fun PartidaForm(
                                 modifier = Modifier.weight(1f)
                             )
                             PartidaEditableField(
-                                label = "Serie o lote",
+                                label = stringResource(R.string.revision_series_or_lot),
                                 value = localNumSer,
                                 onValueChange = { localNumSer = it },
                                 onCommit = {
@@ -4414,7 +4696,7 @@ private fun PartidaForm(
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             PartidaEditableField(
-                                label = "Modelo",
+                                label = stringResource(R.string.revision_model),
                                 value = localModelo,
                                 onValueChange = { localModelo = it },
                                 onCommit = {
@@ -4429,7 +4711,7 @@ private fun PartidaForm(
                                 onScan = { onTriggerScan("modelo") }
                             )
                             PartidaEditableField(
-                                label = "Serie o lote",
+                                label = stringResource(R.string.revision_series_or_lot),
                                 value = localNumSer,
                                 onValueChange = { localNumSer = it },
                                 onCommit = {
@@ -4448,7 +4730,7 @@ private fun PartidaForm(
                 }
 
                 RevisionInput(
-                    label = "Número de lote",
+                    label = stringResource(R.string.revision_lot_number),
                     value = localNumLote,
                     onValueChange = { localNumLote = it },
                     onCommit = {
@@ -4476,7 +4758,7 @@ private fun PartidaForm(
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             RevisionInput(
-                                label = "Total de piezas",
+                                label = stringResource(R.string.revision_total_pieces),
                                 value = localCantOut,
                                 onValueChange = { localCantOut = it },
                                 onCommit = {
@@ -4506,7 +4788,7 @@ private fun PartidaForm(
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             RevisionInput(
-                                label = "Total de piezas",
+                                label = stringResource(R.string.revision_total_pieces),
                                 value = localCantOut,
                                 onValueChange = { localCantOut = it },
                                 onCommit = {
@@ -4527,6 +4809,113 @@ private fun PartidaForm(
                                 onSelect = { code ->
                                     selectedCountryCode = code
                                     onValueChange("cPaisOrigen", code)
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
+
+                SectionHeading(
+                    icon = Icons.Default.Straighten,
+                    title = stringResource(R.string.revision_commercial_quantity_title)
+                )
+
+                // Aviso de la regla legacy JCAA 2025-07-24 (frmclasdet.SCT, Combo17.Valid):
+                // cuando la UMC declarada ante aduana es GLL (galones), el sistema fuerza
+                // la unidad comercial a litros y convierte la cantidad x3.7853. Sin este
+                // aviso el revisor ve "litros" sin saber por qué, aunque él solo tenga el
+                // dato en galones (caso real reportado).
+                val esConversionGalonesALitros = partida.UnidadComercial.orEmpty().trim()
+                    .equals("GLL", ignoreCase = true) &&
+                    localUnidadComercial.trim().equals("L", ignoreCase = true)
+                if (esConversionGalonesALitros) {
+                    Surface(
+                        color = Color(0xFFFFF7D6),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, PmmAmber.copy(alpha = 0.4f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = null,
+                                tint = PmmAmberDark,
+                                modifier = Modifier
+                                    .size(18.dp)
+                                    .padding(top = 1.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = stringResource(R.string.revision_gallons_liters_notice),
+                                color = PmmAmberDark,
+                                fontSize = 13.sp,
+                                lineHeight = 17.sp
+                            )
+                        }
+                    }
+                }
+
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    val horizontal = maxWidth >= 520.dp
+                    if (horizontal) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            RevisionInput(
+                                label = stringResource(R.string.revision_commercial_quantity),
+                                value = localCantidadComercial,
+                                onValueChange = { localCantidadComercial = it },
+                                onCommit = {
+                                    onCantidadComercialChange(
+                                        localCantidadComercial.toDoubleOrNull() ?: 0.0,
+                                        localUnidadComercial
+                                    )
+                                },
+                                enabled = !isLocked,
+                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
+                                modifier = Modifier.weight(0.9f)
+                            )
+                            UnidadComercialSelector(
+                                selectedCode = localUnidadComercial,
+                                options = unidadesComerciales,
+                                enabled = !isLocked,
+                                onSelect = { option ->
+                                    localUnidadComercial = option.codigo
+                                    onCantidadComercialChange(
+                                        localCantidadComercial.toDoubleOrNull() ?: 0.0,
+                                        option.codigo
+                                    )
+                                },
+                                modifier = Modifier.weight(1.1f)
+                            )
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            RevisionInput(
+                                label = stringResource(R.string.revision_commercial_quantity),
+                                value = localCantidadComercial,
+                                onValueChange = { localCantidadComercial = it },
+                                onCommit = {
+                                    onCantidadComercialChange(
+                                        localCantidadComercial.toDoubleOrNull() ?: 0.0,
+                                        localUnidadComercial
+                                    )
+                                },
+                                enabled = !isLocked,
+                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            UnidadComercialSelector(
+                                selectedCode = localUnidadComercial,
+                                options = unidadesComerciales,
+                                enabled = !isLocked,
+                                onSelect = { option ->
+                                    localUnidadComercial = option.codigo
+                                    onCantidadComercialChange(
+                                        localCantidadComercial.toDoubleOrNull() ?: 0.0,
+                                        option.codigo
+                                    )
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -4591,7 +4980,7 @@ private fun PartidaForm(
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             RevisionInput(
-                                label = "Peso (lb)",
+                                    label = stringResource(R.string.revision_weight_lb),
                                 value = localPeso,
                                 onValueChange = ::onPesoLibrasChanged,
                                 onCommit = { commitPeso() },
@@ -4601,7 +4990,7 @@ private fun PartidaForm(
                             )
                             if (esClientePesoLibras) {
                                 RevisionInput(
-                                    label = "Peso tarifa (lb)",
+                                    label = stringResource(R.string.revision_weight_tariff),
                                     value = localPesoLibras,
                                     onValueChange = { localPesoLibras = it },
                                     onCommit = { commitPesoTarifa() },
@@ -4611,7 +5000,7 @@ private fun PartidaForm(
                                 )
                             } else {
                                 RevisionInput(
-                                    label = "Peso (kg)",
+                                    label = stringResource(R.string.revision_weight_kg),
                                     value = localPesoKgs,
                                     onValueChange = ::onPesoKgsChanged,
                                     onCommit = { commitPesoKgs() },
@@ -4626,7 +5015,7 @@ private fun PartidaForm(
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             RevisionInput(
-                                label = "Peso (lb)",
+                                    label = stringResource(R.string.revision_weight_lb),
                                 value = localPeso,
                                 onValueChange = ::onPesoLibrasChanged,
                                 onCommit = { commitPeso() },
@@ -4636,7 +5025,7 @@ private fun PartidaForm(
                             )
                             if (esClientePesoLibras) {
                                 RevisionInput(
-                                    label = "Peso tarifa (lb)",
+                                    label = stringResource(R.string.revision_weight_tariff),
                                     value = localPesoLibras,
                                     onValueChange = { localPesoLibras = it },
                                     onCommit = { commitPesoTarifa() },
@@ -4646,7 +5035,7 @@ private fun PartidaForm(
                                 )
                             } else {
                                 RevisionInput(
-                                    label = "Peso (kg)",
+                                    label = stringResource(R.string.revision_weight_kg),
                                     value = localPesoKgs,
                                     onValueChange = ::onPesoKgsChanged,
                                     onCommit = { commitPesoKgs() },
@@ -4672,12 +5061,12 @@ private fun PartidaForm(
             ) {
                 SectionHeading(
                     icon = Icons.AutoMirrored.Filled.FactCheck,
-                    title = "Observaciones de partida",
-                    subtitle = "Notas y comentarios de esta partida"
+                    title = stringResource(R.string.revision_part_observations),
+                    subtitle = stringResource(R.string.revision_part_observations_subtitle)
                 )
 
                 RevisionInput(
-                    label = "Observaciones de revisión",
+                    label = stringResource(R.string.revision_review_notes),
                     value = localObsPartida,
                     onValueChange = { localObsPartida = it },
                     onCommit = {
@@ -4690,7 +5079,7 @@ private fun PartidaForm(
                 )
 
                 RevisionInput(
-                    label = "Nota de partida",
+                    label = stringResource(R.string.revision_part_note),
                     value = localNotaPartida,
                     onValueChange = { localNotaPartida = it },
                     onCommit = {
@@ -4743,9 +5132,9 @@ private fun PartidaForm(
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = if (partida.Revisada) {
-                        "Partida revisada"
+                        stringResource(R.string.revision_part_reviewed)
                     } else {
-                        "Marcar partida como revisada"
+                        stringResource(R.string.revision_mark_part_reviewed)
                     },
                     color = if (partida.Revisada) PmmGreenDark else PmmBlueDeep,
                     fontWeight = FontWeight.Bold,
@@ -4806,7 +5195,7 @@ private fun BatchSeriesCaptureButton(
             )
             Spacer(Modifier.width(9.dp))
             Text(
-                text = "Captura de series en lote",
+                text = stringResource(R.string.revision_batch_series_title),
                 color = if (enabled) PmmBlueDeep else PmmBlueDeep.copy(alpha = 0.4f),
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
@@ -4845,6 +5234,7 @@ private fun SeriesBatchCaptureDialog(
     onDismiss: () -> Unit,
     onApply: (nuevaNota: String, primeraSerie: String?) -> Unit
 ) {
+    val localizedContext = LocalContext.current
     var modo by remember { mutableStateOf(SeriesCaptureModo.CONSECUTIVA) }
     var tambienNumSer by remember { mutableStateOf(true) }
 
@@ -4884,7 +5274,7 @@ private fun SeriesBatchCaptureDialog(
         val valor = (prefijoManual.trim() + raw.trim()).trim()
         if (valor.isEmpty()) return
         if (manualChips.contains(valor)) {
-            dupWarning = "\"$valor\" ya está en la lista."
+            dupWarning = localizedContext.getString(R.string.revision_duplicate_series, valor)
             return
         }
         dupWarning = null
@@ -4896,7 +5286,7 @@ private fun SeriesBatchCaptureDialog(
     fun procesarPegado() {
         val tokens = pasteText.split(Regex("[\\s,;]+")).map { it.trim() }.filter { it.isNotEmpty() }
         if (tokens.isEmpty()) {
-            pasteFeedback = "Pega al menos un número."
+            pasteFeedback = localizedContext.getString(R.string.revision_paste_at_least_one)
             return
         }
         val actualizadas = manualChips.toMutableList()
@@ -4906,7 +5296,15 @@ private fun SeriesBatchCaptureDialog(
             if (actualizadas.contains(token)) duplicadas++ else { actualizadas.add(token); agregadas++ }
         }
         manualChips = actualizadas
-        pasteFeedback = "+$agregadas agregadas" + if (duplicadas > 0) " · $duplicadas ya estaban en la lista" else ""
+        pasteFeedback = if (duplicadas > 0) {
+            localizedContext.getString(
+                R.string.revision_paste_added_with_duplicates,
+                agregadas,
+                duplicadas
+            )
+        } else {
+            localizedContext.getString(R.string.revision_paste_added, agregadas)
+        }
         pasteText = ""
     }
 
@@ -4915,11 +5313,18 @@ private fun SeriesBatchCaptureDialog(
     val bloqueTexto = when {
         series.isEmpty() -> ""
         modo == SeriesCaptureModo.CONSECUTIVA && formatoRango -> if (series.size == 1) {
-            "SERIE: ${series.first()}"
+            localizedContext.getString(R.string.revision_note_single_series, series.first())
         } else {
-            "DE LA ${series.first()} A LA ${series.last()}"
+            localizedContext.getString(
+                R.string.revision_note_series_range,
+                series.first(),
+                series.last()
+            )
         }
-        else -> "SERIES: ${series.joinToString(",")}"
+        else -> localizedContext.getString(
+            R.string.revision_note_series_list,
+            series.joinToString(",")
+        )
     }
 
     Dialog(onDismissRequest = onDismiss) {
@@ -4949,7 +5354,7 @@ private fun SeriesBatchCaptureDialog(
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Captura de series en lote",
+                            text = stringResource(R.string.revision_batch_series_title),
                             color = PmmTextPrimary,
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp,
@@ -4958,9 +5363,9 @@ private fun SeriesBatchCaptureDialog(
                         )
                         Text(
                             text = if (modo == SeriesCaptureModo.CONSECUTIVA) {
-                                "Genera series consecutivas y agrégalas a la nota"
+                                stringResource(R.string.revision_batch_series_subtitle)
                             } else {
-                                "Captura una por una y agrégalas a la nota"
+                                stringResource(R.string.revision_manual_series_subtitle)
                             },
                             color = PmmTextSecondary,
                             fontSize = 12.sp,
@@ -4981,16 +5386,16 @@ private fun SeriesBatchCaptureDialog(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         SeriesModoOption(
                             icon = "🔢",
-                            label = "Consecutivas",
-                            hint = "las genero yo",
+                            label = stringResource(R.string.revision_consecutive),
+                            hint = stringResource(R.string.revision_consecutive_hint),
                             selected = modo == SeriesCaptureModo.CONSECUTIVA,
                             modifier = Modifier.weight(1f),
                             onClick = { modo = SeriesCaptureModo.CONSECUTIVA }
                         )
                         SeriesModoOption(
                             icon = "✍️",
-                            label = "Manual",
-                            hint = "prefijo + captura",
+                            label = stringResource(R.string.revision_manual),
+                            hint = stringResource(R.string.revision_manual_hint),
                             selected = modo == SeriesCaptureModo.MANUAL,
                             modifier = Modifier.weight(1f),
                             onClick = { modo = SeriesCaptureModo.MANUAL }
@@ -5002,17 +5407,17 @@ private fun SeriesBatchCaptureDialog(
                             if (maxWidth >= 380.dp) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                     BatchTextField(
-                                        label = "Prefijo común",
+                                        label = stringResource(R.string.revision_common_prefix),
                                         value = prefijo,
                                         onValueChange = { prefijo = it },
-                                        placeholder = "ej. 500000",
+                                        placeholder = stringResource(R.string.revision_series_example_prefix),
                                         modifier = Modifier.weight(1f)
                                     )
                                     BatchTextField(
-                                        label = "Número inicial",
+                                        label = stringResource(R.string.revision_initial_number),
                                         value = inicio,
                                         onValueChange = { inicio = it.filter(Char::isDigit) },
-                                        placeholder = "ej. 123",
+                                        placeholder = stringResource(R.string.revision_series_example_number),
                                         keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
                                         modifier = Modifier.weight(1f)
                                     )
@@ -5020,17 +5425,17 @@ private fun SeriesBatchCaptureDialog(
                             } else {
                                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                     BatchTextField(
-                                        label = "Prefijo común",
+                                        label = stringResource(R.string.revision_common_prefix),
                                         value = prefijo,
                                         onValueChange = { prefijo = it },
-                                        placeholder = "ej. 500000",
+                                        placeholder = stringResource(R.string.revision_series_example_prefix),
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                     BatchTextField(
-                                        label = "Número inicial",
+                                        label = stringResource(R.string.revision_initial_number),
                                         value = inicio,
                                         onValueChange = { inicio = it.filter(Char::isDigit) },
-                                        placeholder = "ej. 123",
+                                        placeholder = stringResource(R.string.revision_series_example_number),
                                         keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
                                         modifier = Modifier.fillMaxWidth()
                                     )
@@ -5039,10 +5444,10 @@ private fun SeriesBatchCaptureDialog(
                         }
 
                         BatchTextField(
-                            label = "Cantidad de series",
+                            label = stringResource(R.string.revision_series_count),
                             value = cantidadTexto,
                             onValueChange = { cantidadTexto = it.filter(Char::isDigit).take(3) },
-                            placeholder = "ej. 22",
+                            placeholder = stringResource(R.string.revision_series_example_count),
                             keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
                             modifier = Modifier.fillMaxWidth(0.55f)
                         )
@@ -5057,7 +5462,7 @@ private fun SeriesBatchCaptureDialog(
                                 colors = androidx.compose.material3.CheckboxDefaults.colors(checkedColor = PmmBlueDeep)
                             )
                             Text(
-                                text = "Mantener ceros a la izquierda (007 → 008, 009…)",
+                                text = stringResource(R.string.revision_keep_leading_zeroes),
                                 color = PmmTextSecondary,
                                 fontSize = 12.5.sp
                             )
@@ -5071,13 +5476,13 @@ private fun SeriesBatchCaptureDialog(
                                 .padding(3.dp)
                         ) {
                             SegmentedOption(
-                                label = "Lista completa",
+                                label = stringResource(R.string.revision_complete_list),
                                 selected = !formatoRango,
                                 modifier = Modifier.weight(1f),
                                 onClick = { formatoRango = false }
                             )
                             SegmentedOption(
-                                label = "\"DE LA… A LA…\"",
+                                label = stringResource(R.string.revision_range_list),
                                 selected = formatoRango,
                                 modifier = Modifier.weight(1f),
                                 onClick = { formatoRango = true }
@@ -5085,14 +5490,14 @@ private fun SeriesBatchCaptureDialog(
                         }
                     } else {
                         BatchTextField(
-                            label = "Prefijo común (opcional)",
+                            label = stringResource(R.string.revision_optional_prefix),
                             value = prefijoManual,
                             onValueChange = { prefijoManual = it },
-                            placeholder = "ej. 500 — déjalo vacío si no comparten prefijo",
+                            placeholder = stringResource(R.string.revision_prefix_hint),
                             modifier = Modifier.fillMaxWidth()
                         )
                         Text(
-                            text = "Se pega delante de cada número que captures abajo.",
+                            text = stringResource(R.string.revision_prefix_help),
                             color = PmmTextMuted,
                             fontSize = 11.sp,
                             lineHeight = 15.sp
@@ -5103,10 +5508,13 @@ private fun SeriesBatchCaptureDialog(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             BatchTextField(
-                                label = "Serie",
+                                label = stringResource(R.string.revision_series),
                                 value = quickValue,
                                 onValueChange = { quickValue = it; dupWarning = null },
-                                placeholder = "ej. 123 → quedará ${prefijoManual}123",
+                                placeholder = stringResource(
+                                    R.string.revision_manual_series_placeholder,
+                                    prefijoManual
+                                ),
                                 imeAction = ImeAction.Done,
                                 onImeAction = { tryAddManual(quickValue) },
                                 modifier = Modifier
@@ -5124,7 +5532,7 @@ private fun SeriesBatchCaptureDialog(
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
                                         imageVector = Icons.Default.Add,
-                                        contentDescription = "Agregar serie",
+                                contentDescription = stringResource(R.string.revision_add_series),
                                         tint = Color.White,
                                         modifier = Modifier.size(22.dp)
                                     )
@@ -5148,7 +5556,7 @@ private fun SeriesBatchCaptureDialog(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
-                                        text = "Aún no capturas ninguna serie. Escribe la primera arriba y presiona \"+\" (o Enter).",
+                                        text = stringResource(R.string.revision_no_series),
                                         color = PmmTextMuted,
                                         fontSize = 12.sp,
                                         textAlign = TextAlign.Center,
@@ -5172,7 +5580,10 @@ private fun SeriesBatchCaptureDialog(
                         }
 
                         Text(
-                            text = if (mostrarPegado) "▲ Ocultar pegado múltiple" else "▼ Pegar varias series a la vez",
+                            text = stringResource(
+                                if (mostrarPegado) R.string.revision_hide_multi_paste
+                                else R.string.revision_paste_multiple
+                            ),
                             color = PmmBlueDeep,
                             fontWeight = FontWeight.Bold,
                             fontSize = 12.5.sp,
@@ -5185,7 +5596,7 @@ private fun SeriesBatchCaptureDialog(
                                     onValueChange = { pasteText = it; pasteFeedback = null },
                                     placeholder = {
                                         Text(
-                                            "Pega aquí, separadas por coma, espacio o salto de línea: 500123, 500234, 500657…",
+                                            stringResource(R.string.revision_paste_hint),
                                             fontSize = 12.sp
                                         )
                                     },
@@ -5202,7 +5613,7 @@ private fun SeriesBatchCaptureDialog(
                                     modifier = Modifier.fillMaxWidth()
                                 )
                                 Text(
-                                    text = "Estas se agregan tal cual (sin anteponer el prefijo) — úsalo cuando ya traes la lista completa de otro lado.",
+                                    text = stringResource(R.string.revision_paste_as_is),
                                     color = PmmTextMuted,
                                     fontSize = 10.5.sp,
                                     lineHeight = 14.sp
@@ -5213,12 +5624,16 @@ private fun SeriesBatchCaptureDialog(
                                     border = BorderStroke(1.4.dp, PmmBlueDeep),
                                     colors = ButtonDefaults.outlinedButtonColors(contentColor = PmmBlueDeep)
                                 ) {
-                                    Text("Procesar lista", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                                    Text(
+                                        stringResource(R.string.revision_process_list),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.5.sp
+                                    )
                                 }
                                 pasteFeedback?.let {
                                     Text(
                                         text = it,
-                                        color = if (it.startsWith("Pega")) PmmTextMuted else PmmGreenDark,
+                                        color = if (it.startsWith("+")) PmmGreenDark else PmmTextMuted,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 11.sp
                                     )
@@ -5231,7 +5646,7 @@ private fun SeriesBatchCaptureDialog(
                             color = PmmNavyCard
                         ) {
                             Text(
-                                text = "El formato \"DE LA… A LA…\" no aplica aquí porque estas series no son consecutivas: siempre se listan una por una.",
+                                text = stringResource(R.string.revision_not_consecutive),
                                 color = PmmTextMuted,
                                 fontSize = 11.sp,
                                 lineHeight = 15.sp,
@@ -5251,14 +5666,18 @@ private fun SeriesBatchCaptureDialog(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = "SE AGREGARÁ ESTO A LA NOTA",
+                                    text = stringResource(R.string.revision_preview_title),
                                     color = PmmBlueDeep,
                                     fontWeight = FontWeight.Black,
                                     fontSize = 10.sp,
                                     letterSpacing = 0.5.sp
                                 )
                                 Text(
-                                    text = "${series.size} serie${if (series.size == 1) "" else "s"}",
+                                    text = stringResource(
+                                        R.string.revision_series_count_label,
+                                        series.size,
+                                        if (series.size == 1) "" else "s"
+                                    ),
                                     color = PmmTextSecondary,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
@@ -5268,9 +5687,9 @@ private fun SeriesBatchCaptureDialog(
                             Text(
                                 text = bloqueTexto.ifBlank {
                                     if (modo == SeriesCaptureModo.CONSECUTIVA) {
-                                        "Completa el prefijo y el número inicial para ver la vista previa…"
+                                        stringResource(R.string.revision_complete_prefix_preview)
                                     } else {
-                                        "Agrega al menos una serie para ver la vista previa…"
+                                        stringResource(R.string.revision_add_series_preview)
                                     }
                                 },
                                 color = if (bloqueTexto.isBlank()) PmmTextMuted else PmmTextPrimary,
@@ -5295,7 +5714,7 @@ private fun SeriesBatchCaptureDialog(
                             colors = androidx.compose.material3.CheckboxDefaults.colors(checkedColor = PmmBlueDeep)
                         )
                         Text(
-                            text = "También guardar la primera serie en \"Serie o lote\"",
+                            text = stringResource(R.string.revision_save_first_series),
                             color = PmmTextSecondary,
                             fontSize = 12.5.sp
                         )
@@ -5311,7 +5730,7 @@ private fun SeriesBatchCaptureDialog(
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(11.dp)
-                    ) { Text("Cancelar") }
+                    ) { Text(stringResource(R.string.common_cancel)) }
                     Button(
                         onClick = {
                             val nuevaNota = if (notaActual.isNotBlank()) {
@@ -5332,7 +5751,11 @@ private fun SeriesBatchCaptureDialog(
                         )
                     ) {
                         Text(
-                            text = "Agregar ${series.size} serie${if (series.size == 1) "" else "s"}",
+                            text = stringResource(
+                                R.string.revision_add_series_count,
+                                series.size,
+                                if (series.size == 1) "" else "s"
+                            ),
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -5414,7 +5837,7 @@ private fun SeriesChip(value: String, onRemove: () -> Unit) {
             ) {
                 Icon(
                     imageVector = Icons.Default.Close,
-                    contentDescription = "Quitar",
+                    contentDescription = stringResource(R.string.revision_remove),
                     tint = PmmBlueDeep,
                     modifier = Modifier.size(11.dp)
                 )
@@ -5525,7 +5948,7 @@ private fun PartidaEditableField(
                 enabled = enabled,
                 singleLine = true,
                 label = { Text(label) },
-                placeholder = { Text("Escribe aquí") },
+                placeholder = { Text(stringResource(R.string.revision_write_here)) },
                 shape = RoundedCornerShape(10.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = PmmBlueDeep,
@@ -5586,11 +6009,129 @@ private fun PartidaEditableField(
                 )
             ) {
                 Icon(
-                    imageVector = Icons.Default.QrCodeScanner,
-                    contentDescription = "Escanear $label",
+                imageVector = Icons.Default.QrCodeScanner,
+                    contentDescription = stringResource(R.string.revision_scan_field, label),
                     modifier = Modifier.size(21.dp)
                 )
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun UnidadComercialSelector(
+    selectedCode: String,
+    options: List<UnidadComercialDto>,
+    enabled: Boolean,
+    onSelect: (UnidadComercialDto) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selected = options.firstOrNull {
+        it.codigo.equals(selectedCode.trim(), ignoreCase = true)
+    }
+    val displayedValue = selected?.let { "${it.codigo} · ${it.nombre}" }
+        ?: selectedCode.ifBlank { stringResource(R.string.revision_select_unit) }
+
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        // ExposedDropdownMenuBox en vez de un Box + clickable a mano: un
+        // OutlinedTextField de solo lectura intercepta el toque para su propio
+        // manejo de selección de texto/cursor, así que un Modifier.clickable
+        // por fuera no siempre alcanzaba a disparar (el usuario reportó que
+        // el tap no desplegaba nada). menuAnchor() es el mecanismo de
+        // Material3 pensado justo para este patrón.
+        ExposedDropdownMenuBox(
+            expanded = expanded && enabled,
+            onExpandedChange = { if (enabled) expanded = it }
+        ) {
+            OutlinedTextField(
+                value = displayedValue,
+                onValueChange = {},
+                readOnly = true,
+                enabled = enabled,
+                singleLine = true,
+                label = { Text(stringResource(R.string.revision_commercial_unit)) },
+                trailingIcon = {
+                    Icon(
+                        imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = stringResource(
+                            if (expanded) R.string.revision_close_units
+                            else R.string.revision_open_units
+                        ),
+                        tint = PmmBlueDeep
+                    )
+                },
+                shape = RoundedCornerShape(10.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = PmmBlueDeep,
+                    unfocusedBorderColor = PmmNavyBorder,
+                    disabledBorderColor = PmmNavyBorder,
+                    focusedTextColor = PmmTextPrimary,
+                    unfocusedTextColor = PmmTextPrimary,
+                    disabledTextColor = PmmTextSecondary,
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color.White,
+                    disabledContainerColor = PmmNavyCard,
+                    cursorColor = PmmBlueDeep
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled)
+            )
+
+            ExposedDropdownMenu(
+                expanded = expanded && enabled,
+                onDismissRequest = { expanded = false }
+            ) {
+                if (options.isEmpty()) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                stringResource(R.string.revision_catalog_unavailable),
+                                color = PmmTextSecondary
+                            )
+                        },
+                        onClick = { expanded = false },
+                        enabled = false
+                    )
+                } else {
+                    options.forEach { option ->
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = "${option.codigo} · ${option.nombre}",
+                                    color = PmmTextPrimary,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            },
+                            leadingIcon = {
+                                if (option.codigo.equals(selectedCode, ignoreCase = true)) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        tint = PmmBlueDeep
+                                    )
+                                }
+                            },
+                            onClick = {
+                                expanded = false
+                                onSelect(option)
+                            }
+                        )
+                    }
+                }
+            }
+        }
+        if (selected == null && options.isEmpty()) {
+            Text(
+                text = stringResource(R.string.revision_units_catalog_error),
+                color = PmmAmber,
+                fontSize = 12.sp
+            )
         }
     }
 }
@@ -5608,19 +6149,19 @@ private fun TipoMaterialSelector(
         verticalArrangement = Arrangement.spacedBy(7.dp)
     ) {
         Text(
-            text = "Tipo de material (opcional)",
+            text = stringResource(R.string.revision_material_type_optional),
             color = PmmTextMuted,
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold
         )
         Text(
-            text = "Selecciona METAL, PLASTICO o SIN TIPO",
+            text = stringResource(R.string.revision_material_type_hint),
             color = PmmTextSecondary,
             fontSize = 12.sp
         )
         if (options.isEmpty()) {
             Text(
-                text = "No hay opciones disponibles",
+                text = stringResource(R.string.revision_no_options),
                 color = PmmTextSecondary,
                 fontSize = 13.sp
             )
@@ -5714,8 +6255,8 @@ private fun CountrySearchField(
                 onValueChange = { query = it },
                 enabled = enabled,
                 singleLine = true,
-                label = { Text("País de origen") },
-                placeholder = { Text("Escribe o toca una sugerencia") },
+                label = { Text(stringResource(R.string.revision_country)) },
+                placeholder = { Text(stringResource(R.string.revision_country_hint)) },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 trailingIcon = {
                     if (query.isNotBlank()) {
@@ -5728,14 +6269,14 @@ private fun CountrySearchField(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Clear,
-                                contentDescription = "Limpiar país",
+                                contentDescription = stringResource(R.string.common_clear_search),
                                 tint = PmmTextSecondary
                             )
                         }
                     } else if (selectedCode.isNotBlank() && !isSearching) {
                         Icon(
                             imageVector = Icons.Default.CheckCircle,
-                            contentDescription = "País seleccionado",
+                            contentDescription = stringResource(R.string.revision_selected_country),
                             tint = PmmGreen
                         )
                     }
@@ -5758,7 +6299,7 @@ private fun CountrySearchField(
 
             if (frequentCountries.isNotEmpty()) {
                 Text(
-                    text = "Sugerencias rápidas",
+                        text = stringResource(R.string.revision_quick_suggestions),
                     color = PmmTextMuted,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold
@@ -5788,7 +6329,7 @@ private fun CountrySearchField(
             if (isSearching) {
                 if (matchingCountries.isNotEmpty()) {
                     Text(
-                        text = "Resultados",
+                        text = stringResource(R.string.revision_results),
                         color = PmmTextMuted,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold
@@ -5820,7 +6361,7 @@ private fun CountrySearchField(
                     }
                 } else {
                     Text(
-                        text = "No encontramos ese país. Prueba con otro nombre o código.",
+                        text = stringResource(R.string.revision_country_not_found),
                         color = PmmTextSecondary,
                         fontSize = 13.sp,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)

@@ -205,11 +205,30 @@ class RevisionRepository @Inject constructor(private val api: PMMovilApi) {
         }
     }
 
+    suspend fun getUnidadesComerciales() = withContext(Dispatchers.IO) {
+        runCatching {
+            val r = api.getUnidadesComerciales()
+            val body = r.body()
+            if (r.isSuccessful && body?.success == true) body.items ?: emptyList()
+            else throw Exception(errorMessage(r, "No se pudo cargar el catálogo de unidades comerciales."))
+        }
+    }
+
     suspend fun guardarCampoPartida(id: Int, campo: String, valor: Any) = withContext(Dispatchers.IO) {
         runCatching {
             val r = api.guardarCampoPartida(GuardarCampoPartidaRequest(id, campo, valor))
             if (r.isSuccessful && r.body()?.success == true) Unit
             else throw Exception(errorMessage(r, "No se pudo guardar el campo '$campo'."))
+        }
+    }
+
+    suspend fun guardarCantidadComercial(id: Int, cantidad: Double, unidad: String) = withContext(Dispatchers.IO) {
+        runCatching {
+            val r = api.guardarCantidadComercial(
+                GuardarCantidadComercialRequest(id, cantidad, unidad)
+            )
+            if (r.isSuccessful && r.body()?.success == true) Unit
+            else throw Exception(errorMessage(r, "No se pudo guardar la cantidad comercial."))
         }
     }
 

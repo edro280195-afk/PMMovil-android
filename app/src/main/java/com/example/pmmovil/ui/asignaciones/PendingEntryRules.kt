@@ -1,5 +1,7 @@
 package com.example.pmmovil.ui.asignaciones
 
+import androidx.annotation.StringRes
+import com.example.pmmovil.R
 import com.example.pmmovil.data.model.EntradaPendienteDto
 import kotlin.math.roundToInt
 
@@ -22,9 +24,10 @@ enum class EntryCategory {
 data class EntryStatusInfo(
     val lifecycle: EntryLifecycle,
     val category: EntryCategory,
-    val label: String,
+    @StringRes val labelRes: Int,
+    val completedInvoices: Int,
+    val totalInvoices: Int,
     val progressPercent: Int,
-    val progressLabel: String
 )
 
 /**
@@ -47,58 +50,59 @@ fun calculateEntryStatus(entry: EntradaPendienteDto): EntryStatusInfo {
 
     val lifecycle: EntryLifecycle
     val category: EntryCategory
-    val label: String
+    var labelRes: Int
 
     when {
         isComplete && isStopped && isRelationClosed -> {
             lifecycle = EntryLifecycle.PROCESS_COMPLETED
             category = EntryCategory.COMPLETED
-            label = "Proceso terminado"
+            labelRes = R.string.assignments_status_process_finished
         }
 
         isStopped && isComplete -> {
             lifecycle = EntryLifecycle.REVIEW_STOPPED
             category = EntryCategory.COMPLETED
-            label = "Revisión terminada"
+            labelRes = R.string.assignments_status_review_finished
         }
 
         isStopped -> {
             lifecycle = EntryLifecycle.REVIEW_STOPPED
             category = EntryCategory.PAUSED
-            label = "Sesión pausada"
+            labelRes = R.string.assignments_status_session_paused
         }
 
         isRelationClosed -> {
             lifecycle = EntryLifecycle.RELATION_CLOSED
             category = EntryCategory.COMPLETED
-            label = "Relación cerrada"
+            labelRes = R.string.assignments_status_relation_closed
         }
 
         isComplete -> {
             lifecycle = EntryLifecycle.REVIEW_COMPLETE
             category = EntryCategory.COMPLETED
-            label = "Revisión 100%"
+            labelRes = R.string.assignments_status_review_100
         }
 
         isInProgress -> {
             lifecycle = EntryLifecycle.IN_PROGRESS
             category = EntryCategory.IN_PROGRESS
-            label = "En proceso"
+            labelRes = R.string.assignments_status_in_progress_label
         }
 
         else -> {
             lifecycle = EntryLifecycle.PENDING
             category = EntryCategory.PENDING
-            label = "Pendiente"
+            labelRes = R.string.assignments_status_pending
         }
     }
 
     return EntryStatusInfo(
         lifecycle = lifecycle,
         category = category,
-        label = label,
+        labelRes = labelRes,
+        completedInvoices = completed,
+        totalInvoices = total,
         progressPercent = progress,
-        progressLabel = "$completed/$total completas"
     )
 }
 

@@ -1,5 +1,6 @@
 package com.example.pmmovil.ui.home.components
 
+import androidx.annotation.StringRes
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -66,11 +67,13 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.pmmovil.data.model.MobileModuleIds
+import com.example.pmmovil.R
 import com.example.pmmovil.ui.home.HomeModuleRouteKeys
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.composed
@@ -78,7 +81,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.animation.core.Spring
 import com.example.pmmovil.ui.components.StatusKind
-import com.example.pmmovil.ui.home.smartGreeting
+import com.example.pmmovil.ui.home.smartGreetingRes
 import com.example.pmmovil.ui.theme.Motion
 import com.example.pmmovil.ui.theme.PmmAmberDark
 import com.example.pmmovil.ui.theme.PmmBgCard
@@ -163,7 +166,7 @@ fun BrandedHeroHeader(
         ?.trim()
         ?.ifBlank { null }
         ?: username?.trim()?.ifBlank { null }
-        ?: "Usuario"
+        ?: stringResource(R.string.home_user_default)
 
     val configuration = LocalConfiguration.current
     val screenWidth = configuration.screenWidthDp
@@ -210,7 +213,7 @@ fun BrandedHeroHeader(
 
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            text = "${smartGreeting()},",
+                            text = "${stringResource(smartGreetingRes())},",
                             color = Color.White.copy(alpha = 0.65f),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
@@ -233,12 +236,12 @@ fun BrandedHeroHeader(
                         )
                         Spacer(Modifier.width(8.dp))
                         if (showSystemTools) {
-                            IconBubble(icon = Icons.Default.Settings, contentDescription = "Etiquetas e impresoras", onClick = onOpenPrinterSettings)
+                            IconBubble(icon = Icons.Default.Settings, contentDescription = stringResource(R.string.home_action_printers), onClick = onOpenPrinterSettings)
                             Spacer(Modifier.width(8.dp))
                         }
-                        IconBubble(icon = Icons.Default.Nfc, contentDescription = "Mi identificación", onClick = onOpenSettings)
+                        IconBubble(icon = Icons.Default.Nfc, contentDescription = stringResource(R.string.home_action_identity), onClick = onOpenSettings)
                         Spacer(Modifier.width(8.dp))
-                        IconBubble(icon = Icons.Default.Logout, contentDescription = "Cerrar sesión", onClick = onLogout)
+                        IconBubble(icon = Icons.Default.Logout, contentDescription = stringResource(R.string.home_action_logout), onClick = onLogout)
                     }
                 }
             }
@@ -280,19 +283,19 @@ fun BrandedHeroHeader(
                         )
                         Spacer(Modifier.width(8.dp))
                         if (showSystemTools) {
-                            IconBubble(icon = Icons.Default.Settings, contentDescription = "Etiquetas e impresoras", onClick = onOpenPrinterSettings)
+                            IconBubble(icon = Icons.Default.Settings, contentDescription = stringResource(R.string.home_action_printers), onClick = onOpenPrinterSettings)
                             Spacer(Modifier.width(8.dp))
                         }
-                        IconBubble(icon = Icons.Default.Nfc, contentDescription = "Mi identificación", onClick = onOpenSettings)
+                        IconBubble(icon = Icons.Default.Nfc, contentDescription = stringResource(R.string.home_action_identity), onClick = onOpenSettings)
                         Spacer(Modifier.width(8.dp))
-                        IconBubble(icon = Icons.Default.Logout, contentDescription = "Cerrar sesión", onClick = onLogout)
+                        IconBubble(icon = Icons.Default.Logout, contentDescription = stringResource(R.string.home_action_logout), onClick = onLogout)
                     }
                 }
 
                 Spacer(Modifier.height(16.dp))
 
                 Text(
-                    text = smartGreeting(),
+                    text = stringResource(smartGreetingRes()),
                     color = Color.White.copy(alpha = 0.65f),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
@@ -345,19 +348,19 @@ fun BrandedHeroHeader(
                         )
                         Spacer(Modifier.width(8.dp))
                         if (showSystemTools) {
-                            IconBubble(icon = Icons.Default.Settings, contentDescription = "Etiquetas e impresoras", onClick = onOpenPrinterSettings)
+                            IconBubble(icon = Icons.Default.Settings, contentDescription = stringResource(R.string.home_action_printers), onClick = onOpenPrinterSettings)
                             Spacer(Modifier.width(8.dp))
                         }
-                        IconBubble(icon = Icons.Default.Nfc, contentDescription = "Mi identificación", onClick = onOpenSettings)
+                        IconBubble(icon = Icons.Default.Nfc, contentDescription = stringResource(R.string.home_action_identity), onClick = onOpenSettings)
                         Spacer(Modifier.width(8.dp))
-                        IconBubble(icon = Icons.Default.Logout, contentDescription = "Cerrar sesión", onClick = onLogout)
+                        IconBubble(icon = Icons.Default.Logout, contentDescription = stringResource(R.string.home_action_logout), onClick = onLogout)
                     }
                 }
 
                 Spacer(Modifier.height(14.dp))
 
                 Text(
-                    text = smartGreeting(),
+                    text = stringResource(smartGreetingRes()),
                     color = Color.White.copy(alpha = 0.65f),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
@@ -473,7 +476,7 @@ private fun NotificationBubble(
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     imageVector = Icons.Default.Notifications,
-                    contentDescription = "Notificaciones",
+                    contentDescription = stringResource(R.string.home_action_notifications),
                     tint = Color.White,
                     modifier = Modifier.size(20.dp)
                 )
@@ -601,14 +604,14 @@ fun SectionHeader(
 
 data class ModuleItem(
     val moduleId: Int,
-    val title: String,
-    val subtitle: String,
+    @StringRes val titleRes: Int,
+    @StringRes val subtitleRes: Int,
     val icon: ImageVector,
     val accent: Color,
     val accentContainer: Color,
     val enabled: Boolean,
     val badge: String? = null,
-    val routeKey: String = title
+    val routeKey: String = ""
 )
 
 @Composable
@@ -617,6 +620,8 @@ fun ModuleCardV2(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val title = stringResource(item.titleRes)
+    val subtitle = stringResource(item.subtitleRes)
     val haptic = LocalHapticFeedback.current
     val isEnabled = item.enabled
     val baseColor = if (isEnabled) PmmBgSurface else PmmBgCard
@@ -696,7 +701,7 @@ fun ModuleCardV2(
                 }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = item.title,
+                        text = title,
                         color = titleColor,
                         fontSize = titleSize,
                         fontWeight = FontWeight.Bold,
@@ -705,7 +710,7 @@ fun ModuleCardV2(
                     )
                     Spacer(Modifier.height(3.dp))
                     Text(
-                        text = item.subtitle,
+                        text = subtitle,
                         color = subColor,
                         fontSize = subSize,
                         fontWeight = FontWeight.Medium,
@@ -764,20 +769,20 @@ fun ModuleGrid(
 
 // Catalogo de modulos visibles. Solo se muestran opciones listas para usarse.
 fun defaultModules(): List<ModuleItem> = listOf(
-    ModuleItem(MobileModuleIds.REVIEW, "Revisión", "Mercancía", Icons.Default.QrCode, PmmBlueDeep, Color(0xFFEEF3FF), enabled = true),
-    ModuleItem(MobileModuleIds.WAREHOUSE_OPERATIONS, "Entradas", "Recepción", Icons.Default.Login, PmmBlueMid, Color(0xFFE0EBFF), enabled = true, routeKey = HomeModuleRouteKeys.WAREHOUSE_ENTRIES),
-    ModuleItem(MobileModuleIds.WAREHOUSE_EXIT, "Cargar mercancía", "Carga y escaneo", Icons.Default.Logout, PmmBlueLight, Color(0xFFDBEAFE), enabled = true, routeKey = HomeModuleRouteKeys.WAREHOUSE_LOADS),
-    ModuleItem(MobileModuleIds.WAREHOUSE_EXIT, "Relación", "Supervisar", Icons.Default.ViewModule, PmmNavyDark, Color(0xFFE0E7FF), enabled = true, routeKey = HomeModuleRouteKeys.WAREHOUSE_RELATION),
-    ModuleItem(MobileModuleIds.WAREHOUSE_OPERATIONS, "Mapa", "Ubicaciones", Icons.Default.Map, PmmGreenDark, Color(0xFFD1FAE5), enabled = true, routeKey = HomeModuleRouteKeys.WAREHOUSE_MAP),
-    ModuleItem(MobileModuleIds.GATE, "Control", "Autorización", Icons.Default.Storefront, PmmAmberDark, Color(0xFFFEF3C7), enabled = true, routeKey = HomeModuleRouteKeys.GATE)
+    ModuleItem(MobileModuleIds.REVIEW, R.string.home_module_review_title, R.string.home_module_review_subtitle, Icons.Default.QrCode, PmmBlueDeep, Color(0xFFEEF3FF), enabled = true),
+    ModuleItem(MobileModuleIds.WAREHOUSE_OPERATIONS, R.string.home_module_entries_title, R.string.home_module_entries_subtitle, Icons.Default.Login, PmmBlueMid, Color(0xFFE0EBFF), enabled = true, routeKey = HomeModuleRouteKeys.WAREHOUSE_ENTRIES),
+    ModuleItem(MobileModuleIds.WAREHOUSE_EXIT, R.string.home_module_load_title, R.string.home_module_load_subtitle, Icons.Default.Logout, PmmBlueLight, Color(0xFFDBEAFE), enabled = true, routeKey = HomeModuleRouteKeys.WAREHOUSE_LOADS),
+    ModuleItem(MobileModuleIds.WAREHOUSE_RELATION, R.string.home_module_relation_title, R.string.home_module_relation_subtitle, Icons.Default.ViewModule, PmmNavyDark, Color(0xFFE0E7FF), enabled = true, routeKey = HomeModuleRouteKeys.WAREHOUSE_RELATION),
+    ModuleItem(MobileModuleIds.WAREHOUSE_OPERATIONS, R.string.home_module_map_title, R.string.home_module_map_subtitle, Icons.Default.Map, PmmGreenDark, Color(0xFFD1FAE5), enabled = true, routeKey = HomeModuleRouteKeys.WAREHOUSE_MAP),
+    ModuleItem(MobileModuleIds.GATE, R.string.home_module_gate_title, R.string.home_module_gate_subtitle, Icons.Default.Storefront, PmmAmberDark, Color(0xFFFEF3C7), enabled = true, routeKey = HomeModuleRouteKeys.GATE)
 )
 
 // Caseta (vigilancia): registro de entrada y salida en la caseta de seguridad.
 fun casetaModules(): List<ModuleItem> = listOf(
     ModuleItem(
         moduleId = MobileModuleIds.GATE,
-        title = "Caseta",
-        subtitle = "Entrada, salida y edición",
+        titleRes = R.string.home_module_gate_card_title,
+        subtitleRes = R.string.home_module_gate_card_subtitle,
         icon = Icons.Default.LocalShipping,
         accent = PmmGreenDark,
         accentContainer = Color(0xFFD1FAE5),
@@ -789,8 +794,8 @@ fun casetaModules(): List<ModuleItem> = listOf(
 fun adminModules(): List<ModuleItem> = listOf(
     ModuleItem(
         moduleId = MobileModuleIds.SYSTEMS_MONITOR,
-        title = "Sistemas",
-        subtitle = "Administración",
+        titleRes = R.string.home_module_systems_title,
+        subtitleRes = R.string.home_module_systems_subtitle,
         icon = Icons.Default.Settings,
         accent = PmmRed,
         accentContainer = Color(0xFFFEE2E2),
@@ -809,7 +814,7 @@ fun SystemFooter(
     onTap: () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
-    val sdf = remember { SimpleDateFormat("HH:mm", Locale("es", "MX")) }
+    val sdf = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
     val timeStr = lastSyncMillis?.let { sdf.format(Date(it)) } ?: "--:--"
 
     Row(
@@ -833,7 +838,7 @@ fun SystemFooter(
         )
         Spacer(Modifier.width(6.dp))
         Text(
-            text = "Sync $timeStr",
+            text = stringResource(R.string.home_sync, timeStr),
             color = PmmTextMuted,
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium
@@ -847,7 +852,7 @@ fun SystemFooter(
         )
         Spacer(Modifier.width(8.dp))
         Text(
-            text = "v2.0.0",
+            text = stringResource(R.string.home_version),
             color = PmmTextMuted,
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium
@@ -939,7 +944,7 @@ fun PlaceholderDottedCard(
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "Próximamente",
+                text = stringResource(R.string.home_coming_soon_label),
                 color = PmmTextMuted,
                 fontSize = labelSize,
                 fontWeight = FontWeight.Medium
@@ -954,6 +959,8 @@ fun HorizontalModuleCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val title = stringResource(item.titleRes)
+    val subtitle = stringResource(item.subtitleRes)
     val haptic = LocalHapticFeedback.current
     val isEnabled = item.enabled
 
@@ -1016,7 +1023,7 @@ fun HorizontalModuleCard(
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = item.title,
+                    text = title,
                     color = PmmTextPrimary,
                     fontSize = titleSize,
                     fontWeight = FontWeight.Bold,
@@ -1025,7 +1032,7 @@ fun HorizontalModuleCard(
                 )
                 Spacer(Modifier.height(3.dp))
                 Text(
-                    text = item.subtitle,
+                    text = subtitle,
                     color = PmmTextSecondary,
                     fontSize = subSize,
                     fontWeight = FontWeight.Medium,
@@ -1064,6 +1071,8 @@ fun CasetaFeaturedCard(
     modifier: Modifier = Modifier,
     layoutType: CasetaLayoutType = CasetaLayoutType.HorizontalCompact
 ) {
+    val title = stringResource(item.titleRes)
+    val subtitle = stringResource(item.subtitleRes)
     val haptic = LocalHapticFeedback.current
     val screenHeight = LocalConfiguration.current.screenHeightDp
     val transition = rememberInfiniteTransition(label = "casetaGlow")
@@ -1154,7 +1163,7 @@ fun CasetaFeaturedCard(
                         Spacer(Modifier.width(14.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "CASETA",
+                                text = stringResource(R.string.home_gate_label),
                                 color = PmmYellow,
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.ExtraBold,
@@ -1162,13 +1171,13 @@ fun CasetaFeaturedCard(
                             )
                             Spacer(Modifier.height(2.dp))
                             Text(
-                                text = item.title,
+                                text = title,
                                 color = Color.White,
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = item.subtitle,
+                                text = subtitle,
                                 color = Color.White.copy(alpha = 0.72f),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Medium
@@ -1214,7 +1223,7 @@ fun CasetaFeaturedCard(
                         Spacer(Modifier.width(18.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "CASETA · SEGURIDAD",
+                                text = stringResource(R.string.home_gate_security_label),
                                 color = PmmYellow,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.ExtraBold,
@@ -1222,13 +1231,13 @@ fun CasetaFeaturedCard(
                             )
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                text = item.title,
+                                text = title,
                                 color = Color.White,
                                 fontSize = 24.sp,
                                 fontWeight = FontWeight.Black
                             )
                             Text(
-                                text = item.subtitle,
+                                text = subtitle,
                                 color = Color.White.copy(alpha = 0.72f),
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Medium
@@ -1244,7 +1253,7 @@ fun CasetaFeaturedCard(
                                 modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp)
                             ) {
                                 Text(
-                                    text = "Abrir",
+                                    text = stringResource(R.string.home_open),
                                     color = Color.White,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold
@@ -1284,7 +1293,7 @@ fun CasetaFeaturedCard(
 
                         Column {
                             Text(
-                                text = "CASETA · SEGURIDAD",
+                                text = stringResource(R.string.home_gate_security_label),
                                 color = PmmYellow,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.ExtraBold,
@@ -1292,14 +1301,14 @@ fun CasetaFeaturedCard(
                             )
                             Spacer(Modifier.height(8.dp))
                             Text(
-                                text = item.title,
+                                text = title,
                                 color = Color.White,
                                 fontSize = 32.sp,
                                 fontWeight = FontWeight.Black
                             )
                             Spacer(Modifier.height(6.dp))
                             Text(
-                                text = "Entrada, salida y edición en la caseta de seguridad",
+                                text = stringResource(R.string.home_gate_description_full),
                                 color = Color.White.copy(alpha = 0.78f),
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Medium
@@ -1315,7 +1324,7 @@ fun CasetaFeaturedCard(
                                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
                                 ) {
                                     Text(
-                                        text = "Abrir módulo",
+                                        text = stringResource(R.string.home_open_module),
                                         color = Color.White,
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold
@@ -1348,6 +1357,8 @@ fun BentoHeroCard(
     modifier: Modifier = Modifier,
     isLandscapeTablet: Boolean = false
 ) {
+    val title = stringResource(item.titleRes)
+    val subtitle = stringResource(item.subtitleRes)
     val haptic = LocalHapticFeedback.current
     val transition = rememberInfiniteTransition(label = "bentoHeroGlow")
     val glowAlpha by transition.animateFloat(
@@ -1436,7 +1447,13 @@ fun BentoHeroCard(
                             )
                             Spacer(Modifier.width(6.dp))
                             Text(
-                                text = if (item.moduleId == MobileModuleIds.GATE) "CASETA · SEGURIDAD" else "MÓDULO PRINCIPAL",
+                                text = stringResource(
+                                    if (item.moduleId == MobileModuleIds.GATE) {
+                                        R.string.home_gate_security_label
+                                    } else {
+                                        R.string.home_main_module_label
+                                    }
+                                ),
                                 color = PmmYellow,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.ExtraBold,
@@ -1464,7 +1481,7 @@ fun BentoHeroCard(
                 // Main Info
                 Column(modifier = Modifier.padding(vertical = if (isLandscapeTablet) 12.dp else 6.dp)) {
                     Text(
-                        text = item.title,
+                        text = title,
                         color = Color.White,
                         fontSize = if (isLandscapeTablet) 32.sp else 24.sp,
                         fontWeight = FontWeight.Black,
@@ -1472,9 +1489,14 @@ fun BentoHeroCard(
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = if (item.title == "Revisión") "Mercancía, bultos y validación física"
-                               else if (item.title == "Caseta") "Entrada, salida y control vehicular"
-                               else "Operación de ${item.subtitle.lowercase()}",
+                        text = when (item.moduleId) {
+                            MobileModuleIds.REVIEW -> stringResource(R.string.home_review_hero_description)
+                            MobileModuleIds.GATE -> stringResource(R.string.home_gate_hero_description)
+                            else -> stringResource(
+                                R.string.home_operation_hero_description,
+                                title
+                            )
+                        },
                         color = Color.White.copy(alpha = 0.82f),
                         fontSize = if (isLandscapeTablet) 14.sp else 12.sp,
                         fontWeight = FontWeight.Medium
@@ -1496,7 +1518,7 @@ fun BentoHeroCard(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "Abrir Flujo de Trabajo",
+                            text = stringResource(R.string.home_open_workflow),
                             color = Color.White,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
@@ -1520,6 +1542,8 @@ fun BentoSatelliteCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val title = stringResource(item.titleRes)
+    val subtitle = stringResource(item.subtitleRes)
     val haptic = LocalHapticFeedback.current
     val screenWidth = LocalConfiguration.current.screenWidthDp
     val isTablet = screenWidth >= 600
@@ -1585,7 +1609,7 @@ fun BentoSatelliteCard(
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = item.title,
+                        text = title,
                         color = PmmTextPrimary,
                         fontSize = titleSize,
                         fontWeight = FontWeight.Bold,
@@ -1594,7 +1618,7 @@ fun BentoSatelliteCard(
                     )
                     Spacer(Modifier.height(2.dp))
                     Text(
-                        text = item.subtitle,
+                        text = subtitle,
                         color = PmmTextSecondary,
                         fontSize = subSize,
                         fontWeight = FontWeight.Medium,

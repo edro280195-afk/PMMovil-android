@@ -32,10 +32,15 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -71,7 +76,8 @@ fun SettingsScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val rostroDisponible = FaceEngine.isAvailable(LocalContext.current)
+    val context = LocalContext.current
+    val rostroDisponible = FaceEngine.isAvailable(context)
 
     Column(
         modifier = Modifier
@@ -97,13 +103,13 @@ fun SettingsScreen(
             ) {
                 Icon(
                     Icons.Default.ArrowBack,
-                    contentDescription = "Volver",
+                    contentDescription = stringResource(com.example.pmmovil.R.string.settings_back),
                     tint = PmmBlueDeep,
                     modifier = Modifier.size(19.dp)
                 )
             }
             Text(
-                "Ajustes",
+                stringResource(com.example.pmmovil.R.string.settings_title),
                 color = PmmTextPrimary,
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = 26.sp,
@@ -124,7 +130,7 @@ fun SettingsScreen(
 
             Escalonado(indice++) {
                 TarjetaIdentidad(
-                    nombre = viewModel.getUserName() ?: "Usuario",
+                    nombre = viewModel.getUserName() ?: stringResource(com.example.pmmovil.R.string.settings_user_default),
                     // El lugar es un código ("09") que no dice nada a quien lo lee.
                     detalle = listOfNotNull(
                         viewModel.getUserUsername(),
@@ -133,7 +139,13 @@ fun SettingsScreen(
                 )
             }
 
-            Escalonado(indice++) { EtiquetaGrupo("Cómo entras") }
+            Escalonado(indice++) {
+                LanguagePreference()
+            }
+
+            Escalonado(indice++) {
+                EtiquetaGrupo(stringResource(com.example.pmmovil.R.string.settings_access_group))
+            }
 
             // El rostro va primero porque es lo único de esta pantalla que
             // puede estar sin configurar, y es a lo que se viene.
@@ -144,17 +156,20 @@ fun SettingsScreen(
                         icono = Icons.Outlined.Face,
                         fondoIcono = null,
                         tinteIcono = Color.White,
-                        titulo = "Acceso con rostro",
+                        titulo = stringResource(com.example.pmmovil.R.string.settings_face_title),
                         subtitulo = when {
-                            info == null -> "Entrar sin gafete ni contraseña"
-                            info.enrolado -> "Registrado · ${info.plantillas} " +
-                                if (info.plantillas == 1) "toma" else "tomas"
-                            else -> "Sin configurar · te toma 30 segundos"
+                            info == null -> stringResource(com.example.pmmovil.R.string.settings_face_login_subtitle)
+                            info.enrolado -> pluralStringResource(
+                                com.example.pmmovil.R.plurals.settings_face_captures,
+                                info.plantillas,
+                                info.plantillas
+                            )
+                            else -> stringResource(com.example.pmmovil.R.string.settings_face_unconfigured_subtitle)
                         },
                         etiqueta = when {
                             info == null -> null
-                            info.enrolado -> "Activo"
-                            else -> "Configurar"
+                            info.enrolado -> stringResource(com.example.pmmovil.R.string.settings_status_active)
+                            else -> stringResource(com.example.pmmovil.R.string.settings_status_configure)
                         },
                         etiquetaOk = info?.enrolado == true,
                         destacada = true,
@@ -168,10 +183,17 @@ fun SettingsScreen(
                     icono = Icons.Default.Nfc,
                     fondoIcono = Color(0xFFFEF9E7),
                     tinteIcono = PmmAmberDark,
-                    titulo = "Gafete NFC",
-                    subtitulo = nfcInfo?.let { "Asociado a este equipo · ${formatWhen(it.associatedAtMillis)}" }
-                        ?: "No asociado a este equipo",
-                    etiqueta = if (nfcInfo != null) "Activo" else "Pendiente",
+                    titulo = stringResource(com.example.pmmovil.R.string.settings_nfc_title),
+                    subtitulo = nfcInfo?.let { info ->
+                        formatWhen(info.associatedAtMillis)?.let { date ->
+                            stringResource(com.example.pmmovil.R.string.settings_nfc_associated_at, date)
+                        } ?: stringResource(com.example.pmmovil.R.string.settings_nfc_associated)
+                    } ?: stringResource(com.example.pmmovil.R.string.settings_nfc_unassociated),
+                    etiqueta = if (nfcInfo != null) {
+                        stringResource(com.example.pmmovil.R.string.settings_status_active)
+                    } else {
+                        stringResource(com.example.pmmovil.R.string.settings_nfc_status_pending)
+                    },
                     etiquetaOk = nfcInfo != null,
                     onClick = onOpenNfcAssociation
                 )
@@ -182,9 +204,9 @@ fun SettingsScreen(
                     icono = Icons.Default.QrCode2,
                     fondoIcono = PmmNavyVariant,
                     tinteIcono = PmmBlueDeep,
-                    titulo = "Gafete QR",
-                    subtitulo = "Impreso · siempre disponible",
-                    etiqueta = "Activo",
+                    titulo = stringResource(com.example.pmmovil.R.string.settings_qr_title),
+                    subtitulo = stringResource(com.example.pmmovil.R.string.settings_qr_subtitle),
+                    etiqueta = stringResource(com.example.pmmovil.R.string.settings_status_active),
                     etiquetaOk = true
                 )
             }
@@ -284,13 +306,98 @@ private fun TarjetaIdentidad(nombre: String, detalle: String) {
 @Composable
 private fun EtiquetaGrupo(texto: String) {
     Text(
-        texto.uppercase(Locale("es", "MX")),
+        texto.uppercase(Locale.getDefault()),
         color = PmmTextMuted,
         fontSize = 10.5.sp,
         fontWeight = FontWeight.Bold,
         letterSpacing = 1.1.sp,
         modifier = Modifier.padding(start = 4.dp, top = 22.dp, bottom = 9.dp)
     )
+}
+
+@Composable
+private fun LanguagePreference() {
+    val currentLanguage = LocalConfiguration.current.locales[0].language
+    Column(modifier = Modifier.fillMaxWidth()) {
+        EtiquetaGrupo(stringResource(com.example.pmmovil.R.string.settings_language_section))
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 9.dp),
+            shape = RoundedCornerShape(18.dp),
+            color = PmmBgSurface,
+            border = BorderStroke(1.dp, PmmNavyBorder),
+            shadowElevation = 1.dp
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 15.dp, vertical = 14.dp)) {
+                Text(
+                    text = stringResource(com.example.pmmovil.R.string.settings_language_title),
+                    color = PmmTextPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.5.sp
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = stringResource(com.example.pmmovil.R.string.settings_language_subtitle),
+                    color = PmmTextSecondary,
+                    fontSize = 12.sp
+                )
+                Spacer(Modifier.height(11.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    LanguageButton(
+                        modifier = Modifier.weight(1f),
+                        selected = currentLanguage != "en",
+                        label = stringResource(com.example.pmmovil.R.string.language_spanish),
+                        onClick = {
+                            AppCompatDelegate.setApplicationLocales(
+                                LocaleListCompat.forLanguageTags("es-MX")
+                            )
+                        }
+                    )
+                    LanguageButton(
+                        modifier = Modifier.weight(1f),
+                        selected = currentLanguage == "en",
+                        label = stringResource(com.example.pmmovil.R.string.language_english),
+                        onClick = {
+                            AppCompatDelegate.setApplicationLocales(
+                                LocaleListCompat.forLanguageTags("en")
+                            )
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LanguageButton(
+    modifier: Modifier,
+    selected: Boolean,
+    label: String,
+    onClick: () -> Unit
+) {
+    if (selected) {
+        Button(
+            onClick = onClick,
+            modifier = modifier.heightIn(min = 46.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = PmmBlueDeep),
+            contentPadding = PaddingValues(horizontal = 8.dp)
+        ) {
+            Text(label, fontWeight = FontWeight.Bold)
+        }
+    } else {
+        OutlinedButton(
+            onClick = onClick,
+            modifier = modifier.heightIn(min = 46.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp)
+        ) {
+            Text(label, fontWeight = FontWeight.SemiBold)
+        }
+    }
 }
 
 @Composable
@@ -400,8 +507,8 @@ private fun FilaAjuste(
     }
 }
 
-private fun formatWhen(atMillis: Long): String {
-    if (atMillis <= 0L) return "hace un momento"
-    val formatter = SimpleDateFormat("d MMM, HH:mm", Locale("es", "MX"))
+private fun formatWhen(atMillis: Long): String? {
+    if (atMillis <= 0L) return null
+    val formatter = SimpleDateFormat("d MMM, HH:mm", Locale.getDefault())
     return formatter.format(Date(atMillis))
 }

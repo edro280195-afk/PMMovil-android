@@ -6,6 +6,7 @@ import android.speech.tts.TextToSpeech
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -22,19 +23,26 @@ import java.util.Locale
 @Composable
 fun rememberUnlockApprovedAlert(): (String) -> Unit {
     val context = LocalContext.current
+    val appLocale = LocalConfiguration.current.locales[0]
     var speaker by remember { mutableStateOf<TextToSpeech?>(null) }
     val tone = remember { ToneGenerator(AudioManager.STREAM_NOTIFICATION, 90) }
 
-    DisposableEffect(Unit) {
+    DisposableEffect(appLocale) {
         var instance: TextToSpeech? = null
         instance = TextToSpeech(context) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 instance?.let { tts ->
-                    val result = tts.setLanguage(Locale.forLanguageTag("es-MX"))
+                    val result = tts.setLanguage(appLocale)
                     if (result == TextToSpeech.LANG_MISSING_DATA ||
                         result == TextToSpeech.LANG_NOT_SUPPORTED
                     ) {
-                        tts.setLanguage(Locale.forLanguageTag("es"))
+                        tts.setLanguage(
+                            if (appLocale.language == "en") {
+                                Locale.ENGLISH
+                            } else {
+                                Locale.forLanguageTag("es-MX")
+                            }
+                        )
                     }
                     speaker = tts
                 }

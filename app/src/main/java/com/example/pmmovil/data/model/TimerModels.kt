@@ -40,6 +40,12 @@ data class GuardarCampoPartidaRequest(
     val valor: Any
 )
 
+data class GuardarCantidadComercialRequest(
+    val id: Int,
+    val cantidad: Double,
+    val unidad: String
+)
+
 data class CnofactRequest(val cnofact: String)
 
 data class AgregarPartidaRequest(val cnofact: String, val cref: String)

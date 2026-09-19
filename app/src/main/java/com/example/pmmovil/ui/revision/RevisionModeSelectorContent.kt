@@ -36,6 +36,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import com.example.pmmovil.R
 import com.example.pmmovil.data.preferences.ModePreferences
 import com.example.pmmovil.ui.theme.PmmAmberDark
 import com.example.pmmovil.ui.theme.PmmBlueDeep
@@ -76,7 +78,7 @@ fun RevisionModeSelectorContent(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Entrada seleccionada",
+                    text = stringResource(R.string.revision_selected_entry),
                     color = PmmTextMuted,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Black,
@@ -84,7 +86,7 @@ fun RevisionModeSelectorContent(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = crefAgrupada.ifBlank { "Sin referencia" },
+                    text = crefAgrupada.ifBlank { stringResource(R.string.common_no_reference) },
                     color = PmmTextPrimary,
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Black,
@@ -92,7 +94,7 @@ fun RevisionModeSelectorContent(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = contextLabel.ifBlank { "Cliente no disponible" },
+                    text = contextLabel.ifBlank { stringResource(R.string.common_customer_unavailable) },
                     color = PmmTextSecondary,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
@@ -116,7 +118,7 @@ fun RevisionModeSelectorContent(
                 IconButton(onClick = goBack) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Regresar a notificaciones",
+                        contentDescription = stringResource(R.string.common_back),
                         tint = PmmBlueDeep
                     )
                 }
@@ -127,12 +129,12 @@ fun RevisionModeSelectorContent(
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 RevisionSheetMetric(
                     modifier = Modifier.weight(1f),
-                    label = "Facturas",
+                    label = stringResource(R.string.revision_invoices),
                     value = facturas
                 )
                 RevisionSheetMetric(
                     modifier = Modifier.weight(1f),
-                    label = "Partidas",
+                    label = stringResource(R.string.revision_parts),
                     value = partidas
                 )
             }
@@ -140,21 +142,21 @@ fun RevisionModeSelectorContent(
 
         Spacer(Modifier.height(12.dp))
         Text(
-            text = "¿Cómo quieres revisar esta entrada?",
+            text = stringResource(R.string.revision_how_to_review),
             color = PmmTextPrimary,
             fontSize = 16.sp,
             fontWeight = FontWeight.ExtraBold
         )
         Text(
-            text = "Puedes cambiar de modo más adelante si el proceso lo requiere.",
+            text = stringResource(R.string.revision_change_mode_hint),
             color = PmmTextSecondary,
             fontSize = 12.sp
         )
         Spacer(Modifier.height(2.dp))
 
         RevisionModeOption(
-            title = "Revisión normal",
-            description = "Factura por factura, con cantidades, series y discrepancias.",
+            title = stringResource(R.string.revision_normal_mode),
+            description = stringResource(R.string.revision_normal_mode_description),
             icon = Icons.AutoMirrored.Filled.Assignment,
             accent = PmmBlueDeep,
             recommended = preferredMode == ModePreferences.Mode.NORMAL,
@@ -162,8 +164,8 @@ fun RevisionModeSelectorContent(
             onClick = { onModeSelected(ModePreferences.Mode.NORMAL) }
         )
         RevisionModeOption(
-            title = "Por códigos de barras",
-            description = "Escaneo rápido con pistola o cámara para productos identificados.",
+            title = stringResource(R.string.revision_barcode_mode),
+            description = stringResource(R.string.revision_barcode_mode_description),
             icon = Icons.Default.QrCodeScanner,
             accent = PmmAmberDark,
             recommended = preferredMode == ModePreferences.Mode.BARCODE,
@@ -184,7 +186,7 @@ fun RevisionModeSelectorContent(
                 )
                 Spacer(Modifier.width(9.dp))
                 Text(
-                    text = "Preparando la revisión…",
+                    text = stringResource(R.string.common_preparing_review),
                     color = PmmTextSecondary,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
@@ -279,7 +281,7 @@ private fun RevisionModeOption(
                             color = accent.copy(alpha = 0.13f)
                         ) {
                             Text(
-                                text = "PREFERIDO",
+                                text = stringResource(R.string.revision_preferred),
                                 modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
                                 color = accent,
                                 fontSize = 8.sp,
@@ -299,7 +301,7 @@ private fun RevisionModeOption(
             Spacer(Modifier.width(8.dp))
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                contentDescription = "Abrir $title",
+                contentDescription = stringResource(R.string.revision_open_mode, title),
                 tint = accent,
                 modifier = Modifier.size(19.dp)
             )

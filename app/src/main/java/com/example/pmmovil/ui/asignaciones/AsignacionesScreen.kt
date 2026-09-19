@@ -97,6 +97,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -104,7 +105,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.pmmovil.R
 import com.example.pmmovil.data.model.EntradaPendienteDto
 import com.example.pmmovil.data.preferences.ModePreferences
 import com.example.pmmovil.ui.components.PmmStatusBar
@@ -131,6 +134,7 @@ import com.example.pmmovil.ui.theme.PmmTextPrimary
 import com.example.pmmovil.ui.theme.PmmTextSecondary
 import com.example.pmmovil.ui.components.rememberUnlockApprovedAlert
 import com.example.pmmovil.ui.theme.PmmYellow
+import com.example.pmmovil.ui.localization.resolve
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -153,6 +157,7 @@ fun AsignacionesScreen(
     var snackbarKind by remember { mutableStateOf(PendingMessageKind.INFO) }
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
+    val context = LocalContext.current
     val playUnlockApprovedAlert = rememberUnlockApprovedAlert()
 
     PmmStatusBar(color = PmmNavyDark, darkIcons = false)
@@ -172,20 +177,20 @@ fun AsignacionesScreen(
                 is AsignacionesEvent.ShowMessage -> {
                     snackbarKind = event.kind
                     snackbarHostState.currentSnackbarData?.dismiss()
-                    scope.launch {
-                        snackbarHostState.showSnackbar(
-                            message = event.message,
+                        scope.launch {
+                            snackbarHostState.showSnackbar(
+                            message = event.message.resolve(context),
                             duration = SnackbarDuration.Long
                         )
                     }
                 }
 
                 is AsignacionesEvent.UnlockApproved -> {
-                    playUnlockApprovedAlert("Entrada autorizada")
+                    playUnlockApprovedAlert(context.getString(R.string.notification_entry_authorized))
                 }
 
                 is AsignacionesEvent.RevisionAssigned -> {
-                    playUnlockApprovedAlert("Revisión asignada")
+                    playUnlockApprovedAlert(context.getString(R.string.notification_review_assigned))
                 }
             }
         }
@@ -351,7 +356,7 @@ private fun PendingHeader(
             if (onBack != null) {
                 HeaderIconButton(
                     icon = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Volver",
+                    contentDescription = stringResource(R.string.common_back),
                     onClick = onBack
                 )
                 Spacer(Modifier.width(8.dp))
@@ -359,14 +364,14 @@ private fun PendingHeader(
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Pendientes",
+                    text = stringResource(R.string.assignments_title),
                     color = Color.White,
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Black,
                     letterSpacing = (-0.4).sp
                 )
                 Text(
-                    text = "Revisiones de bodega",
+                    text = stringResource(R.string.assignments_subtitle),
                     color = Color.White.copy(alpha = 0.72f),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium
@@ -390,7 +395,10 @@ private fun PendingHeader(
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = if (isSearching) "Buscando" else "Escáner listo",
+                        text = stringResource(
+                            if (isSearching) R.string.assignments_searching
+                            else R.string.assignments_scanner_ready
+                        ),
                         color = Color.White,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
@@ -401,7 +409,7 @@ private fun PendingHeader(
             Spacer(Modifier.width(8.dp))
             HeaderIconButton(
                 icon = Icons.Default.Refresh,
-                contentDescription = "Actualizar revisiones",
+                contentDescription = stringResource(R.string.assignments_refresh_content_description),
                 enabled = !isRefreshing,
                 onClick = onRefresh
             )
@@ -492,9 +500,9 @@ private fun PendingOverview(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = if (selectedTab == DrawerTab.MIAS) {
-                        "Tu trabajo de revisión"
+                        stringResource(R.string.assignments_my_work_title)
                     } else {
-                        "Entradas disponibles"
+                        stringResource(R.string.assignments_available_title)
                     },
                     color = PmmTextPrimary,
                     fontSize = 16.sp,
@@ -508,13 +516,21 @@ private fun PendingOverview(
                         // total, incluyendo las ya finalizadas) y avisaba de
                         // trabajo urgente que en realidad ya estaba cerrado.
                         when {
-                            minePendingCount == 0 && mineCount > 0 -> "Al día — nada pendiente por ahora"
-                            minePendingCount == 1 -> "1 entrada requiere tu atención"
-                            else -> "$minePendingCount entradas requieren tu atención"
+                            minePendingCount == 0 && mineCount > 0 ->
+                                stringResource(R.string.assignments_up_to_date)
+                            minePendingCount == 1 ->
+                                stringResource(R.string.assignments_one_attention)
+                            else -> stringResource(
+                                R.string.assignments_many_attention,
+                                minePendingCount
+                            )
                         }
                     } else {
-                        if (availableCount == 1) "1 entrada puede ser tomada"
-                        else "$availableCount entradas pueden ser tomadas"
+                        if (availableCount == 1) {
+                            stringResource(R.string.assignments_one_available)
+                        } else {
+                            stringResource(R.string.assignments_many_available, availableCount)
+                        }
                     },
                     color = PmmTextSecondary,
                     fontSize = 12.sp,
@@ -550,7 +566,7 @@ private fun PendingTabs(
         PendingTab(
             modifier = Modifier.weight(1f),
             selected = selectedTab == DrawerTab.MIAS,
-            label = "Mi trabajo",
+            label = stringResource(R.string.assignments_my_work),
             count = mineCount,
             icon = Icons.Default.Person,
             onClick = { onSelect(DrawerTab.MIAS) }
@@ -558,7 +574,7 @@ private fun PendingTabs(
         PendingTab(
             modifier = Modifier.weight(1f),
             selected = selectedTab == DrawerTab.DISPO,
-            label = "Disponibles",
+            label = stringResource(R.string.assignments_available),
             count = availableCount,
             icon = Icons.Default.Inventory2,
             onClick = { onSelect(DrawerTab.DISPO) }
@@ -648,7 +664,7 @@ private fun PendingSearch(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Close,
-                        contentDescription = "Limpiar búsqueda",
+                        contentDescription = stringResource(R.string.common_clear_search),
                         tint = PmmTextSecondary
                     )
                 }
@@ -656,7 +672,7 @@ private fun PendingSearch(
         },
         placeholder = {
             Text(
-                text = "Buscar referencia, cliente o supervisor",
+                text = stringResource(R.string.assignments_search_hint),
                 color = PmmTextMuted,
                 fontSize = 13.sp
             )
@@ -691,7 +707,7 @@ private fun StatusFilters(
                 onClick = { onSelect(status) },
                 label = {
                     Text(
-                        text = "${visual.label} ${counts[status] ?: 0}",
+                        text = "${stringResource(visual.labelRes)} ${counts[status] ?: 0}",
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp
                     )
@@ -723,18 +739,18 @@ private fun StatusFilters(
 }
 
 private data class FilterVisual(
-    val label: String,
+    @androidx.annotation.StringRes val labelRes: Int,
     val icon: ImageVector,
     val color: Color
 )
 
 private fun filterVisual(status: FilterStatus): FilterVisual {
     return when (status) {
-        FilterStatus.TOTAL -> FilterVisual("Todas", Icons.Default.Inventory2, PmmBlueDeep)
-        FilterStatus.PENDIENTE -> FilterVisual("Pendientes", Icons.Default.Description, PmmTextSecondary)
-        FilterStatus.REVISION -> FilterVisual("En proceso", Icons.Default.Refresh, PmmAmberDark)
-        FilterStatus.PAUSADA -> FilterVisual("Pausadas", Icons.Default.HourglassTop, Color(0xFF4F46E5))
-        FilterStatus.FINALIZADO -> FilterVisual("Finalizadas", Icons.Default.TaskAlt, PmmGreenDark)
+        FilterStatus.TOTAL -> FilterVisual(R.string.assignments_filter_all, Icons.Default.Inventory2, PmmBlueDeep)
+        FilterStatus.PENDIENTE -> FilterVisual(R.string.assignments_filter_pending, Icons.Default.Description, PmmTextSecondary)
+        FilterStatus.REVISION -> FilterVisual(R.string.assignments_filter_in_progress, Icons.Default.Refresh, PmmAmberDark)
+        FilterStatus.PAUSADA -> FilterVisual(R.string.assignments_filter_paused, Icons.Default.HourglassTop, Color(0xFF4F46E5))
+        FilterStatus.FINALIZADO -> FilterVisual(R.string.assignments_filter_completed, Icons.Default.TaskAlt, PmmGreenDark)
     }
 }
 
@@ -748,6 +764,7 @@ private fun PendingEntriesGrid(
     onEntryClick: (EntradaPendienteDto) -> Unit,
     onUnlockClick: (EntradaPendienteDto) -> Unit
 ) {
+    val context = LocalContext.current
     val assigned = entries.filter { it.esAsignada == true }
     val regular = entries.filterNot { it.esAsignada == true }
 
@@ -765,8 +782,8 @@ private fun PendingEntriesGrid(
     ) {
         if (assigned.isNotEmpty()) {
             sectionHeader(
-                title = "Asignadas a mí",
-                subtitle = "Ordenadas por prioridad",
+                title = context.getString(R.string.assignments_assigned_to_me),
+                subtitle = context.getString(R.string.assignments_sorted_by_priority),
                 count = assigned.size
             )
             items(assigned, key = { "assigned_${it.crefAgrupada}" }) { entry ->
@@ -782,11 +799,15 @@ private fun PendingEntriesGrid(
 
         if (regular.isNotEmpty()) {
             sectionHeader(
-                title = if (selectedTab == DrawerTab.MIAS) "En curso" else "Entradas",
-                subtitle = if (selectedTab == DrawerTab.MIAS) {
-                    "Revisiones abiertas por ti"
+                title = if (selectedTab == DrawerTab.MIAS) {
+                    context.getString(R.string.assignments_in_progress)
                 } else {
-                    "Toca una entrada para elegir el modo"
+                    context.getString(R.string.assignments_entries)
+                },
+                subtitle = if (selectedTab == DrawerTab.MIAS) {
+                    context.getString(R.string.assignments_opened_by_you)
+                } else {
+                    context.getString(R.string.assignments_choose_mode_hint)
                 },
                 count = regular.size
             )
@@ -820,7 +841,7 @@ private fun PendingEntriesGrid(
                         )
                         Spacer(Modifier.width(10.dp))
                         Text(
-                            text = "Se muestran los primeros resultados. Escribe una referencia o cliente para refinar la lista.",
+                            text = stringResource(R.string.assignments_truncated_hint),
                             color = PmmTextSecondary,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium
@@ -943,7 +964,7 @@ private fun PendingEntryCard(
                         Spacer(Modifier.height(3.dp))
                         Text(
                             text = entry.nombreCliente?.takeIf { it.isNotBlank() }
-                                ?: "Cliente no disponible",
+                                ?: stringResource(R.string.common_customer_unavailable),
                             color = PmmTextSecondary,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium,
@@ -966,13 +987,13 @@ private fun PendingEntryCard(
                     MetricChip(
                         modifier = Modifier.weight(1f),
                         icon = Icons.Default.Description,
-                        label = "Facturas",
+                        label = stringResource(R.string.revision_invoices),
                         value = "${entry.facturasCompletas}/${entry.totalFacturas}"
                     )
                     MetricChip(
                         modifier = Modifier.weight(1f),
                         icon = Icons.Default.Inventory2,
-                        label = "Partidas",
+                        label = stringResource(R.string.revision_parts),
                         value = "${entry.partidasRevisadas}/${entry.totalPartidas}"
                     )
                 }
@@ -1028,9 +1049,9 @@ private fun PendingEntryCard(
 @Composable
 private fun AssignmentBanner(entry: EntradaPendienteDto) {
     val priority = when (entry.asignPrioridad) {
-        2 -> Triple("URGENTE", PmmRed, Color(0xFFFEF2F2))
-        1 -> Triple("PRIORIDAD ALTA", PmmAmberDark, Color(0xFFFFFBEB))
-        else -> Triple("ASIGNADA", PmmBlueDeep, PmmNavyVariant)
+        2 -> Triple(R.string.assignments_urgent, PmmRed, Color(0xFFFEF2F2))
+        1 -> Triple(R.string.assignments_high_priority, PmmAmberDark, Color(0xFFFFFBEB))
+        else -> Triple(R.string.assignments_assigned, PmmBlueDeep, PmmNavyVariant)
     }
 
     Row(
@@ -1043,7 +1064,7 @@ private fun AssignmentBanner(entry: EntradaPendienteDto) {
             border = BorderStroke(1.dp, priority.second.copy(alpha = 0.25f))
         ) {
             Text(
-                text = priority.first,
+                    text = stringResource(priority.first),
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                 color = priority.second,
                 fontSize = 9.sp,
@@ -1058,7 +1079,7 @@ private fun AssignmentBanner(entry: EntradaPendienteDto) {
                 color = PmmYellow
             ) {
                 Text(
-                    text = "NUEVA",
+                    text = stringResource(R.string.assignments_new),
                     modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
                     color = PmmNavyDark,
                     fontSize = 9.sp,
@@ -1070,7 +1091,7 @@ private fun AssignmentBanner(entry: EntradaPendienteDto) {
         Spacer(Modifier.weight(1f))
         entry.asignSupervisor?.takeIf { it.isNotBlank() }?.let { supervisor ->
             Text(
-                text = "Por $supervisor",
+                text = stringResource(R.string.assignments_by_supervisor, supervisor),
                 color = PmmTextMuted,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -1131,7 +1152,7 @@ private fun StatusBadge(
             )
             Spacer(Modifier.width(5.dp))
             Text(
-                text = status.label,
+                text = stringResource(status.labelRes),
                 color = visual.color,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.ExtraBold,
@@ -1149,14 +1170,18 @@ private fun EntryProgress(
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = "Avance",
+                text = stringResource(R.string.assignments_progress),
                 color = PmmTextMuted,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold
             )
             Spacer(Modifier.weight(1f))
             Text(
-                text = status.progressLabel,
+                text = stringResource(
+                    R.string.assignments_progress_count,
+                    status.completedInvoices,
+                    status.totalInvoices
+                ),
                 color = PmmTextSecondary,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold
@@ -1265,13 +1290,19 @@ private fun EntryActionRow(
         Spacer(Modifier.width(7.dp))
         Text(
             text = when {
-                locked && relacionCerrada -> "En uso por $activeOwner · relación cerrada"
-                locked -> "En uso por $activeOwner"
-                isMineReview -> "En revisión por ti"
-                isMineDocument -> "Documentos tomados por ti"
-                !documentOwner.isNullOrBlank() -> "Documentos tomados por $documentOwner"
-                !entry.finRevision.isNullOrBlank() -> "Disponible · sesión pausada"
-                else -> "Lista para iniciar"
+                locked && relacionCerrada -> stringResource(
+                    R.string.assignments_in_use_closed,
+                    activeOwner.orEmpty()
+                )
+                locked -> stringResource(R.string.assignments_in_use, activeOwner.orEmpty())
+                isMineReview -> stringResource(R.string.assignments_in_review_by_you)
+                isMineDocument -> stringResource(R.string.assignments_documents_by_you)
+                !documentOwner.isNullOrBlank() -> stringResource(
+                    R.string.assignments_documents_by,
+                    documentOwner
+                )
+                !entry.finRevision.isNullOrBlank() -> stringResource(R.string.assignments_paused_session)
+                else -> stringResource(R.string.assignments_ready_to_start)
             },
             modifier = Modifier.weight(1f),
             color = if (locked) PmmRedDark else PmmTextSecondary,
@@ -1284,7 +1315,7 @@ private fun EntryActionRow(
         if (locked && relacionCerrada) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.FactCheck,
-                contentDescription = "No se puede solicitar: la relación ya fue cerrada",
+                contentDescription = stringResource(R.string.assignments_closed_no_request),
                 tint = PmmTextMuted,
                 modifier = Modifier.size(18.dp).padding(end = 12.dp)
             )
@@ -1301,7 +1332,10 @@ private fun EntryActionRow(
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    text = if (waitingUnlock) "Esperando" else "Solicitar acceso",
+                    text = stringResource(
+                        if (waitingUnlock) R.string.assignments_waiting
+                        else R.string.assignments_request_access
+                    ),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.ExtraBold
                 )
@@ -1312,7 +1346,10 @@ private fun EntryActionRow(
                 modifier = Modifier.heightIn(min = 48.dp)
             ) {
                 Text(
-                    text = if (isMine) "Continuar" else "Elegir modo",
+                    text = stringResource(
+                        if (isMine) R.string.assignments_continue
+                        else R.string.assignments_choose_mode
+                    ),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.ExtraBold
                 )
@@ -1354,7 +1391,7 @@ private fun ModeSelectorSheet(
         RevisionModeSelectorContent(
             crefAgrupada = entry.crefAgrupada,
             contextLabel = entry.nombreCliente?.takeIf { it.isNotBlank() }
-                ?: "Cliente no disponible",
+                ?: stringResource(R.string.common_customer_unavailable),
             facturas = "${entry.facturasCompletas}/${entry.totalFacturas}",
             partidas = "${entry.partidasRevisadas}/${entry.totalPartidas}",
             preferredMode = preferredMode,
@@ -1406,7 +1443,10 @@ private fun UnlockRequestSheet(
                 Spacer(Modifier.width(13.dp))
                 Column {
                     Text(
-                        text = if (isWaiting) "Solicitud pendiente" else "Solicitar acceso",
+                        text = stringResource(
+                            if (isWaiting) R.string.assignments_request_pending
+                            else R.string.assignments_request_access
+                        ),
                         color = PmmTextPrimary,
                         fontSize = 19.sp,
                         fontWeight = FontWeight.Black
@@ -1439,7 +1479,11 @@ private fun UnlockRequestSheet(
                     )
                     Spacer(Modifier.width(9.dp))
                     Text(
-                        text = "Actualmente revisa: ${entry.usuarioRevisando ?: "otro usuario"}",
+                        text = stringResource(
+                            R.string.assignments_current_reviewer,
+                            entry.usuarioRevisando
+                                ?: stringResource(R.string.assignments_other_user)
+                        ),
                         color = PmmRedDark,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
@@ -1450,7 +1494,7 @@ private fun UnlockRequestSheet(
             if (isWaiting) {
                 Spacer(Modifier.height(16.dp))
                 Text(
-                    text = "Ya existe una solicitud para esta entrada. Recibirás un aviso cuando el supervisor responda.",
+                    text = stringResource(R.string.assignments_request_exists),
                     color = PmmTextSecondary,
                     fontSize = 13.sp,
                     lineHeight = 19.sp
@@ -1463,7 +1507,10 @@ private fun UnlockRequestSheet(
                         .heightIn(min = 50.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = PmmBlueDeep)
                 ) {
-                    Text("Entendido", fontWeight = FontWeight.ExtraBold)
+                    Text(
+                        stringResource(R.string.common_understood),
+                        fontWeight = FontWeight.ExtraBold
+                    )
                 }
             } else {
                 Spacer(Modifier.height(16.dp))
@@ -1474,15 +1521,18 @@ private fun UnlockRequestSheet(
                         .fillMaxWidth()
                         .heightIn(min = 116.dp),
                     enabled = !isSubmitting,
-                    label = { Text("Motivo") },
+                    label = { Text(stringResource(R.string.assignments_reason)) },
                     supportingText = {
                         Text(
-                            text = "${reason.trim().length}/500 · mínimo 5 caracteres",
+                            text = stringResource(
+                                R.string.assignments_reason_counter,
+                                reason.trim().length
+                            ),
                             color = if (reason.isNotEmpty() && !valid) PmmRed else PmmTextMuted
                         )
                     },
                     placeholder = {
-                        Text("Explica por qué necesitas continuar esta revisión.")
+                        Text(stringResource(R.string.assignments_reason_hint))
                     },
                     minLines = 3,
                     maxLines = 5,
@@ -1501,7 +1551,10 @@ private fun UnlockRequestSheet(
                             .weight(1f)
                             .heightIn(min = 50.dp)
                     ) {
-                        Text("Cancelar", fontWeight = FontWeight.Bold)
+                        Text(
+                            stringResource(R.string.common_cancel),
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                     Button(
                         onClick = { onSubmit(reason) },
@@ -1518,7 +1571,10 @@ private fun UnlockRequestSheet(
                                 strokeWidth = 2.dp
                             )
                         } else {
-                            Text("Solicitar", fontWeight = FontWeight.ExtraBold)
+                            Text(
+                                stringResource(R.string.common_request),
+                                fontWeight = FontWeight.ExtraBold
+                            )
                         }
                     }
                 }
@@ -1600,9 +1656,9 @@ private fun PendingEmptyState(
             Spacer(Modifier.height(18.dp))
             Text(
                 text = when {
-                    hasFilters -> "No encontramos coincidencias"
-                    tab == DrawerTab.MIAS -> "No tienes revisiones activas"
-                    else -> "No hay entradas disponibles"
+                    hasFilters -> stringResource(R.string.assignments_no_matches)
+                    tab == DrawerTab.MIAS -> stringResource(R.string.assignments_no_active_reviews)
+                    else -> stringResource(R.string.assignments_no_available_entries)
                 },
                 color = PmmTextPrimary,
                 fontSize = 18.sp,
@@ -1612,9 +1668,9 @@ private fun PendingEmptyState(
             Spacer(Modifier.height(6.dp))
             Text(
                 text = when {
-                    hasFilters -> "Prueba con otra referencia, cliente o estado."
-                    tab == DrawerTab.MIAS -> "Las asignaciones y documentos que tomes aparecerán aquí."
-                    else -> "La lista se actualizará cuando lleguen nuevas entradas."
+                    hasFilters -> stringResource(R.string.assignments_try_another_filter)
+                    tab == DrawerTab.MIAS -> stringResource(R.string.assignments_taken_items_here)
+                    else -> stringResource(R.string.assignments_list_updates)
                 },
                 color = PmmTextSecondary,
                 fontSize = 13.sp,
@@ -1632,7 +1688,10 @@ private fun PendingEmptyState(
                         contentDescription = null
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text("Limpiar filtros", fontWeight = FontWeight.Bold)
+                    Text(
+                        stringResource(R.string.common_clear_filters),
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
@@ -1674,13 +1733,13 @@ private fun ScanButton(
             Spacer(Modifier.width(9.dp))
             Column {
                 Text(
-                    text = "Escanear entrada",
+                    text = stringResource(R.string.assignments_scan_entry),
                     color = PmmNavyDark,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Black
                 )
                 Text(
-                    text = "Cámara o pistola",
+                    text = stringResource(R.string.assignments_camera_or_gun),
                     color = PmmNavyDark.copy(alpha = 0.72f),
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold
@@ -1717,7 +1776,7 @@ private fun PendingSnackbarHost(
                 IconButton(onClick = data::dismiss) {
                     Icon(
                         imageVector = Icons.Default.Close,
-                        contentDescription = "Cerrar mensaje",
+                        contentDescription = stringResource(R.string.common_close_message),
                         tint = Color.White
                     )
                 }
