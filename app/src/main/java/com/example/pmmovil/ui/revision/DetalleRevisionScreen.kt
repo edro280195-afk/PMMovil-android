@@ -4528,6 +4528,20 @@ private fun PartidaForm(
         localUnidadComercial = unidadVisibleDePartida(partida, unidadesComerciales)
     }
 
+    // Cuando la unidad comercial (cunidadfactura) es KG, la cantidad comercial
+    // capturada YA es el peso en kilos -- se replica a "Peso (kg)" y de ahí se
+    // deriva libras con la misma regla de RevisionWeightRules que usa el resto
+    // de la pantalla. npeso sigue siendo la fuente real en libras; el campo
+    // queda tan editable como siempre, esto solo precarga un valor razonable.
+    fun sincronizarPesoSiUnidadKilos(cantidadTexto: String, codigoUnidadComercial: String) {
+        if (!codigoUnidadComercial.trim().equals("KG", ignoreCase = true)) return
+        val kilos = cantidadTexto.toDoubleOrNull() ?: return
+        localPesoKgs = String.format(Locale.US, "%.2f", kilos)
+        val libras = RevisionWeightRules.librasFromKilos(kilos)
+        localPeso = formatQuantity(libras)
+        onValueChange("npeso", libras)
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -4871,6 +4885,7 @@ private fun PartidaForm(
                                         localCantidadComercial.toDoubleOrNull() ?: 0.0,
                                         localUnidadComercial
                                     )
+                                    sincronizarPesoSiUnidadKilos(localCantidadComercial, localUnidadComercial)
                                 },
                                 enabled = !isLocked,
                                 keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
@@ -4886,6 +4901,7 @@ private fun PartidaForm(
                                         localCantidadComercial.toDoubleOrNull() ?: 0.0,
                                         option.codigo
                                     )
+                                    sincronizarPesoSiUnidadKilos(localCantidadComercial, option.codigo)
                                 },
                                 modifier = Modifier.weight(1.1f)
                             )
@@ -4901,6 +4917,7 @@ private fun PartidaForm(
                                         localCantidadComercial.toDoubleOrNull() ?: 0.0,
                                         localUnidadComercial
                                     )
+                                    sincronizarPesoSiUnidadKilos(localCantidadComercial, localUnidadComercial)
                                 },
                                 enabled = !isLocked,
                                 keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
@@ -4916,6 +4933,7 @@ private fun PartidaForm(
                                         localCantidadComercial.toDoubleOrNull() ?: 0.0,
                                         option.codigo
                                     )
+                                    sincronizarPesoSiUnidadKilos(localCantidadComercial, option.codigo)
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             )
