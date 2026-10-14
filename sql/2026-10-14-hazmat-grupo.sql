@@ -55,7 +55,21 @@ LIMIT 25;
 -- ----------------------------------------------------------------------------
 -- PASO 2 — La columna que falta  ** MODIFICA LA TABLA **
 --          char(3) alcanza para I, II y III, que son los unicos valores posibles.
+--
+--  ⚠ EL SET sql_mode NO ES OPCIONAL. Sin el, el ALTER falla con:
+--        Error 1067: Invalid default value for 'finicia_revision'
+--    ...y no es culpa de la columna nueva. traf3 tiene CINCO columnas heredadas
+--    con default de fecha cero -- finicia_revision, ffin_revision,
+--    recep_docs_bod, crea_inbond, cancel_inbond -- y al agregar una columna
+--    MySQL reconstruye la tabla y revalida TODOS los defaults. Con NO_ZERO_DATE
+--    activo (default desde MySQL 5.7, y el local corre 9.6) los rechaza.
+--
+--    Se relaja el modo SOLO para esta sesion. Los defaults viejos se quedan como
+--    estan a proposito: el codigo legacy y FoxPro cuentan con la fecha cero, y
+--    el propio API ya la esquiva con CASE WHEN YEAR(col) >= 2000.
 -- ----------------------------------------------------------------------------
+SET SESSION sql_mode = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION';
+
 ALTER TABLE traf3
     ADD COLUMN hazmat_grupo CHAR(3) NULL DEFAULT NULL
     COMMENT 'Grupo de embalaje del rombo: I, II o III'
