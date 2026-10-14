@@ -204,6 +204,13 @@ private fun FilaCampo(
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace
             )
+            propuesto.detalle?.let { detalle ->
+                Text(
+                    detalle,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         Text(

@@ -1266,7 +1266,7 @@ fun DetalleRevisionScreen(
                 filePrefix = "etiqueta",
                 onPhotoCaptured = { path ->
                     capturandoEtiqueta = false
-                    labelCaptureViewModel.analizar(path)
+                    labelCaptureViewModel.analizar(path, catalogoPaises = paisesList)
                 },
                 onDeletePhoto = {},
                 onClose = { capturandoEtiqueta = false }
@@ -1285,7 +1285,7 @@ fun DetalleRevisionScreen(
                                     viewModel.actualizarDatoPartida(
                                         destino,
                                         campoApi,
-                                        propuesto.leido.valor
+                                        propuesto.valorAEscribir
                                     )
                                 }
                         }

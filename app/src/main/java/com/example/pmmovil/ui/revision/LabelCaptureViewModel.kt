@@ -3,6 +3,8 @@ package com.example.pmmovil.ui.revision
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.pmmovil.data.model.PaisDto
+import com.example.pmmovil.data.ocr.CountryCatalogMatcher
 import com.example.pmmovil.data.ocr.LabelFieldExtractor
 import com.example.pmmovil.data.ocr.LocalTextOcr
 import com.example.pmmovil.data.ocr.LocalTextOcrResult
@@ -38,7 +40,14 @@ class LabelCaptureViewModel @Inject constructor(
     data class CampoPropuesto(
         val leido: LabelFieldExtractor.CampoLeido,
         val escribible: Boolean,
-        val aceptado: Boolean
+        val aceptado: Boolean,
+        /**
+         * Lo que de verdad se guarda. Casi siempre es [leido].valor, pero el pais
+         * se escribe como codigo de 3 letras aunque la etiqueta diga "THAILAND".
+         */
+        val valorAEscribir: String = leido.valor,
+        /** Aclaracion para la pantalla, p. ej. el nombre del pais resuelto. */
+        val detalle: String? = null
     )
 
     data class Estado(
@@ -60,7 +69,11 @@ class LabelCaptureViewModel @Inject constructor(
      * @param codigosEnVivo codigos que el lector ya decodifico apuntando a la
      *        misma etiqueta. Un codigo le gana al texto porque es exacto.
      */
-    fun analizar(path: String, codigosEnVivo: List<String> = emptyList()) {
+    fun analizar(
+        path: String,
+        codigosEnVivo: List<String> = emptyList(),
+        catalogoPaises: List<PaisDto> = emptyList()
+    ) {
         _estado.value = Estado(analizando = true, fotoPath = path)
         viewModelScope.launch {
             val lectura = leerConPaddleYFallback(path)
@@ -83,15 +96,7 @@ class LabelCaptureViewModel @Inject constructor(
             _estado.value = Estado(
                 fotoPath = path,
                 textoCrudo = resultado.rawText,
-                campos = campos.map { leido ->
-                    val destino = CAMPOS_ESCRIBIBLES[leido.campo]
-                    CampoPropuesto(
-                        leido = leido,
-                        escribible = destino != null,
-                        // Se aceptan por omision; el revisador desmarca lo que no cuadre.
-                        aceptado = destino != null
-                    )
-                },
+                campos = campos.map { leido -> aPropuesto(leido, catalogoPaises) },
                 error = if (campos.isEmpty()) {
                     "Se leyo la etiqueta pero no trae ninguna de las anclas conocidas " +
                         "(LOT, PART, Qty...). Captura el dato a mano."
@@ -100,6 +105,43 @@ class LabelCaptureViewModel @Inject constructor(
                 }
             )
         }
+    }
+
+    /**
+     * Decide si un campo leido se puede escribir y con que valor.
+     *
+     * El pais es el unico que necesita traduccion: `cpaisorigen` es varchar(3) y
+     * el catalogo esta en espanol, asi que "THAILAND" tiene que volverse "THA"
+     * antes de guardarse. Si no se puede resolver con certeza, el campo baja a
+     * solo referencia en vez de escribir algo a medias.
+     */
+    private fun aPropuesto(
+        leido: LabelFieldExtractor.CampoLeido,
+        catalogoPaises: List<PaisDto>
+    ): CampoPropuesto {
+        if (leido.campo == LabelFieldExtractor.Campo.PAIS_ORIGEN) {
+            val catalogo = catalogoPaises.mapNotNull { pais ->
+                val codigo = pais.codigo?.trim().orEmpty()
+                val nombre = (pais.descrip ?: pais.cnombre).orEmpty()
+                if (codigo.isEmpty()) null else CountryCatalogMatcher.PaisCatalogo(codigo, nombre)
+            }
+            val resuelto = CountryCatalogMatcher.emparejar(leido.valor, catalogo)
+            return CampoPropuesto(
+                leido = leido,
+                escribible = resuelto != null,
+                aceptado = resuelto != null,
+                valorAEscribir = resuelto?.codigo ?: leido.valor,
+                detalle = resuelto?.let { "${it.codigo} · ${it.nombre}" }
+                    ?: "No esta en el catalogo: captúralo a mano"
+            )
+        }
+        val destino = CAMPOS_ESCRIBIBLES[leido.campo]
+        return CampoPropuesto(
+            leido = leido,
+            escribible = destino != null,
+            // Se aceptan por omision; el revisador desmarca lo que no cuadre.
+            aceptado = destino != null
+        )
     }
 
     fun alternar(campo: LabelFieldExtractor.Campo) {
@@ -147,15 +189,15 @@ class LabelCaptureViewModel @Inject constructor(
          *    ("10 PCS", "Qty: 1 of 2"). El campo de la partida es el TOTAL de
          *    piezas. Meter uno en el otro es justo el error silencioso que
          *    queremos quitar, asi que lo decide el revisador.
-         *  - **Pais de origen**: `cPaisOrigen` es un codigo de 3 letras (DEU, USA)
-         *    y la etiqueta trae el nombre ("THAILAND"). Hay que pasarlo por el
-         *    catalogo de paises antes de escribirlo.
          *  - **UN, clase y grupo de embalaje**: hoy no hay setter de partida para
          *    hazmat. Van a `traf3`, que es otro endpoint.
          */
         val CAMPOS_ESCRIBIBLES: Map<LabelFieldExtractor.Campo, String> = mapOf(
             LabelFieldExtractor.Campo.LOTE to "numLote",
-            LabelFieldExtractor.Campo.NUMERO_SERIE to "numSer"
+            LabelFieldExtractor.Campo.NUMERO_SERIE to "numSer",
+            // Se escribe el CODIGO que resolvio CountryCatalogMatcher, no el
+            // texto de la etiqueta: la columna es varchar(3).
+            LabelFieldExtractor.Campo.PAIS_ORIGEN to "cPaisOrigen"
         )
     }
 }
