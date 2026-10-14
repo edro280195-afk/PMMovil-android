@@ -106,6 +106,19 @@ data class GuardarObservacionEntradaRequest(
     val valor: String
 )
 
+/**
+ * Los tres datos del rombo de mercancia peligrosa, SEPARADOS como vienen
+ * impresos: UN arriba, clase en el vertice y grupo de embalaje al pie.
+ * Van a traf3, que es por referencia y no por partida.
+ */
+data class GuardarHazmatRevisionRequest(
+    val crefAgrupada: String,
+    /** Solo el numero, sin el prefijo "UN". */
+    val un: String?,
+    val clase: String?,
+    val grupo: String?
+)
+
 data class PaisDto(
     @SerializedName("codigo") val codigo: String?,
     @SerializedName("descrip") val descrip: String?,

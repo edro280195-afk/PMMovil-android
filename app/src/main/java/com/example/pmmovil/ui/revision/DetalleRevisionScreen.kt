@@ -239,6 +239,7 @@ fun DetalleRevisionScreen(
     val labelCaptureEstado by labelCaptureViewModel.estado.collectAsState()
     var capturandoEtiqueta by remember { mutableStateOf(false) }
     var partidaParaEtiqueta by remember { mutableStateOf<PartidaRevisionDto?>(null) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(navegarAtras) {
         if (navegarAtras) {
@@ -1278,16 +1279,39 @@ fun DetalleRevisionScreen(
                 estado = labelCaptureEstado,
                 onAlternar = labelCaptureViewModel::alternar,
                 onUsar = {
+                    // Los campos de la partida y los del rombo van por caminos
+                    // distintos: la partida es por renglon y traf3 es por
+                    // referencia completa.
                     partidaParaEtiqueta?.let { destino ->
-                        labelCaptureEstado.aceptados.forEach { propuesto ->
-                            LabelCaptureViewModel.CAMPOS_ESCRIBIBLES[propuesto.leido.campo]
-                                ?.let { campoApi ->
-                                    viewModel.actualizarDatoPartida(
-                                        destino,
-                                        campoApi,
-                                        propuesto.valorAEscribir
-                                    )
-                                }
+                        labelCaptureEstado.aceptados
+                            .filter { it.destino == LabelCaptureViewModel.Destino.PARTIDA }
+                            .forEach { propuesto ->
+                                LabelCaptureViewModel.CAMPOS_ESCRIBIBLES[propuesto.leido.campo]
+                                    ?.let { campoApi ->
+                                        viewModel.actualizarDatoPartida(
+                                            destino,
+                                            campoApi,
+                                            propuesto.valorAEscribir
+                                        )
+                                    }
+                            }
+                    }
+                    val delRombo = labelCaptureEstado.aceptados
+                        .filter { it.destino == LabelCaptureViewModel.Destino.HAZMAT }
+                    if (delRombo.isNotEmpty()) {
+                        labelCaptureViewModel.guardarHazmat(
+                            crefAgrupada = viewModel.crefAgrupada,
+                            campos = delRombo
+                        ) { ok ->
+                            scope.launch {
+                                snackbarHostState.showSnackbar(
+                                    context.getString(
+                                        if (ok) R.string.revision_hazmat_saved
+                                        else R.string.revision_hazmat_failed
+                                    ),
+                                    duration = SnackbarDuration.Short
+                                )
+                            }
                         }
                     }
                     labelCaptureViewModel.limpiar()

@@ -148,6 +148,22 @@ class RevisionRepository @Inject constructor(private val api: PMMovilApi) {
         }
     }
 
+    /** Rombo de mercancia peligrosa: UN, clase y grupo, cada uno en su columna. */
+    suspend fun guardarHazmatRevision(
+        crefAgrupada: String,
+        un: String?,
+        clase: String?,
+        grupo: String?
+    ) = withContext(Dispatchers.IO) {
+        runCatching {
+            val r = api.guardarHazmatRevision(
+                GuardarHazmatRevisionRequest(crefAgrupada, un, clase, grupo)
+            )
+            if (r.isSuccessful && r.body()?.success == true) Unit
+            else throw Exception(errorMessage(r, "No se pudieron guardar los datos de HazMat."))
+        }
+    }
+
     suspend fun limpiarRevisor(cnofact: String) = withContext(Dispatchers.IO) {
         runCatching {
             val r = api.limpiarRevisor(CnofactRequest(cnofact))

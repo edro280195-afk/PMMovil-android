@@ -368,4 +368,6 @@
     <string name="revision_read_label_photo">Leer etiqueta con la cámara</string>
     <string name="revision_read_label_title">Leer etiqueta</string>
     <string name="revision_read_label_hint">Encuadra la etiqueta completa, sin reflejo encima del texto</string>
+    <string name="revision_hazmat_saved">Datos de material peligroso guardados</string>
+    <string name="revision_hazmat_failed">No se pudieron guardar los datos de material peligroso</string>
 </resources>

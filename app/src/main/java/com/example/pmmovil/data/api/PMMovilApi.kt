@@ -187,6 +187,9 @@ interface PMMovilApi {
     @PATCH("Revision/entrada/observacion")
     suspend fun guardarObservacionEntrada(@Body request: GuardarObservacionEntradaRequest): Response<SimpleSuccessResponse>
 
+    @PATCH("Revision/entrada/hazmat")
+    suspend fun guardarHazmatRevision(@Body request: GuardarHazmatRevisionRequest): Response<SimpleSuccessResponse>
+
     @POST("Revision/factura/limpiar-revisador")
     suspend fun limpiarRevisor(@Body request: CnofactRequest): Response<SimpleSuccessResponse>
 

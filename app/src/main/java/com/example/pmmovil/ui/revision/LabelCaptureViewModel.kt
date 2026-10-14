@@ -9,6 +9,7 @@ import com.example.pmmovil.data.ocr.LabelFieldExtractor
 import com.example.pmmovil.data.ocr.LocalTextOcr
 import com.example.pmmovil.data.ocr.LocalTextOcrResult
 import com.example.pmmovil.data.ocr.PaddleOcrEngine
+import com.example.pmmovil.data.repository.RevisionRepository
 import com.example.pmmovil.data.ocr.mergeLocalResults
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,8 +31,21 @@ import javax.inject.Inject
 @HiltViewModel
 class LabelCaptureViewModel @Inject constructor(
     private val paddleOcrEngine: PaddleOcrEngine,
-    private val localTextOcr: LocalTextOcr
+    private val localTextOcr: LocalTextOcr,
+    private val repository: RevisionRepository
 ) : ViewModel() {
+
+    /** A donde va cada campo cuando el revisador lo acepta. */
+    enum class Destino {
+        /** Columna de la partida, via DetalleRevisionViewModel.actualizarDatoPartida. */
+        PARTIDA,
+
+        /** traf3, que es por referencia y no por partida: UN, clase y grupo. */
+        HAZMAT,
+
+        /** Solo se muestra. */
+        NINGUNO
+    }
 
     /**
      * Un campo que la etiqueta entrego. [escribible] dice si el revisador puede
@@ -41,6 +55,7 @@ class LabelCaptureViewModel @Inject constructor(
         val leido: LabelFieldExtractor.CampoLeido,
         val escribible: Boolean,
         val aceptado: Boolean,
+        val destino: Destino = Destino.NINGUNO,
         /**
          * Lo que de verdad se guarda. Casi siempre es [leido].valor, pero el pais
          * se escribe como codigo de 3 letras aunque la etiqueta diga "THAILAND".
@@ -130,17 +145,28 @@ class LabelCaptureViewModel @Inject constructor(
                 leido = leido,
                 escribible = resuelto != null,
                 aceptado = resuelto != null,
+                destino = if (resuelto != null) Destino.PARTIDA else Destino.NINGUNO,
                 valorAEscribir = resuelto?.codigo ?: leido.valor,
                 detalle = resuelto?.let { "${it.codigo} · ${it.nombre}" }
                     ?: "No esta en el catalogo: captúralo a mano"
             )
         }
-        val destino = CAMPOS_ESCRIBIBLES[leido.campo]
+        if (leido.campo in CAMPOS_HAZMAT) {
+            return CampoPropuesto(
+                leido = leido,
+                escribible = true,
+                aceptado = true,
+                destino = Destino.HAZMAT,
+                detalle = "Se guarda en traf3, para toda la referencia"
+            )
+        }
+        val aPartida = CAMPOS_ESCRIBIBLES[leido.campo]
         return CampoPropuesto(
             leido = leido,
-            escribible = destino != null,
+            escribible = aPartida != null,
             // Se aceptan por omision; el revisador desmarca lo que no cuadre.
-            aceptado = destino != null
+            aceptado = aPartida != null,
+            destino = if (aPartida != null) Destino.PARTIDA else Destino.NINGUNO
         )
     }
 
@@ -150,6 +176,35 @@ class LabelCaptureViewModel @Inject constructor(
                 if (it.leido.campo == campo && it.escribible) it.copy(aceptado = !it.aceptado) else it
             }
         )
+    }
+
+    /**
+     * Manda los datos del rombo a traf3. Van juntos en una sola llamada porque
+     * son un solo hecho: este embarque es material peligroso tal y tal.
+     */
+    fun guardarHazmat(
+        crefAgrupada: String,
+        campos: List<CampoPropuesto>,
+        onResultado: (Boolean) -> Unit = {}
+    ) {
+        val delRombo = campos.filter { it.destino == Destino.HAZMAT }
+        if (crefAgrupada.isBlank() || delRombo.isEmpty()) {
+            onResultado(false)
+            return
+        }
+        fun valor(campo: LabelFieldExtractor.Campo) =
+            delRombo.firstOrNull { it.leido.campo == campo }?.valorAEscribir
+
+        viewModelScope.launch {
+            val r = repository.guardarHazmatRevision(
+                crefAgrupada = crefAgrupada,
+                un = valor(LabelFieldExtractor.Campo.UN_HAZMAT),
+                // La clase se lee como "3 · LIQUIDO"; a la columna va solo el codigo.
+                clase = valor(LabelFieldExtractor.Campo.CLASE_HAZMAT)?.substringBefore(' ')?.trim(),
+                grupo = valor(LabelFieldExtractor.Campo.GRUPO_EMBALAJE)
+            )
+            onResultado(r.isSuccess)
+        }
     }
 
     fun limpiar() {
@@ -189,8 +244,9 @@ class LabelCaptureViewModel @Inject constructor(
          *    ("10 PCS", "Qty: 1 of 2"). El campo de la partida es el TOTAL de
          *    piezas. Meter uno en el otro es justo el error silencioso que
          *    queremos quitar, asi que lo decide el revisador.
-         *  - **UN, clase y grupo de embalaje**: hoy no hay setter de partida para
-         *    hazmat. Van a `traf3`, que es otro endpoint.
+         *  - **UN, clase y grupo de embalaje**: no van a la partida sino a `traf3`,
+         *    que es por referencia. Se escriben con [guardarHazmat] y por eso no
+         *    estan en este mapa, pero si son escribibles (ver [CAMPOS_HAZMAT]).
          */
         val CAMPOS_ESCRIBIBLES: Map<LabelFieldExtractor.Campo, String> = mapOf(
             LabelFieldExtractor.Campo.LOTE to "numLote",
@@ -198,6 +254,13 @@ class LabelCaptureViewModel @Inject constructor(
             // Se escribe el CODIGO que resolvio CountryCatalogMatcher, no el
             // texto de la etiqueta: la columna es varchar(3).
             LabelFieldExtractor.Campo.PAIS_ORIGEN to "cPaisOrigen"
+        )
+
+        /** Los tres datos del rombo. No van a la partida: van a traf3. */
+        val CAMPOS_HAZMAT = setOf(
+            LabelFieldExtractor.Campo.UN_HAZMAT,
+            LabelFieldExtractor.Campo.CLASE_HAZMAT,
+            LabelFieldExtractor.Campo.GRUPO_EMBALAJE
         )
     }
 }

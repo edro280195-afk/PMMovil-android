@@ -363,4 +363,6 @@
     <string name="revision_read_label_photo">Read label with camera</string>
     <string name="revision_read_label_title">Read label</string>
     <string name="revision_read_label_hint">Frame the whole label, with no glare over the text</string>
+    <string name="revision_hazmat_saved">Hazardous material data saved</string>
+    <string name="revision_hazmat_failed">Could not save hazardous material data</string>
 </resources>
