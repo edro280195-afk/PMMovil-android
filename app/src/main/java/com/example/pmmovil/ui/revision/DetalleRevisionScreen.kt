@@ -74,6 +74,7 @@ import com.example.pmmovil.R
 import com.example.pmmovil.data.diagnostics.RevisionDiagnostics
 import com.example.pmmovil.data.model.FacturaRevisionDto
 import com.example.pmmovil.data.model.PartidaRevisionDto
+import com.example.pmmovil.ui.camera.LocalEvidenceCameraScreen
 import com.example.pmmovil.data.model.PaisDto
 import com.example.pmmovil.data.model.PaisFrecuenteDto
 import com.example.pmmovil.data.model.TipoMaterialDto
@@ -231,6 +232,13 @@ fun DetalleRevisionScreen(
 
     val celebrateOnExit by viewModel.celebrateOnExit.collectAsState()
     var showConfetti by remember { mutableStateOf(false) }
+    // Lectura de etiqueta por foto. Vive en su propio ViewModel para no
+    // engordar DetalleRevisionViewModel, que ya carga facturas, partidas,
+    // paises, fotos, hazmat y permisos.
+    val labelCaptureViewModel: LabelCaptureViewModel = hiltViewModel()
+    val labelCaptureEstado by labelCaptureViewModel.estado.collectAsState()
+    var capturandoEtiqueta by remember { mutableStateOf(false) }
+    var partidaParaEtiqueta by remember { mutableStateOf<PartidaRevisionDto?>(null) }
 
     LaunchedEffect(navegarAtras) {
         if (navegarAtras) {
@@ -1055,6 +1063,10 @@ fun DetalleRevisionScreen(
                                     fieldBeingScanned = field
                                     onNavigateToScanner()
                                 },
+                                onCapturarEtiqueta = { partida ->
+                                    partidaParaEtiqueta = partida
+                                    capturandoEtiqueta = true
+                                },
                                 onTogglePartida = viewModel::toggleRevisadoPartida,
                                 onDeletePartida = viewModel::eliminarPartida,
                                 onAddPartida = {
@@ -1218,6 +1230,10 @@ fun DetalleRevisionScreen(
                                 fieldBeingScanned = field
                                 onNavigateToScanner()
                             },
+                            onCapturarEtiqueta = { partida ->
+                                partidaParaEtiqueta = partida
+                                capturandoEtiqueta = true
+                            },
                             onTogglePartida = viewModel::toggleRevisadoPartida,
                             onDeletePartida = viewModel::eliminarPartida,
                             onAddPartida = {
@@ -1238,6 +1254,55 @@ fun DetalleRevisionScreen(
             visible = showConfetti,
             modifier = Modifier.fillMaxSize()
         )
+
+        // ── Lectura de etiqueta por foto ────────────────────────────────────
+        if (capturandoEtiqueta) {
+            LocalEvidenceCameraScreen(
+                title = stringResource(R.string.revision_read_label_title),
+                subtitle = stringResource(R.string.revision_read_label_hint),
+                photos = emptyList(),
+                maxPhotos = 1,
+                directoryName = "revision_label_capture",
+                filePrefix = "etiqueta",
+                onPhotoCaptured = { path ->
+                    capturandoEtiqueta = false
+                    labelCaptureViewModel.analizar(path)
+                },
+                onDeletePhoto = {},
+                onClose = { capturandoEtiqueta = false }
+            )
+        }
+
+        if (labelCaptureEstado.fotoPath != null) {
+            LabelCaptureSheet(
+                estado = labelCaptureEstado,
+                onAlternar = labelCaptureViewModel::alternar,
+                onUsar = {
+                    partidaParaEtiqueta?.let { destino ->
+                        labelCaptureEstado.aceptados.forEach { propuesto ->
+                            LabelCaptureViewModel.CAMPOS_ESCRIBIBLES[propuesto.leido.campo]
+                                ?.let { campoApi ->
+                                    viewModel.actualizarDatoPartida(
+                                        destino,
+                                        campoApi,
+                                        propuesto.leido.valor
+                                    )
+                                }
+                        }
+                    }
+                    labelCaptureViewModel.limpiar()
+                    partidaParaEtiqueta = null
+                },
+                onRepetir = {
+                    labelCaptureViewModel.limpiar()
+                    capturandoEtiqueta = true
+                },
+                onCerrar = {
+                    labelCaptureViewModel.limpiar()
+                    partidaParaEtiqueta = null
+                }
+            )
+        }
     }
 }
 
@@ -2321,6 +2386,7 @@ private fun RevisionMainContent(
     onUpdateCantidadComercial: (PartidaRevisionDto, Double, String) -> Unit,
     onQuickFill: (PartidaRevisionDto, String, String) -> Unit,
     onScan: (String) -> Unit,
+    onCapturarEtiqueta: ((PartidaRevisionDto) -> Unit)? = null,
     onTogglePartida: (PartidaRevisionDto) -> Unit,
     onDeletePartida: (Int) -> Unit,
     onAddPartida: () -> Unit,
@@ -2421,6 +2487,7 @@ private fun RevisionMainContent(
                     onCantidadComercialChange = onUpdateCantidadComercial,
                     onQuickFill = onQuickFill,
                     onScan = onScan,
+                    onCapturarEtiqueta = onCapturarEtiqueta,
                     onTogglePartida = { partida ->
                         onTogglePartida(partida)
                         if (!partida.Revisada) {
@@ -2504,6 +2571,7 @@ private fun PartidasSection(
     onCantidadComercialChange: (PartidaRevisionDto, Double, String) -> Unit,
     onQuickFill: (PartidaRevisionDto, String, String) -> Unit,
     onScan: (String) -> Unit,
+    onCapturarEtiqueta: ((PartidaRevisionDto) -> Unit)? = null,
     onTogglePartida: (PartidaRevisionDto) -> Unit,
     onDeletePartida: (Int) -> Unit,
     onAddPartida: () -> Unit
@@ -2618,6 +2686,7 @@ private fun PartidasSection(
                                     onQuickFill(partida, field, value)
                                 },
                                 onTriggerScan = onScan,
+                                onCapturarEtiqueta = onCapturarEtiqueta?.let { cb -> { cb(partida) } },
                                 onToggleRevisada = {
                                     onTogglePartida(partida)
                                 }
@@ -4460,6 +4529,7 @@ private fun PartidaForm(
     onCantidadComercialChange: (Double, String) -> Unit,
     onQuickFill: (String, String) -> Unit,
     onTriggerScan: (String) -> Unit,
+    onCapturarEtiqueta: (() -> Unit)? = null,
     onToggleRevisada: () -> Unit
 ) {
     var localMarca by remember(partida.IdRevdet) { mutableStateOf(partida.Marca ?: "") }
@@ -4753,6 +4823,24 @@ private fun PartidaForm(
                     enabled = !isLocked,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                // Captura por camara: una foto de la etiqueta llena lote y serie.
+                // El dato ya viene impreso; esto solo evita teclearlo. Ver
+                // docs/ia-revision-fisica.md.
+                if (onCapturarEtiqueta != null && !isLocked) {
+                    OutlinedButton(
+                        onClick = onCapturarEtiqueta,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PhotoCamera,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(R.string.revision_read_label_photo))
+                    }
+                }
 
                 // Solo tiene sentido cuando hay más de 1 pieza que capturar:
                 // para 1 sola serie ya alcanza con el campo de arriba.

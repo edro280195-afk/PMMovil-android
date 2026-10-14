@@ -365,4 +365,7 @@
     <string name="message_search_invoice_selected">📄 Factura %1$s seleccionada</string>
     <string name="message_scan_accumulated">📦 Partida %1$s · artículo %2$s · +%3$s → acumulado %4$s de %5$s</string>
     <string name="message_server_review_api">revisa el API</string>
+    <string name="revision_read_label_photo">Leer etiqueta con la cámara</string>
+    <string name="revision_read_label_title">Leer etiqueta</string>
+    <string name="revision_read_label_hint">Encuadra la etiqueta completa, sin reflejo encima del texto</string>
 </resources>
