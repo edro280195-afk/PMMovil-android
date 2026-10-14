@@ -25,3 +25,4 @@ include(":device-agent")
 include(":baselineprofile")
 include(":ppocr-sdk")
  
+include(":arlab")
