@@ -38,6 +38,22 @@ class LiveTextOcrAnalyzer(
      * Es opcional a proposito: la captura de placa y caja de Entrada Caseta no
      * dibuja nada, y asi no paga el costo de armar la lista en cada cuadro.
      */
+    /**
+     * Analisis vertical de texto rotado (stencil). Sirve para el numero de caja
+     * pintado de arriba a abajo en un contenedor -- el caso de Entrada Caseta --
+     * y **no sirve para una etiqueta de producto**, donde el texto es horizontal.
+     *
+     * No es gratis: corre en el HILO PRINCIPAL (el callback de ML Kit se postea
+     * ahi cuando no se le pasa un Executor) y recorre la imagen pixel por pixel
+     * para armar un bitmap en gris, lo rota, lo parte en tiras y lanza OTRO
+     * reconocimiento por cada tira. Medido en el Pixel 9 Pro XL con la imagen de
+     * analisis en 1280x960: **12 rafagas de 93 a 121 ms cada 3.6 s**, todas en
+     * el hilo de UI. A 120 Hz son ~13 cuadros perdidos de golpe, en tandas.
+     *
+     * Por eso se puede apagar. Queda encendido por omision para no cambiarle el
+     * comportamiento a Entrada Caseta, que es quien lo necesita.
+     */
+    private val analizarTextoVertical: Boolean = true,
     private val onGeometria: (GeometriaEnVivo) -> Unit = {},
     private val onResult: (LocalTextOcrResult) -> Unit
 ) : ImageAnalysis.Analyzer {
@@ -136,7 +152,7 @@ class LiveTextOcrAnalyzer(
                     }
 
                     // Análisis vertical de texto rotado (stencil) — cada 6 frames
-                    if (frameCount % 6 == 0 && barcodeValues.isEmpty()) {
+                    if (analizarTextoVertical && frameCount % 6 == 0 && barcodeValues.isEmpty()) {
                         val yuvBitmap = yuvToGrayscaleBitmap(media)
                         if (yuvBitmap != null) {
                             val uprightBitmap = rotateBitmap(yuvBitmap, rotation.toFloat())

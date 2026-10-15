@@ -200,6 +200,11 @@ fun LabelCaptureLiveScreen(
             // preview. Medido en la Armor Pad Pro.
             shouldSkipFrame = { capturandoState.value },
             onFrameSeen = { warmup.onFrameLuminance(LUMINANCIA_NEUTRA) },
+            // Apagado: el stencil vertical es para el numero pintado de arriba a
+            // abajo en un contenedor, no para una etiqueta de producto, donde el
+            // texto es horizontal. Costaba rafagas de 93-121 ms en el hilo de UI
+            // cada 3.6 s sin aportar nada aqui.
+            analizarTextoVertical = false,
             onGeometria = { nueva -> if (!capturandoState.value) geometria = nueva }
         ) { resultado ->
             if (capturandoState.value) return@LiveTextOcrAnalyzer
@@ -266,13 +271,25 @@ fun LabelCaptureLiveScreen(
                 .build()
                 .also { it.setAnalyzer(executor, analizador) }
 
-            // La etiqueta está quieta y el dato es texto chico: calidad por
-            // encima de latencia, igual que en la cámara de evidencias.
+            // MINIMIZE_LATENCY, no MAXIMIZE_QUALITY, y es a proposito.
+            //
+            // Esta es la unica pantalla que enlaza TRES flujos (preview +
+            // analisis + foto). La camara de evidencias pide MAXIMIZE_QUALITY
+            // pero solo enlaza dos, y Entrada Caseta enlaza tres con
+            // MINIMIZE_LATENCY. Con tres flujos y MAXIMIZE_QUALITY el HAL del
+            // Pixel 9 Pro XL se queda sin memoria para buffers y tira cuadros
+            // del preview -- ver la nota de RESOLUCION_ANALISIS con el log.
+            //
+            // El JPEG sigue a 95 y a resolucion completa (4080x3072), que es lo
+            // que de verdad decide si se lee un lote impreso chico. Si algun dia
+            // los numeros salen suaves, ESTE es el interruptor que hay que
+            // probar primero -- pero midiendo otra vez la asignacion de buffers,
+            // no a ciegas.
             val captura = ImageCapture.Builder()
                 .setResolutionSelector(
                     ResolutionSelector.Builder().setAspectRatioStrategy(aspecto).build()
                 )
-                .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                 .setJpegQuality(CALIDAD_JPEG_ETIQUETA)
                 .build()
 
@@ -865,9 +882,23 @@ private const val TAG_CAMARA_ETIQUETA = "etiqueta-vivo-camera"
 
 /**
  * El análisis en vivo no necesita resolución de lectura -- esa la da la foto --
- * pero sí la suficiente para que ML Kit *encuentre* renglones chicos y para que
- * las marcas se vean finas. 1280x960 es 4:3 exacto. Si alguna vez el HAL de una
- * tableta se ahoga aquí, este es el número que hay que bajar: 640x480 es el
- * valor que aguanta la Armor Pad Pro en Entrada Caseta.
+ * sólo la suficiente para *encontrar* la etiqueta y decodificar códigos.
+ *
+ * **Estuvo en 1280x960 y fue un error.** Medido en el Pixel 9 Pro XL: con tres
+ * flujos enlazados (preview + análisis 1280x960 + foto 4080x3072 en
+ * MAXIMIZE_QUALITY) el HAL se queda sin memoria para buffers y **tira cuadros
+ * del propio preview**, 2-3 por segundo de forma sostenida:
+ *
+ * ```
+ * GCH_CameraDeviceSession: Failed to get stream buffer from SBC manager
+ * Lyric: cam3_preview_scaler producing drops due to allocation failure:
+ *        UNAVAILABLE: MultiAllocator unable to allocate
+ * ```
+ *
+ * De paso el análisis corría a **1.5 fps** en vez de los 4 que permite el
+ * limitador. 640x480 es el valor que ya tenía probado Entrada Caseta, y para la
+ * capa de guía alcanza: cuando el renglón es tan chico que a esta resolución no
+ * se ve, la respuesta correcta es acercarse -- que es justo lo que dice la pista
+ * en pantalla -- no subir la resolución.
  */
-private val RESOLUCION_ANALISIS = AndroidSize(1280, 960)
+private val RESOLUCION_ANALISIS = AndroidSize(640, 480)
