@@ -57,11 +57,15 @@ object NetworkModule {
                 val path = request.url.encodedPath
                 val token = prefs.getString("AUTH_TOKEN", null)
                 val requestBuilder = request.newBuilder()
-                if (token != null && !path.contains("Auth/login", ignoreCase = true)) {
+                if (token != null && request.header("Authorization") == null && !path.contains("Auth/login", ignoreCase = true)) {
                     requestBuilder.addHeader("Authorization", "Bearer $token")
                 }
-                val response = chain.proceed(requestBuilder.build())
-                if (response.code == 401 && !path.contains("Auth/login", ignoreCase = true)) {
+                val authenticatedRequest = requestBuilder.build()
+                val response = chain.proceed(authenticatedRequest)
+                val currentToken = prefs.getString("AUTH_TOKEN", null)
+                if (response.code == 401 && currentToken != null &&
+                    authenticatedRequest.header("Authorization") == "Bearer $currentToken" &&
+                    !path.contains("Auth/login", ignoreCase = true)) {
                     prefs.edit {
                         remove("AUTH_TOKEN")
                         remove("AUTH_USER")

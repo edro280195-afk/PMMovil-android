@@ -22,7 +22,8 @@ object HomeDestinations {
     const val GATE_HUB = "caseta_hub"
     // Conserva las rutas internas existentes para no romper navegación
     // pendiente; las etiquetas visibles ya distinguen cada operación.
-    const val GATE_RELATION_EXIT = "caseta"
+    // La salida con relación y la manual viven ahora en una sola pantalla.
+    const val GATE_RELATION_EXIT = "salida_caseta"
     const val GATE_PHYSICAL_EXIT = "salida_caseta"
     const val WAREHOUSE_MAP = "mapa_bodega"
     const val GATE_ENTRY = "caseta_entrada"

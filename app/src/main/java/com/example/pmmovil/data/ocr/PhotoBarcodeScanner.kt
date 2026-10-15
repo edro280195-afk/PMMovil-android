@@ -63,7 +63,7 @@ class PhotoBarcodeScanner @Inject constructor(
                 val imagen = InputImage.fromFilePath(context, Uri.fromFile(archivo))
                 escaner.process(imagen).esperar()
                     .mapNotNull { it.rawValue ?: it.displayValue }
-                    .map(BarcodeValueNormalizer::normalize)
+                    .map(BarcodeValueNormalizer::normalizeLabel)
                     .filter { it.isNotBlank() }
                     .distinct()
             } finally {

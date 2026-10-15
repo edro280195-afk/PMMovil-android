@@ -1,19 +1,27 @@
 package com.example.pmmovil.data.printing
 
 import android.content.SharedPreferences
+import android.util.Log
 import androidx.core.content.edit
+import com.example.pmmovil.data.repository.ZebraPrinterRepository
 import com.google.gson.Gson
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import javax.inject.Inject
+import javax.inject.Provider
 import javax.inject.Singleton
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
-/** Almacena una plantilla local independiente por tipo de etiqueta. */
+/** Almacena una plantilla local (caché) independiente por tipo de etiqueta y sincroniza con el servidor. */
 @Singleton
 class ZebraLabelLayoutPreferences @Inject constructor(
-    private val preferences: SharedPreferences
+    private val preferences: SharedPreferences,
+    private val repositoryProvider: Provider<ZebraPrinterRepository>? = null
 ) {
+    constructor(preferences: SharedPreferences) : this(preferences, null)
+
     private val gson = Gson()
 
     fun getLayout(type: ZebraLabelType = ZebraLabelType.ENTRADA_BODEGA): ZebraLabelLayout {
@@ -35,6 +43,59 @@ class ZebraLabelLayoutPreferences @Inject constructor(
     ) {
         preferences.edit {
             putString(storageKey(type), gson.toJson(layout.sanitize()))
+        }
+    }
+
+    /**
+     * Sincroniza las plantillas con el servidor en segundo plano:
+     * - Si el servidor tiene una plantilla oficial guardada, actualiza el caché local.
+     * - Si el servidor NO tiene plantilla para un tipo pero este dispositivo sí tiene una personalizada,
+     *   la sube al servidor para convertirla en la plantilla compartida.
+     * - Si este dispositivo solo tiene la plantilla predeterminada y el servidor está vacío, no sube nada
+     *   para no sobreescribir con defaults.
+     */
+    suspend fun syncWithServer(): Result<Boolean> = withContext(Dispatchers.IO) {
+        runCatching {
+            val repository = repositoryProvider?.get() ?: return@runCatching false
+            val result = repository.getLabelLayouts().getOrThrow()
+            val serverMap = result.associateBy { it.layoutType.uppercase() }
+
+            for (type in ZebraLabelType.values()) {
+                val serverItem = serverMap[type.name.uppercase()]
+                val hasLocalSaved = preferences.contains(storageKey(type))
+
+                if (serverItem != null && serverItem.layoutJson.isNotBlank()) {
+                    // El servidor tiene una plantilla oficial: actualizar caché local
+                    runCatching {
+                        val parsed = deserializeZebraLabelLayout(serverItem.layoutJson, type)
+                        saveLayout(parsed, type)
+                    }.onFailure { ex ->
+                        Log.w("LabelPreferences", "Error al aplicar plantilla del servidor para ${type.name}: ${ex.message}")
+                    }
+                } else if (hasLocalSaved) {
+                    // El servidor no la tiene aún, pero este dispositivo tiene una plantilla personalizada:
+                    // la sube automáticamente como plantilla oficial.
+                    val local = getLayout(type)
+                    runCatching {
+                        repository.saveLabelLayout(type.name, gson.toJson(local.sanitize()))
+                    }
+                }
+            }
+            true
+        }
+    }
+
+    /** Guarda la plantilla localmente y la sincroniza de inmediato a la base de datos central del servidor. */
+    suspend fun saveLayoutToServer(
+        layout: ZebraLabelLayout,
+        type: ZebraLabelType = ZebraLabelType.ENTRADA_BODEGA
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            saveLayout(layout, type)
+            val repository = repositoryProvider?.get() ?: return@runCatching
+            val json = gson.toJson(layout.sanitize())
+            repository.saveLabelLayout(type.name, json).getOrThrow()
+            Unit
         }
     }
 

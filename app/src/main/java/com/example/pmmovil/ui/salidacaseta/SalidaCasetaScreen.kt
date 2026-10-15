@@ -2,41 +2,84 @@ package com.example.pmmovil.ui.salidacaseta
 
 import android.media.AudioManager
 import android.media.ToneGenerator
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.filled.Logout
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Inventory2
-import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.WarningAmber
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -45,14 +88,45 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.example.pmmovil.data.model.SalidaCajaItem
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import com.example.pmmovil.data.model.SalidaCarril
+import com.example.pmmovil.data.model.SalidaPatioItem
+import com.example.pmmovil.ui.camera.LocalEvidenceCameraScreen
+import com.example.pmmovil.ui.camera.LocalEvidencePhoto
+import com.example.pmmovil.ui.components.AnimatedCounter
 import com.example.pmmovil.ui.components.PmmSnackbarHost
 import com.example.pmmovil.ui.components.Skeleton
+import com.example.pmmovil.ui.components.pmmTap
 import com.example.pmmovil.ui.scanner.HardwareScannerListener
-import com.example.pmmovil.ui.theme.*
+import com.example.pmmovil.ui.theme.Motion
+import com.example.pmmovil.ui.theme.PmmAmber
+import com.example.pmmovil.ui.theme.PmmBgCard
+import com.example.pmmovil.ui.theme.PmmBgPrimary
+import com.example.pmmovil.ui.theme.PmmBgSurface
+import com.example.pmmovil.ui.theme.PmmBlueDeep
+import com.example.pmmovil.ui.theme.PmmBlueMid
+import com.example.pmmovil.ui.theme.PmmGreen
+import com.example.pmmovil.ui.theme.PmmNavyBorder
+import com.example.pmmovil.ui.theme.PmmNavyDark
+import com.example.pmmovil.ui.theme.PmmTextMuted
+import com.example.pmmovil.ui.theme.PmmTextPrimary
+import com.example.pmmovil.ui.theme.PmmTextSecondary
+import com.example.pmmovil.ui.theme.PmmYellow
+import java.io.File
+import kotlinx.coroutines.delay
 
-private val Mono = FontFamily.Monospace
+internal val Mono = FontFamily.Monospace
 
+/**
+ * Salida de caseta, una sola pantalla.
+ *
+ * Cada caja del patio vive en un carril (lista / sin relación / en proceso / por
+ * cerrar) decidido por el servidor; la pantalla solo ofrece la acción que le
+ * corresponde a ese carril. Reemplaza a «Salida de relación» y «Salida física».
+ */
+@OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun SalidaCasetaScreen(
     onNavigateBack: () -> Unit,
@@ -65,6 +139,7 @@ fun SalidaCasetaScreen(
     val snackbar = remember { SnackbarHostState() }
     val haptic = LocalHapticFeedback.current
     val tone = remember { ToneGenerator(AudioManager.STREAM_NOTIFICATION, 76) }
+    var cameraVisible by rememberSaveable { mutableStateOf(false) }
 
     HardwareScannerListener(viewModel::onScannerInput)
 
@@ -96,66 +171,113 @@ fun SalidaCasetaScreen(
         }
     }
 
-    val relacionWarning = state.relacionWarning
-    if (relacionWarning != null) {
-        RelacionWarningDialog(
-            relacion = relacionWarning,
-            caja = state.selected?.numCaja.orEmpty(),
-            countdown = state.relacionCountdown,
-            canConfirm = state.canConfirmRelacion,
-            processing = state.isProcessing,
-            onConfirm = viewModel::confirmRelacionWarning,
-            onDismiss = viewModel::dismissRelacionWarning
-        )
+    // El patio cambia solo (alguien autoriza una relación, otro guardia da una
+    // salida): se vuelve a leer cada 30 s mientras la pantalla está a la vista.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                delay(30_000)
+                viewModel.refresh(silencioso = true)
+            }
+        }
     }
 
-    Scaffold(
-        containerColor = Color.Transparent,
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFFF8FAFC)) // Base minimalista
-            .drawBehind {
-                val width = size.width
-                val height = size.height
-                // Destello superior derecho (Amarillo cálido/Miel)
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(Color(0xFFFEF08A).copy(alpha = 0.35f), Color.Transparent),
-                        center = Offset(width * 0.95f, 0f),
-                        radius = width * 0.85f
-                    ),
-                    radius = width * 0.85f,
-                    center = Offset(width * 0.95f, 0f)
-                )
-                // Destello intermedio izquierdo (Azul suave)
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(Color(0xFFDBEAFE).copy(alpha = 0.4f), Color.Transparent),
-                        center = Offset(0f, height * 0.35f),
-                        radius = width * 0.85f
-                    ),
-                    radius = width * 0.85f,
-                    center = Offset(0f, height * 0.35f)
+    // En teléfono el detalle ocupa toda la pantalla; en tableta convive con la lista.
+    // En ambos casos «atrás» primero cierra el detalle.
+    BackHandler(enabled = state.selectedId != null && !cameraVisible) { viewModel.closeDetail() }
+
+    val seleccionado = state.selected
+    if (cameraVisible && seleccionado != null) {
+        val fotos = state.fotosDe(seleccionado)
+        LocalEvidenceCameraScreen(
+            title = "Fotografías de salida",
+            subtitle = "Evidencia de la unidad y los sellos",
+            photos = fotos.mapIndexed { i, p ->
+                LocalEvidencePhoto(
+                    id = p,
+                    model = File(p),
+                    label = "Foto ${i + 1}",
+                    status = "Lista",
+                    canDelete = state.relBorrar
                 )
             },
+            // La petición lleva todas las fotos juntas; sin tope un solo envío
+            // podía pesar decenas de MB justo al confirmar.
+            maxPhotos = 20,
+            directoryName = "salidas",
+            filePrefix = "salida_",
+            canCapture = state.relAgregar,
+            onPhotoCaptured = viewModel::addPhoto,
+            onDeletePhoto = { photo -> viewModel.removePhoto(photo.id) },
+            onClose = { cameraVisible = false }
+        )
+        return
+    }
+
+    SalidaCasetaContenido(
+        state = state,
+        snackbar = snackbar,
+        acciones = SalidaAcciones(
+            onBack = onNavigateBack,
+            onScan = onNavigateToScanner,
+            onRefresh = { viewModel.refresh() },
+            onQuery = viewModel::setQuery,
+            onClearQuery = viewModel::clearQuery,
+            onCarril = viewModel::setCarrilFiltro,
+            onSelect = viewModel::select,
+            onCloseDetail = viewModel::closeDetail,
+            onObservaciones = viewModel::updateObservaciones,
+            onAbrirCamara = { cameraVisible = true },
+            onQuitarFoto = viewModel::removePhoto,
+            onConfirmar = viewModel::requestConfirm,
+            onDismissConfirm = viewModel::dismissConfirm,
+            onConfirm = viewModel::confirm
+        )
+    )
+}
+
+/** Acciones que la pantalla puede disparar; así el contenido es puro estado y se puede probar sin ViewModel. */
+internal class SalidaAcciones(
+    val onBack: () -> Unit,
+    val onScan: () -> Unit,
+    val onRefresh: () -> Unit,
+    val onQuery: (String) -> Unit,
+    val onClearQuery: () -> Unit,
+    val onCarril: (SalidaCarril?) -> Unit,
+    val onSelect: (String) -> Unit,
+    val onCloseDetail: () -> Unit,
+    val onObservaciones: (String) -> Unit,
+    val onAbrirCamara: () -> Unit,
+    val onQuitarFoto: (String) -> Unit,
+    val onConfirmar: () -> Unit,
+    val onDismissConfirm: () -> Unit,
+    val onConfirm: () -> Unit
+)
+
+@OptIn(ExperimentalAnimationApi::class)
+@Composable
+internal fun SalidaCasetaContenido(
+    state: SalidaUiState,
+    snackbar: SnackbarHostState,
+    acciones: SalidaAcciones
+) {
+    Scaffold(
+        containerColor = PmmBgPrimary,
         snackbarHost = { PmmSnackbarHost(snackbar) },
         topBar = {
-            SalidaHeader(
-                title = state.selected?.let { "Caja ${it.numCaja}" } ?: "Salida física de caja",
-                subtitle = if (state.selected == null) "Cajas en patio sin salida" else "Verifica y registra la salida física",
-                onBack = if (state.selected == null) onNavigateBack else viewModel::closeDetail,
-                onRefresh = viewModel::refresh,
-                refreshing = state.isLoading,
-                showRefresh = state.selected == null
-            )
-        },
-        bottomBar = {
-            if (state.selected != null) {
-                SalidaBottomBar(
-                    enabled = state.puedeModificar && !state.isProcessing,
-                    processing = state.isProcessing,
-                    onCancel = viewModel::closeDetail,
-                    onConfirm = viewModel::attemptSalida
+            BoxWithConstraints {
+                BarraSuperior(
+                    ancha = maxWidth >= 840.dp,
+                    subtitulo = if (state.actualizado.isBlank()) "Cajas del patio" else "Actualizado ${state.actualizado}",
+                    conteoHoy = state.hoy.conRelacion + state.hoy.manuales,
+                    hoyRelacion = state.hoy.conRelacion,
+                    hoyManual = state.hoy.manuales,
+                    refrescando = state.isRefreshing || state.isLoading,
+                    mostrarHoy = state.tieneAcceso,
+                    onBack = if (state.selectedId != null && maxWidth < 840.dp) acciones.onCloseDetail else acciones.onBack,
+                    onScan = acciones.onScan,
+                    onRefresh = acciones.onRefresh
                 )
             }
         }
@@ -165,855 +287,626 @@ fun SalidaCasetaScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            val contentWidth = if (maxWidth >= 840.dp) 1040.dp else maxWidth
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .widthIn(max = contentWidth)
-                    .align(Alignment.TopCenter)
-            ) {
-                if (state.selected == null) {
-                    SalidaListContent(
-                        state = state,
-                        onQueryChange = viewModel::setQuery,
-                        onClearQuery = viewModel::clearQuery,
-                        onScanner = onNavigateToScanner,
-                        onRefresh = viewModel::refresh,
-                        onOpen = viewModel::openDetail
-                    )
+            val ancha = maxWidth >= 840.dp
+            if (!state.tieneAcceso) {
+                SinAcceso()
+            } else {
+                val visibles = remember(state.items, state.query, state.carrilFiltro) { state.visibles() }
+                if (ancha) {
+                    Column(Modifier.fillMaxSize()) {
+                        BarraFiltros(state, acciones.onQuery, acciones.onClearQuery, acciones.onCarril, ancha = true)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            ListaPatio(
+                                state = state,
+                                visibles = visibles,
+                                onOpen = acciones.onSelect,
+                                modifier = Modifier
+                                    .width(420.dp)
+                                    .fillMaxHeight()
+                            )
+                            PanelDetalle(
+                                state = state,
+                                ancha = true,
+                                onObservaciones = acciones.onObservaciones,
+                                onAbrirCamara = acciones.onAbrirCamara,
+                                onQuitarFoto = acciones.onQuitarFoto,
+                                onConfirmar = acciones.onConfirmar,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                            )
+                        }
+                    }
                 } else {
-                    SalidaDetailContent(
-                        state = state,
-                        onObservationsChange = viewModel::updateObservations
-                    )
-                }
-
-                if (state.isProcessing && state.relacionWarning == null) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.White.copy(alpha = 0.62f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(color = PmmBlueDeep)
-                    }
-                }
-            }
-        }
-    }
-}
-
-// ── Header ────────────────────────────────────────────────────────────────
-
-@Composable
-private fun SalidaHeader(
-    title: String,
-    subtitle: String,
-    onBack: () -> Unit,
-    onRefresh: () -> Unit,
-    refreshing: Boolean,
-    showRefresh: Boolean
-) {
-    Surface(
-        color = Color.Transparent,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                // Botón Volver circular blanco con sombra
-                Surface(
-                    shape = CircleShape,
-                    color = Color.White,
-                    shadowElevation = 2.dp,
-                    modifier = Modifier.size(42.dp)
-                ) {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Volver",
-                            tint = PmmTextPrimary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-
-                // Textos centrales
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = 12.dp)
-                ) {
-                    Text(
-                        text = "CASETA · SALIDA FÍSICA DE CAJA",
-                        color = PmmTextMuted,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = title,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = PmmTextPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                // Botón Refresh circular (si aplica)
-                if (showRefresh) {
-                    Surface(
-                        shape = CircleShape,
-                        color = Color.White,
-                        shadowElevation = 2.dp,
-                        modifier = Modifier.size(42.dp)
-                    ) {
-                        IconButton(onClick = onRefresh, enabled = !refreshing) {
-                            if (refreshing) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
-                                    color = PmmBlueDeep,
-                                    strokeWidth = 2.dp
-                                )
+                    AnimatedContent(
+                        targetState = state.selectedId != null,
+                        transitionSpec = {
+                            if (targetState) {
+                                (slideInHorizontally(tween(Motion.DurationMedium, easing = Motion.EmphasizedDecelerate)) { it / 3 } + fadeIn(tween(Motion.DurationMedium))) togetherWith
+                                    (slideOutHorizontally(tween(Motion.DurationMedium, easing = Motion.EmphasizedAccelerate)) { -it / 6 } + fadeOut(tween(Motion.DurationQuick)))
                             } else {
-                                Icon(
-                                    imageVector = Icons.Default.Refresh,
-                                    contentDescription = "Actualizar",
-                                    tint = PmmTextPrimary,
-                                    modifier = Modifier.size(20.dp)
+                                (slideInHorizontally(tween(Motion.DurationMedium, easing = Motion.EmphasizedDecelerate)) { -it / 6 } + fadeIn(tween(Motion.DurationMedium))) togetherWith
+                                    (slideOutHorizontally(tween(Motion.DurationMedium, easing = Motion.EmphasizedAccelerate)) { it / 3 } + fadeOut(tween(Motion.DurationQuick)))
+                            }
+                        },
+                        label = "telefono-lista-detalle"
+                    ) { enDetalle ->
+                        if (enDetalle) {
+                            PanelDetalle(
+                                state = state,
+                                ancha = false,
+                                onObservaciones = acciones.onObservaciones,
+                                onAbrirCamara = acciones.onAbrirCamara,
+                                onQuitarFoto = acciones.onQuitarFoto,
+                                onConfirmar = acciones.onConfirmar,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Column(Modifier.fillMaxSize()) {
+                                BarraFiltros(state, acciones.onQuery, acciones.onClearQuery, acciones.onCarril, ancha = false)
+                                ListaPatio(
+                                    state = state,
+                                    visibles = visibles,
+                                    onOpen = acciones.onSelect,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(horizontal = 14.dp)
                                 )
                             }
                         }
                     }
-                } else {
-                    Spacer(Modifier.width(42.dp)) // Espaciador para centrar títulos
                 }
             }
-        }
-    }
-}
 
-// ── Lista ─────────────────────────────────────────────────────────────────
-
-@Composable
-private fun SalidaListContent(
-    state: SalidaCasetaUiState,
-    onQueryChange: (String) -> Unit,
-    onClearQuery: () -> Unit,
-    onScanner: () -> Unit,
-    onRefresh: () -> Unit,
-    onOpen: (SalidaCajaItem) -> Unit
-) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item {
-            SalidaSearchPanel(
-                query = state.query,
-                onQueryChange = onQueryChange,
-                onClear = onClearQuery,
-                onScanner = onScanner
-            )
-        }
-        when {
-            state.isLoading -> {
-                items(6) { SalidaCajaSkeleton() }
-            }
-            state.filteredPending.isEmpty() -> {
-                item {
-                    SalidaEmptyState(
-                        filtered = state.query.isNotBlank(),
-                        onRefresh = onRefresh,
-                        onClear = onClearQuery
-                    )
-                }
-            }
-            else -> {
-                item {
-                    SalidaSectionTitle(title = "CAJAS EN PATIO", count = state.filteredPending.size)
-                }
-                items(state.filteredPending, key = { it.casetaId }) { item ->
-                    SalidaCajaRow(item = item, onClick = { onOpen(item) })
-                }
-            }
-        }
-        item { Spacer(Modifier.height(20.dp)) }
-    }
-}
-
-@Composable
-private fun SalidaSearchPanel(
-    query: String,
-    onQueryChange: (String) -> Unit,
-    onClear: () -> Unit,
-    onScanner: () -> Unit
-) {
-    OutlinedTextField(
-        value = query,
-        onValueChange = onQueryChange,
-        modifier = Modifier
-            .fillMaxWidth()
-            .drawBehind {} // dummy to check drawing context
-            .shadow(2.dp, CircleShape)
-            .background(Color.White, CircleShape),
-        singleLine = true,
-        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = PmmTextMuted) },
-        trailingIcon = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(end = 4.dp)
-            ) {
-                if (query.isNotBlank()) {
-                    IconButton(onClick = onClear) {
-                        Icon(Icons.Default.Close, contentDescription = "Limpiar", tint = PmmTextSecondary)
-                    }
-                }
-                IconButton(onClick = onScanner) {
-                    Icon(Icons.Default.PhotoCamera, contentDescription = "Escanear", tint = Color(0xFF003DA5))
-                }
-            }
-        },
-        placeholder = { Text("Buscar caja, placas o cliente", color = PmmTextMuted) },
-        shape = CircleShape,
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = Color.Transparent,
-            unfocusedContainerColor = Color.Transparent,
-            focusedBorderColor = Color.Transparent,
-            unfocusedBorderColor = Color.Transparent
-        )
-    )
-}
-
-@Composable
-private fun SalidaSectionTitle(title: String, count: Int) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(title, color = PmmTextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.1.sp)
-        Spacer(Modifier.width(8.dp))
-        Surface(shape = RoundedCornerShape(999.dp), color = PmmNavyVariant) {
-            Text(
-                text = count.toString(),
-                color = PmmBlueDeep,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Black,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun SalidaCajaRow(item: SalidaCajaItem, onClick: () -> Unit) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        color = Color.White,
-        shape = RoundedCornerShape(20.dp),
-        shadowElevation = 2.dp
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    shape = CircleShape,
-                    color = Color(0xFFEEF3FF)
+            if (state.isProcessing) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.White.copy(alpha = 0.62f))
+                        .pointerInput(Unit) { detectTapGestures { } },
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        Icons.Default.Inventory2,
-                        contentDescription = null,
-                        tint = Color(0xFF003DA5),
-                        modifier = Modifier
-                            .padding(10.dp)
-                            .size(20.dp)
-                    )
+                    CircularProgressIndicator(color = PmmBlueDeep)
                 }
-                Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = item.numCaja.ifBlank { "S/N" },
-                        color = PmmTextPrimary,
-                        fontFamily = Mono,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = item.nombreCliente.ifBlank { "Cliente sin nombre" },
-                        color = PmmTextSecondary,
-                        fontWeight = FontWeight.Normal,
-                        fontSize = 12.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                TipoOpPill(item.tipoOp)
-                Spacer(Modifier.width(6.dp))
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = PmmTextMuted,
-                    modifier = Modifier.size(20.dp)
-                )
             }
-            Spacer(Modifier.height(12.dp))
-            HorizontalDivider(color = Color(0xFFF1F5FA))
-            Row(
-                modifier = Modifier.padding(top = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+        }
+    }
+
+    val aConfirmar = state.selected
+    if (state.confirmVisible && aConfirmar != null) {
+        DialogoConfirmar(
+            item = aConfirmar,
+            observacion = state.observacionDe(aConfirmar),
+            fotos = state.fotosDe(aConfirmar).size,
+            onDismiss = acciones.onDismissConfirm,
+            onConfirm = acciones.onConfirm
+        )
+    }
+}
+
+
+// ── Barra superior ───────────────────────────────────────────────────────────
+
+@Composable
+private fun BarraSuperior(
+    ancha: Boolean,
+    subtitulo: String,
+    conteoHoy: Int,
+    hoyRelacion: Int,
+    hoyManual: Int,
+    refrescando: Boolean,
+    mostrarHoy: Boolean,
+    onBack: () -> Unit,
+    onScan: () -> Unit,
+    onRefresh: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Brush.horizontalGradient(listOf(PmmNavyDark, PmmBlueDeep)))
+            .statusBarsPadding()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(13.dp))
+                    .background(Color.White.copy(alpha = 0.12f))
+                    .pmmTap(onClick = onBack),
+                contentAlignment = Alignment.Center
             ) {
-                SalidaInlineField(label = "PLACAS", value = item.placas, mono = true, modifier = Modifier.weight(1f))
-                SalidaInlineField(label = "LÍNEA CAJA", value = item.lineaCaja, modifier = Modifier.weight(1.3f))
-                DiasChip(item.diasEnPatio)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás", tint = Color.White)
+            }
+            Column(Modifier.weight(1f)) {
+                Text("Salida de caseta", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                Text(subtitulo, color = Color(0xFFB9C9E8), fontSize = 11.sp, maxLines = 1)
+            }
+            if (ancha && mostrarHoy) {
+                ResumenHoy(conteoHoy, hoyRelacion, hoyManual)
+            }
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(13.dp))
+                    .background(PmmYellow)
+                    .pmmTap(onClick = onScan)
+                    .padding(horizontal = 12.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                Icon(Icons.Default.QrCodeScanner, contentDescription = "Escanear", tint = Color(0xFF1B1500), modifier = Modifier.size(19.dp))
+                if (ancha) Text("Escanear QR", color = Color(0xFF1B1500), fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
+            }
+            val giro = if (refrescando) {
+                val infinite = rememberInfiniteTransition(label = "refrescar")
+                infinite.animateFloat(
+                    initialValue = 0f,
+                    targetValue = 360f,
+                    animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart),
+                    label = "giro"
+                ).value
+            } else 0f
+            IconButton(onClick = onRefresh) {
+                Icon(Icons.Default.Refresh, contentDescription = "Actualizar", tint = Color.White, modifier = Modifier.rotate(giro))
             }
         }
     }
 }
 
 @Composable
-private fun SalidaInlineField(
-    label: String,
-    value: String,
-    mono: Boolean = false,
+private fun ResumenHoy(total: Int, conRelacion: Int, manuales: Int) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ResumenHoyCelda(total, "Salidas hoy", Color.White)
+        ResumenHoyCelda(conRelacion, "Con relación", Color(0xFF86EFAC))
+        ResumenHoyCelda(manuales, "Manuales", Color(0xFFFCD34D))
+    }
+}
+
+@Composable
+private fun ResumenHoyCelda(valor: Int, etiqueta: String, color: Color) {
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color.White.copy(alpha = 0.10f))
+            .padding(horizontal = 11.dp, vertical = 5.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        AnimatedCounter(
+            target = valor,
+            style = TextStyle(color = color, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
+        )
+        Text(etiqueta.uppercase(), color = Color(0xFFB9C9E8), fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
+    }
+}
+
+// ── Búsqueda y carriles ──────────────────────────────────────────────────────
+
+@Composable
+private fun BarraFiltros(
+    state: SalidaUiState,
+    onQuery: (String) -> Unit,
+    onClear: () -> Unit,
+    onCarril: (SalidaCarril?) -> Unit,
+    ancha: Boolean
+) {
+    val chips: @Composable () -> Unit = {
+        ChipCarril("Todas", null, state.conteo(null), state.carrilFiltro == null, Color(0xFF0F172A)) { onCarril(null) }
+        SalidaCarril.entries.forEach { carril ->
+            ChipCarril(
+                etiqueta = carril.style().chip,
+                carril = carril,
+                conteo = state.conteo(carril),
+                seleccionado = state.carrilFiltro == carril,
+                color = carril.style().color
+            ) { onCarril(if (state.carrilFiltro == carril) null else carril) }
+        }
+    }
+    if (ancha) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            CampoBusqueda(state.query, onQuery, onClear, Modifier.width(420.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { chips() }
+        }
+    } else {
+        Column(Modifier.fillMaxWidth()) {
+            ResumenHoyTelefono(state)
+            CampoBusqueda(state.query, onQuery, onClear, Modifier.padding(horizontal = 14.dp, vertical = 6.dp))
+            Row(
+                modifier = Modifier
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 14.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) { chips() }
+            Spacer(Modifier.height(6.dp))
+        }
+    }
+}
+
+@Composable
+private fun ResumenHoyTelefono(state: SalidaUiState) {
+    val total = state.hoy.conRelacion + state.hoy.manuales
+    Row(
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        AnimatedCounter(target = total, style = TextStyle(color = PmmTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold))
+        Text("salidas hoy", color = PmmTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text("·  ${state.hoy.conRelacion} con relación  ·  ${state.hoy.manuales} manuales", color = PmmTextSecondary, fontSize = 12.sp)
+    }
+}
+
+@Composable
+private fun CampoBusqueda(
+    valor: String,
+    onChange: (String) -> Unit,
+    onClear: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Surface(
-        modifier = modifier,
-        color = Color(0xFFF1F5FA), // Sólido gris
-        shape = RoundedCornerShape(12.dp)
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = PmmBgSurface,
+        border = BorderStroke(1.5.dp, PmmNavyBorder)
     ) {
-        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-            Text(
-                text = label,
-                color = PmmTextMuted,
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.6.sp
-            )
-            Text(
-                text = value.ifBlank { "—" },
-                color = PmmTextPrimary,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = if (mono) Mono else FontFamily.Default,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-
-@Composable
-private fun DiasChip(dias: Int) {
-    val alerta = dias > 5
-    val color = if (alerta) PmmRed else PmmGreenDark
-    Surface(shape = RoundedCornerShape(999.dp), color = color.copy(alpha = 0.12f)) {
         Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-            verticalAlignment = Alignment.CenterVertically
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Icon(
-                imageVector = if (alerta) Icons.Default.WarningAmber else Icons.Default.Schedule,
-                contentDescription = null,
-                tint = color,
-                modifier = Modifier.size(13.dp)
-            )
-            Spacer(Modifier.width(4.dp))
-            Text("$dias d", color = color, fontSize = 11.sp, fontWeight = FontWeight.Black)
+            Icon(Icons.Default.Search, contentDescription = null, tint = PmmTextMuted, modifier = Modifier.size(19.dp))
+            Box(Modifier.weight(1f)) {
+                if (valor.isEmpty()) {
+                    Text("Caja, relación, placas, camión o cliente…", color = PmmTextMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                BasicTextField(
+                    value = valor,
+                    onValueChange = onChange,
+                    singleLine = true,
+                    textStyle = TextStyle(color = PmmTextPrimary, fontSize = 14.sp),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            if (valor.isNotEmpty()) {
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "Limpiar búsqueda",
+                    tint = PmmTextMuted,
+                    modifier = Modifier
+                        .size(19.dp)
+                        .pmmTap(onClick = onClear)
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun TipoOpPill(tipoOp: String) {
-    val isExpo = tipoOp.equals("EXPO", ignoreCase = true)
-    val bg = if (isExpo) PmmAmber.copy(alpha = 0.14f) else PmmNavyVariant
-    val fg = if (isExpo) PmmAmberDark else PmmBlueDeep
-    Surface(shape = RoundedCornerShape(6.dp), color = bg) {
+private fun ChipCarril(
+    etiqueta: String,
+    carril: SalidaCarril?,
+    conteo: Int,
+    seleccionado: Boolean,
+    color: Color,
+    onClick: () -> Unit
+) {
+    val fondo by animateColorAsState(
+        targetValue = if (seleccionado) (carril?.style()?.color ?: color) else PmmBgSurface,
+        animationSpec = tween(Motion.DurationMedium),
+        label = "chip-fondo"
+    )
+    val texto by animateColorAsState(
+        targetValue = if (seleccionado) Color.White else PmmTextSecondary,
+        animationSpec = tween(Motion.DurationMedium),
+        label = "chip-texto"
+    )
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(fondo)
+            .pmmTap(onClick = onClick)
+            .padding(horizontal = 13.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(7.dp)
+    ) {
+        if (carril != null) {
+            Box(
+                Modifier
+                    .size(9.dp)
+                    .clip(CircleShape)
+                    .background(if (seleccionado) Color.White else color)
+            )
+        }
+        Text(etiqueta, color = texto, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(999.dp))
+                .background(if (seleccionado) Color.White.copy(alpha = 0.22f) else PmmBgCard)
+                .padding(horizontal = 8.dp, vertical = 1.dp)
+        ) {
+            AnimatedCounter(target = conteo, style = TextStyle(color = texto, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold))
+        }
+    }
+}
+
+// ── Lista del patio ──────────────────────────────────────────────────────────
+// Sin animaciones por fila a propósito: el patio llega a 100+ cajas y animar cada
+// renglón causó jank medido en la tableta (ver memoria compose-listas-largas).
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ListaPatio(
+    state: SalidaUiState,
+    visibles: List<SalidaPatioItem>,
+    onOpen: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(modifier) {
+        when {
+            state.isLoading -> EsqueletoLista()
+            visibles.isEmpty() -> EstadoVacio(filtrado = state.items.isNotEmpty())
+            else -> {
+                val porCarril = remember(visibles) { visibles.groupBy { it.carrilEnum } }
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    SalidaCarril.entries.forEach { carril ->
+                        val grupo = porCarril[carril].orEmpty()
+                        if (grupo.isNotEmpty()) {
+                            stickyHeader(key = "h-${carril.clave}") {
+                                EncabezadoCarril(carril, grupo.size)
+                            }
+                            items(grupo, key = { it.id }) { item ->
+                                FilaPatio(item, seleccionada = item.id == state.selectedId, onClick = { onOpen(item.id) })
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EncabezadoCarril(carril: SalidaCarril, total: Int) {
+    val estilo = carril.style()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(PmmBgPrimary)
+            .padding(horizontal = 4.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Box(Modifier.size(8.dp).clip(CircleShape).background(estilo.color))
         Text(
-            text = tipoOp.ifBlank { "—" }.uppercase(),
-            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
-            color = fg,
-            fontSize = 10.sp,
+            "${estilo.encabezado} · $total",
+            color = PmmTextMuted,
+            fontSize = 11.sp,
             fontWeight = FontWeight.Black,
+            letterSpacing = 1.2.sp
+        )
+        Box(Modifier.weight(1f).height(1.dp).background(PmmNavyBorder))
+    }
+}
+
+@Composable
+private fun FilaPatio(item: SalidaPatioItem, seleccionada: Boolean, onClick: () -> Unit) {
+    val carril = item.carrilEnum
+    val estilo = carril.style()
+    val multiple = item.cajas.size > 1
+    val primera = item.cajas.firstOrNull()
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .pmmTap(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        color = if (seleccionada) Color(0xFFEFF6FF) else PmmBgSurface,
+        border = BorderStroke(if (seleccionada) 2.dp else 1.dp, if (seleccionada) PmmBlueMid else PmmNavyBorder)
+    ) {
+        Row(Modifier.height(IntrinsicSize.Min)) {
+            Box(
+                Modifier
+                    .width(6.dp)
+                    .fillMaxHeight()
+                    .background(estilo.color)
+            )
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = if (multiple) "${item.cajas.size} cajas" else etiquetaCaja(primera?.numCaja.orEmpty()),
+                        fontFamily = Mono,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 17.sp,
+                        color = PmmTextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (item.tipoOp.isNotBlank()) PildoraTipoOp(item.tipoOp)
+                    if (item.esTractocamion) Pildora("Tractocamión", Color(0xFFE2E8F0), PmmTextSecondary)
+                }
+                val clientes = when {
+                    item.clientes.isEmpty() -> "Sin cliente"
+                    item.clientes.size == 1 -> item.clientes.first()
+                    else -> "${item.clientes.first()} +${item.clientes.size - 1}"
+                }
+                Text(
+                    text = listOf(clientes, primera?.lineaCaja.orEmpty()).filter { it.isNotBlank() }.joinToString(" — "),
+                    color = PmmTextSecondary,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(2.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    when (carril) {
+                        SalidaCarril.LISTA -> {
+                            Pildora(item.relno, estilo.soft, estilo.ink, mono = true)
+                            item.minutosEspera?.let {
+                                Text(
+                                    "Espera ${formatoMinutos(it)}",
+                                    color = if (it > 1440) PmmAmber else PmmGreen,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                            if (multiple) Spacer(Modifier.weight(1f))
+                            if (multiple) Pildora("${item.cajas.size} cajas", PmmBgCard, PmmTextSecondary)
+                        }
+                        SalidaCarril.PROCESO -> {
+                            Pildora(item.estatusCarga.ifBlank { "SIN CARGA" }, estilo.soft, estilo.ink, mono = true)
+                            if (item.bultosTotal > 0) {
+                                BarraAvance(item.bultosCargados, item.bultosTotal, Modifier.width(80.dp))
+                                Text("${item.bultosCargados}/${item.bultosTotal}", color = PmmTextSecondary, fontSize = 11.sp)
+                            }
+                        }
+                        SalidaCarril.MANUAL -> {
+                            Pildora("SIN RELACIÓN", estilo.soft, estilo.ink)
+                            Text(
+                                item.tipoMovimiento.replace("/", " / ").ifBlank { "—" },
+                                color = PmmTextMuted,
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                            Text(
+                                if (item.diasEnPatio == 0) "${item.horasEnPatio} h en patio" else "${item.diasEnPatio} d en patio",
+                                color = PmmTextSecondary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        SalidaCarril.CERRAR -> {
+                            Pildora(item.relno, estilo.soft, estilo.ink, mono = true)
+                            Text("Salió ${formatoFechaCorta(item.salidaCaseta)}", color = PmmTextSecondary, fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun Pildora(texto: String, fondo: Color, tinta: Color, mono: Boolean = false) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(7.dp))
+            .background(fondo)
+            .padding(horizontal = 7.dp, vertical = 2.dp)
+    ) {
+        Text(
+            texto,
+            color = tinta,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = if (mono) Mono else null,
+            letterSpacing = 0.3.sp,
             maxLines = 1
         )
     }
 }
 
-// ── Detalle ───────────────────────────────────────────────────────────────
-
 @Composable
-private fun SalidaDetailContent(
-    state: SalidaCasetaUiState,
-    onObservationsChange: (String) -> Unit
-) {
-    val item = state.selected ?: return
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+internal fun PildoraTipoOp(tipoOp: String) {
+    val impo = tipoOp.equals("IMPO", ignoreCase = true)
+    Pildora(tipoOp, if (impo) Color(0xFFDBEAFE) else Color(0xFFFFEDD5), if (impo) Color(0xFF1E40AF) else Color(0xFF9A3412))
+}
+
+/** Barra fija (sin animar): vive dentro de las filas de la lista. */
+@Composable
+internal fun BarraAvance(actual: Int, total: Int, modifier: Modifier = Modifier) {
+    val fraccion = if (total <= 0) 0f else (actual.toFloat() / total).coerceIn(0f, 1f)
+    Box(
+        modifier = modifier
+            .height(5.dp)
+            .clip(RoundedCornerShape(5.dp))
+            .background(Color(0xFFE2E8F0))
     ) {
-        item { SalidaUnitHero(item) }
-        item { SalidaDataPanel(item) }
-        item {
-            SalidaObservationsCard(
-                value = state.observations,
-                enabled = !state.isProcessing,
-                onValueChange = onObservationsChange
-            )
-        }
-        item { Spacer(Modifier.height(90.dp)) }
+        Box(
+            Modifier
+                .fillMaxHeight()
+                .fillMaxWidth(fraccion)
+                .background(PmmBlueMid)
+        )
     }
 }
 
+// ── Estados: cargando, vacío, sin acceso ─────────────────────────────────────
+
 @Composable
-private fun SalidaUnitHero(item: SalidaCajaItem) {
-    Surface(
-        color = Color.White,
-        shape = RoundedCornerShape(20.dp),
-        shadowElevation = 2.dp
-    ) {
-        Column(modifier = Modifier.padding(18.dp)) {
-            Row(verticalAlignment = Alignment.Top) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Nº DE CAJA",
-                        color = Color(0xFF003DA5),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.8.sp
-                    )
-                    Text(
-                        text = item.numCaja.ifBlank { "S/N" },
-                        color = PmmTextPrimary,
-                        fontFamily = Mono,
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = item.nombreCliente.ifBlank { "Cliente sin nombre" },
-                        color = PmmTextSecondary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Normal,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TipoOpPill(item.tipoOp)
-                    DiasChip(item.diasEnPatio)
-                }
-            }
-            Spacer(Modifier.height(16.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                SalidaHeroData("PLACAS", item.placas, mono = true, modifier = Modifier.weight(1f))
-                SalidaHeroData("Nº CAMIÓN", item.numCamion, mono = true, modifier = Modifier.weight(1f))
-            }
+private fun EsqueletoLista() {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+        repeat(6) {
+            Skeleton(modifier = Modifier.fillMaxWidth(), height = 78.dp, shape = RoundedCornerShape(16.dp))
         }
     }
 }
 
 @Composable
-private fun SalidaHeroData(label: String, value: String, mono: Boolean = false, modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier,
-        color = Color(0xFFF1F5FA),
-        shape = RoundedCornerShape(14.dp)
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = label,
-                color = Color(0xFF003DA5),
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.8.sp
-            )
-            Text(
-                text = value.ifBlank { "—" },
-                color = PmmTextPrimary,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = if (mono) Mono else FontFamily.Default,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-
-@Composable
-private fun SalidaDataPanel(item: SalidaCajaItem) {
-    Surface(
-        color = Color.White,
-        shape = RoundedCornerShape(20.dp),
-        shadowElevation = 2.dp
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                text = "DATOS DE LA UNIDAD",
-                color = PmmTextSecondary,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.0.sp
-            )
-            val fields = listOf(
-                Triple("Línea caja", item.lineaCaja, false),
-                Triple("Tipo unidad", item.tipoUnidad, false),
-                Triple("Tipo movimiento", item.tipoMovimiento, false),
-                Triple("Fecha arribo", formatFechaArribo(item.fechaArribo), false),
-                Triple("Planta", item.planta, false),
-                Triple("Caseta ID", item.casetaId, true)
-            )
-            BoxWithConstraints {
-                val twoCols = maxWidth >= 380.dp
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    if (twoCols) {
-                        fields.chunked(2).forEach { row ->
-                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                row.forEach { (label, value, mono) ->
-                                    SalidaDetailField(label, value, mono, Modifier.weight(1f))
-                                }
-                                if (row.size == 1) Spacer(Modifier.weight(1f))
-                             }
-                        }
-                    } else {
-                        fields.forEach { (label, value, mono) ->
-                            SalidaDetailField(label, value, mono)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SalidaDetailField(label: String, value: String, mono: Boolean, modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        color = Color(0xFFF1F5FA),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = label.uppercase(),
-                color = PmmTextMuted,
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.8.sp
-            )
-            Text(
-                text = value.ifBlank { "—" },
-                color = PmmTextPrimary,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = if (mono) Mono else FontFamily.Default,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-
-@Composable
-private fun SalidaObservationsCard(
-    value: String,
-    enabled: Boolean,
-    onValueChange: (String) -> Unit
-) {
-    Surface(
-        color = Color.White,
-        shape = RoundedCornerShape(20.dp),
-        shadowElevation = 2.dp
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    shape = CircleShape,
-                    color = Color(0xFFEEF3FF)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Inventory2,
-                        contentDescription = null,
-                        tint = Color(0xFF003DA5),
-                        modifier = Modifier.padding(8.dp).size(16.dp)
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "OBSERVACIONES (OPCIONAL)",
-                    color = PmmTextSecondary,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.0.sp
-                )
-
-            }
+private fun EstadoVacio(filtrado: Boolean) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(32.dp)) {
+            Icon(Icons.Default.Inventory2, contentDescription = null, tint = PmmTextMuted, modifier = Modifier.size(44.dp))
             Spacer(Modifier.height(12.dp))
-            SalidaTextField(
-                value = value,
-                onValueChange = onValueChange,
-                enabled = enabled,
-                minLines = 3,
-                maxLines = 5,
-                placeholder = "Notas u observaciones opcionales (opcional)…"
+            Text(
+                if (filtrado) "Sin resultados" else "El patio está vacío",
+                color = PmmTextPrimary,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 16.sp
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                if (filtrado) "Prueba con otra caja, placas, cliente o relación, o quita el filtro de carril."
+                else "No hay cajas esperando salida en esta planta.",
+                color = PmmTextSecondary,
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center
             )
         }
     }
 }
 
 @Composable
-private fun SalidaTextField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    modifier: Modifier = Modifier,
-    placeholder: String = "",
-    isError: Boolean = false,
-    singleLine: Boolean = false,
-    minLines: Int = 1,
-    maxLines: Int = Int.MAX_VALUE,
-    enabled: Boolean = true
-) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        modifier = modifier.fillMaxWidth(),
-        enabled = enabled,
-        singleLine = singleLine,
-        minLines = minLines,
-        maxLines = maxLines,
-        placeholder = { Text(placeholder, color = PmmTextMuted) },
-        shape = RoundedCornerShape(14.dp),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = Color(0xFFF1F5FA),
-            unfocusedContainerColor = Color(0xFFF1F5FA),
-            disabledContainerColor = Color(0xFFF8FAFC),
-            focusedBorderColor = if (isError) Color(0xFFF97316) else Color.Transparent,
-            unfocusedBorderColor = if (isError) Color(0xFFF97316).copy(alpha = 0.5f) else Color.Transparent,
-            disabledBorderColor = Color.Transparent,
-            focusedTextColor = PmmTextPrimary,
-            unfocusedTextColor = PmmTextPrimary,
-            disabledTextColor = PmmTextSecondary
-        )
-    )
-}
-
-// ── Barra inferior ──────────────────────────────────────────────────────────
-
-@Composable
-private fun SalidaBottomBar(
-    enabled: Boolean,
-    processing: Boolean,
-    onCancel: () -> Unit,
-    onConfirm: () -> Unit
-) {
-    Surface(
-        color = Color.White,
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        shadowElevation = 12.dp
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            OutlinedButton(
-                onClick = onCancel,
-                enabled = !processing,
-                modifier = Modifier
-                    .weight(0.8f)
-                    .height(48.dp),
-                shape = RoundedCornerShape(999.dp),
-                border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = PmmTextSecondary)
-            ) {
-                Text("Cancelar", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            }
-            Button(
-                onClick = onConfirm,
-                enabled = enabled,
-                modifier = Modifier
-                    .weight(1.4f)
-                    .height(48.dp),
-                shape = RoundedCornerShape(999.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF15803D),
-                    contentColor = Color.White,
-                    disabledContainerColor = Color(0xFFE2E8F0),
-                    disabledContentColor = PmmTextMuted
-                )
-            ) {
-                if (processing) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
-                    Spacer(Modifier.width(6.dp))
-                } else {
-                    Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                }
-                Text("Dar salida física", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            }
-        }
-    }
-}
-
-// ── Diálogo de advertencia de relación ──────────────────────────────────────
-
-@Composable
-private fun RelacionWarningDialog(
-    relacion: String,
-    caja: String,
-    countdown: Int,
-    canConfirm: Boolean,
-    processing: Boolean,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = { if (!processing) onDismiss() },
-        icon = { Icon(Icons.Default.WarningAmber, contentDescription = null, tint = PmmAmber) },
-        title = { Text("La caja ya tiene relación", fontWeight = FontWeight.Black) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "La caja ${caja.ifBlank { "seleccionada" }} ya tiene la relación $relacion (prefijo 01).",
-                    color = PmmTextPrimary,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = "Confirma que deseas darle salida de todas formas.",
-                    color = PmmTextSecondary,
-                    fontSize = 13.sp
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = onConfirm,
-                enabled = canConfirm && !processing,
-                colors = ButtonDefaults.buttonColors(containerColor = PmmAmberDark, contentColor = Color.White)
-            ) {
-                Text(
-                    text = if (canConfirm) "Dar salida física" else "Dar salida física ($countdown)",
-                    fontWeight = FontWeight.Black
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !processing) {
-                Text("Cancelar")
-            }
-        }
-    )
-}
-
-// ── Skeleton / vacío ────────────────────────────────────────────────────────
-
-@Composable
-private fun SalidaCajaSkeleton() {
-    Surface(
-        color = PmmBgSurface,
-        shape = RoundedCornerShape(18.dp),
-        border = BorderStroke(1.dp, PmmNavyBorder)
-    ) {
-        Column(
-            modifier = Modifier.padding(15.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Skeleton(width = 150.dp, height = 18.dp)
-            Skeleton(width = 240.dp, height = 12.dp)
-            HorizontalDivider(color = PmmNavyBorder)
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Skeleton(modifier = Modifier.weight(1f), height = 32.dp)
-                Skeleton(modifier = Modifier.weight(1f), height = 32.dp)
-            }
-        }
-    }
-}
-
-@Composable
-private fun SalidaEmptyState(
-    filtered: Boolean,
-    onRefresh: () -> Unit,
-    onClear: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 52.dp, horizontal = 22.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Surface(shape = CircleShape, color = PmmNavyVariant) {
-            Icon(
-                imageVector = if (filtered) Icons.Default.Search else Icons.Default.CheckCircle,
-                contentDescription = null,
-                tint = PmmBlueDeep,
-                modifier = Modifier.padding(18.dp).size(36.dp)
+private fun SinAcceso() {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(32.dp)) {
+            Icon(Icons.Default.Lock, contentDescription = null, tint = PmmAmber, modifier = Modifier.size(46.dp))
+            Spacer(Modifier.height(12.dp))
+            Text("Sin acceso", color = PmmTextPrimary, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Tu perfil no tiene permiso de Lectura en la salida con relación ni en la salida manual.",
+                color = PmmTextSecondary,
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center
             )
         }
-        Spacer(Modifier.height(14.dp))
-        Text(
-            text = if (filtered) "Sin coincidencias" else "Sin cajas en patio por salir",
-            color = PmmTextPrimary,
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Black,
-            textAlign = TextAlign.Center
-        )
-        Text(
-            text = if (filtered) {
-                "Limpia la búsqueda o escanea otra caja."
-            } else {
-                "Cuando una caja arribe a patio y quede sin salida, aparecerá aquí."
-            },
-            color = PmmTextSecondary,
-            fontSize = 12.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 6.dp)
-        )
-        Spacer(Modifier.height(16.dp))
-        if (filtered) {
-            OutlinedButton(onClick = onClear) { Text("Limpiar búsqueda", fontWeight = FontWeight.Bold) }
-        } else {
-            OutlinedButton(onClick = onRefresh) {
-                Icon(Icons.Default.Refresh, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
-                Text("Actualizar", fontWeight = FontWeight.Bold)
-            }
-        }
-    }
-}
-
-private fun formatFechaArribo(value: String?): String {
-    val clean = value?.trim().orEmpty()
-    if (clean.isBlank()) return "—"
-    val datePart = clean.substringBefore("T")
-    val timePart = clean.substringAfter("T", "").take(5)
-    val parts = datePart.split("-")
-    return if (parts.size == 3) {
-        "${parts[2]}/${parts[1]} $timePart".trim()
-    } else {
-        clean.replace("T", " ").take(16)
     }
 }

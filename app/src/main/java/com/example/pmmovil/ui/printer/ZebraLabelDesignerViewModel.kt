@@ -99,6 +99,19 @@ class ZebraLabelDesignerViewModel @Inject constructor(
     )
     val uiState: StateFlow<ZebraLabelDesignerState> = _uiState.asStateFlow()
 
+    init {
+        viewModelScope.launch {
+            val syncResult = layoutPreferences.syncWithServer()
+            if (syncResult.isSuccess && syncResult.getOrNull() == true) {
+                _uiState.update {
+                    it.copy(
+                        layout = layoutPreferences.getLayout(it.labelType)
+                    )
+                }
+            }
+        }
+    }
+
     fun setLabelType(type: ZebraLabelType) {
         if (_uiState.value.labelType == type) return
         undoStack.clear()
@@ -789,9 +802,27 @@ class ZebraLabelDesignerViewModel @Inject constructor(
         layoutPreferences.saveLayout(state.layout, state.labelType)
         _uiState.update {
             it.copy(
-                message = "Formato de ${state.labelType.title.lowercase()} guardado.",
+                message = "Guardando formato de ${state.labelType.title.lowercase()} en el servidor...",
                 lastActionSucceeded = true
             )
+        }
+        viewModelScope.launch {
+            val result = layoutPreferences.saveLayoutToServer(state.layout, state.labelType)
+            if (result.isSuccess) {
+                _uiState.update {
+                    it.copy(
+                        message = "Formato de ${state.labelType.title.lowercase()} guardado y sincronizado para todos los dispositivos.",
+                        lastActionSucceeded = true
+                    )
+                }
+            } else {
+                _uiState.update {
+                    it.copy(
+                        message = "Guardado localmente. Error al sincronizar con el servidor: ${result.exceptionOrNull()?.message}",
+                        lastActionSucceeded = false
+                    )
+                }
+            }
         }
     }
 

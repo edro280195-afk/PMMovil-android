@@ -9,6 +9,7 @@ import com.example.pmmovil.data.model.CasetaEntradaPhotoSyncEntity
 import com.example.pmmovil.data.model.EntradaPhotoSyncEntity
 import com.example.pmmovil.data.model.FotoSyncEntity
 import com.example.pmmovil.data.model.PdfAnnotationDraftEntity
+import com.example.pmmovil.data.model.LabelCaptureDraftEntity
 
 @Database(
     entities = [
@@ -17,9 +18,10 @@ import com.example.pmmovil.data.model.PdfAnnotationDraftEntity
         EntradaPhotoSyncEntity::class,
         CasetaEntradaPhotoSyncEntity::class,
         CasetaEntradaDraftEntity::class,
-        PdfAnnotationDraftEntity::class
+        PdfAnnotationDraftEntity::class,
+        LabelCaptureDraftEntity::class
     ],
-    version = 13,
+    version = 14,
     exportSchema = false
 )
 @TypeConverters(StringListConverter::class)
@@ -30,4 +32,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun casetaEntradaPhotoSyncDao(): CasetaEntradaPhotoSyncDao
     abstract fun casetaEntradaDraftDao(): CasetaEntradaDraftDao
     abstract fun pdfAnnotationDraftDao(): PdfAnnotationDraftDao
+    abstract fun labelCaptureDao(): LabelCaptureDao
 }

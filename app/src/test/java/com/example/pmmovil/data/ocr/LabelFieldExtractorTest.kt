@@ -2,6 +2,7 @@ package com.example.pmmovil.data.ocr
 
 import com.example.pmmovil.data.ocr.LabelFieldExtractor.Campo
 import com.example.pmmovil.data.ocr.LabelFieldExtractor.Origen
+import com.example.pmmovil.data.ocr.LabelFieldExtractor.QuantityScope
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -186,5 +187,181 @@ class LabelFieldExtractorTest {
     fun `texto vacio no entrega nada`() {
         assertTrue(LabelFieldExtractor.extraer("").isEmpty())
         assertTrue(LabelFieldExtractor.extraer("   \n  \n ").isEmpty())
+    }
+
+    @Test
+    fun `GS1 con AIM y separadores conserva lote serie fecha y cantidad`() {
+        val code = "]C1011061414199999610Lot-A12\u001D21Serial-b45\u001D1727123130190"
+        val fields = LabelFieldExtractor.extraer("", listOf(code))
+
+        assertEquals("Lot-A12", fields.first { it.campo == Campo.LOTE }.valor)
+        assertEquals("Serial-b45", fields.first { it.campo == Campo.NUMERO_SERIE }.valor)
+        assertEquals("271231", fields.first { it.campo == Campo.CADUCIDAD }.valor)
+        assertEquals("190", fields.first { it.campo == Campo.CANTIDAD }.valor)
+        assertTrue(fields.all { it.rawCode == code })
+    }
+
+    @Test
+    fun `DataMatrix y QR GS1 reconocen sus prefijos AIM`() {
+        listOf("]d2", "]Q3").forEach { aim ->
+            assertEquals("LOT123", valor("", Campo.LOTE, listOf("${aim}10LOT123")))
+        }
+    }
+
+    @Test
+    fun `GS1 sin AIM necesita encabezado identificable o separador`() {
+        assertEquals("LOT123", valor("", Campo.LOTE, listOf("011061414199999610LOT123")))
+        assertEquals("LOT123", valor("", Campo.LOTE, listOf("10LOT123\u001D21SER456")))
+        assertTrue(LabelFieldExtractor.extraer("", listOf("102625100027")).isEmpty())
+    }
+
+    @Test
+    fun `un lote GS1 variable no se divide por numeros que parecen otro AI`() {
+        val code = "]C110ABC212345"
+        assertEquals("ABC212345", valor("", Campo.LOTE, listOf(code)))
+        assertNull(valor("", Campo.NUMERO_SERIE, listOf(code)))
+    }
+
+    @Test
+    fun `GS1 rechaza campos truncados desconocidos o demasiado largos`() {
+        listOf("]C101123", "]C110123456789012345678901", "]C110LOT123\u001D881234")
+            .forEach { code -> assertTrue(code, LabelFieldExtractor.extraer("", listOf(code)).isEmpty()) }
+    }
+
+    @Test
+    fun `GS1 parentesis preserva ceros puntuacion y el codigo original`() {
+        val code = "(01)10614141999996(10)00Ab-12/3(21)000s01(37)40"
+        val fields = LabelFieldExtractor.extraer("", listOf(code))
+
+        assertEquals("00Ab-12/3", fields.first { it.campo == Campo.LOTE }.valor)
+        assertEquals("000s01", fields.first { it.campo == Campo.NUMERO_SERIE }.valor)
+        val pieces = fields.first { it.campo == Campo.PIEZAS_POR_EMPAQUE }
+        assertEquals("40", pieces.valor)
+        assertEquals(QuantityScope.PACKAGE_CONTENT, pieces.quantityScope)
+        assertEquals(code, pieces.rawCode)
+    }
+
+    @Test
+    fun `OCR de identificador impreso no agrega el AI al lote`() {
+        val field = LabelFieldExtractor.extraer("LOT NO (10) 2625100027").first { it.campo == Campo.LOTE }
+        assertEquals("2625100027", field.valor)
+        assertEquals("(10) 2625100027", field.rawValue)
+    }
+
+    @Test
+    fun `codigos contradictorios no seleccionan el primero silenciosamente`() {
+        val result = LabelFieldExtractor.extractDetailed("", listOf("(10)LOT123", "(10)LOT999"))
+        assertTrue(result.fields.none { it.campo == Campo.LOTE })
+        assertEquals(Campo.LOTE, result.conflicts.single().field)
+        assertEquals(setOf("LOT123", "LOT999"), result.conflicts.single().observations.map { it.valor }.toSet())
+        assertEquals(2, result.observations.size)
+    }
+
+    @Test
+    fun `contradiccion entre texto y codigo queda visible para decision humana`() {
+        val result = LabelFieldExtractor.extractDetailed("LOT: LOT999", listOf("(10)LOT123"))
+        assertEquals(Campo.LOTE, result.conflicts.single().field)
+        assertTrue(LabelFieldExtractor.extraer("LOT: LOT999", listOf("(10)LOT123")).none { it.campo == Campo.LOTE })
+    }
+
+    @Test
+    fun `fuentes coincidentes conservan procedencia sin crear conflicto`() {
+        val result = LabelFieldExtractor.extractDetailed("LOT: LOT123", listOf("(10)LOT123"))
+        assertTrue(result.conflicts.isEmpty())
+        assertEquals(Origen.GS1, result.fields.single().origen)
+        assertEquals(2, result.observations.size)
+    }
+
+    @Test
+    fun `dos lotes distintos en el texto tampoco se ocultan`() {
+        val result = LabelFieldExtractor.extractDetailed("LOT: ABC123\nLOT: ABC999")
+        assertEquals(Campo.LOTE, result.conflicts.single().field)
+        assertTrue(result.fields.none { it.campo == Campo.LOTE })
+    }
+
+    @Test
+    fun `etiqueta estructurada alimenta parte lote y cantidad sin cambiar valores`() {
+        val code = "+30S0049106577+Q0049.200+HlotAb12+2D16102026+P"
+        val fields = LabelFieldExtractor.extraer("", listOf(code))
+        assertEquals("0049106577", fields.first { it.campo == Campo.NUMERO_PARTE }.valor)
+        assertEquals("lotAb12", fields.first { it.campo == Campo.LOTE }.valor)
+        assertEquals("0049.200", fields.first { it.campo == Campo.CANTIDAD }.valor)
+        assertTrue(fields.all { it.origen == Origen.STRUCTURED_BARCODE && it.rawCode == code })
+    }
+
+    @Test
+    fun `siguiente ancla en el mismo renglon delimita el dato`() {
+        val text = "LOT: ABC123 SERIAL: S999 PART #: P123 ORDER #: PO99"
+        assertEquals("ABC123", valor(text, Campo.LOTE))
+        assertEquals("S999", valor(text, Campo.NUMERO_SERIE))
+        assertEquals("P123", valor(text, Campo.NUMERO_PARTE))
+    }
+
+    @Test
+    fun `otra ancla debajo no se captura como lote`() {
+        val text = "Lot Number\nItem: F123"
+        assertNull(valor(text, Campo.LOTE))
+        assertEquals("F123", valor(text, Campo.NUMERO_PARTE))
+    }
+
+    @Test
+    fun `anclas necesitan tambien frontera derecha`() {
+        assertNull(valor("LOTTERY 123", Campo.LOTE))
+        assertNull(valor("QUANTITYLESS 123", Campo.CANTIDAD))
+        assertNull(valor("MODELLED A123", Campo.MODELO))
+    }
+
+    @Test
+    fun `grupo de embalaje solo acepta romanos explicitos validos`() {
+        listOf("I", "II", "III").forEach { group ->
+            assertEquals(group, valor("Packing Group: $group", Campo.GRUPO_EMBALAJE))
+        }
+        listOf("L", "IIII", "IV", "3", "LLL").forEach { group ->
+            assertNull(group, valor("Packing Group: $group", Campo.GRUPO_EMBALAJE))
+        }
+    }
+
+    @Test
+    fun `clase exige formato de clase o division sin deducirla de UN`() {
+        assertEquals("3", valor("Hazard Class: 3", Campo.CLASE_HAZMAT))
+        assertEquals("4.1", valor("Hazard Class: 4.1", Campo.CLASE_HAZMAT))
+        listOf("L", "10", "3 LIQUIDO", ".3").forEach { hazardClass ->
+            assertNull(hazardClass, valor("Hazard Class: $hazardClass", Campo.CLASE_HAZMAT))
+        }
+        assertNull(valor("UN1866\n3", Campo.CLASE_HAZMAT))
+    }
+
+    @Test
+    fun `ordinal de empaque conserva total y no se presenta como conteo simple`() {
+        val field = LabelFieldExtractor.extraer("Qty: 1 of 2").single()
+        assertEquals("1", field.valor)
+        assertEquals("1 of 2", field.rawValue)
+        assertEquals("2", field.packageTotal)
+        assertEquals(QuantityScope.PACKAGE_ORDINAL, field.quantityScope)
+        assertNull(valor("Qty: 3 of 2", Campo.CANTIDAD))
+    }
+
+    @Test
+    fun `marca y modelo requieren ancla o marca exacta en renglon propio`() {
+        val fields = LabelFieldExtractor.extraer("BRAND: Acme\nMODEL: A-123\nLOT: X123")
+        assertEquals("Acme", fields.first { it.campo == Campo.MARCA }.valor)
+        assertEquals("A-123", fields.first { it.campo == Campo.MODELO }.valor)
+        val brand = LabelFieldExtractor.extraer("BRIKKSEN").single()
+        assertEquals("BRIKKSEN", brand.valor)
+        assertEquals(Origen.KNOWN_BRAND, brand.origen)
+        assertNull(valor("Description: compatible with SKF bearings", Campo.MARCA))
+    }
+
+    @Test
+    fun `marca explicita y perfil distinto requieren resolver conflicto`() {
+        val result = LabelFieldExtractor.extractDetailed("BRAND: SKF\nVORTEX")
+        assertEquals(Campo.MARCA, result.conflicts.single().field)
+        assertTrue(result.fields.none { it.campo == Campo.MARCA })
+    }
+
+    @Test
+    fun `espacios dentro del valor no se usan como separador inventado`() {
+        assertEquals("Acme  Industries", valor("BRAND: Acme  Industries MODEL: A123", Campo.MARCA))
+        assertEquals("A123", valor("BRAND: Acme  Industries MODEL: A123", Campo.MODELO))
     }
 }

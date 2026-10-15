@@ -50,4 +50,26 @@ class StructuredLabelBarcodeParserTest {
         assertEquals("0049106577", parsed?.articulo)
         assertEquals(49.200, parsed?.cantidad ?: -1.0, 0.0001)
     }
+
+    @Test
+    fun `preserves case and original quantity inside values`() {
+        val parsed = StructuredLabelBarcodeParser.parse("+30s00Ab12+q0049.200+hLot-b12+p")
+        assertEquals("00Ab12", parsed?.articulo)
+        assertEquals("Lot-b12", parsed?.lote)
+        assertEquals("0049.200", parsed?.rawQuantity)
+    }
+
+    @Test
+    fun `rejects conflicting values inside a single structured label`() {
+        assertNull(StructuredLabelBarcodeParser.parse("+30S123+HLOT123+HLOT999"))
+        assertNull(StructuredLabelBarcodeParser.parse("+30S123+30S999+Q12"))
+        assertNull(StructuredLabelBarcodeParser.parse("+30S123+Q12+Q99"))
+    }
+
+    @Test
+    fun `rejects invalid quantities without replacing them with zero`() {
+        listOf("NaN", "Infinity", "-12", "abc").forEach { quantity ->
+            assertNull(StructuredLabelBarcodeParser.parse("+30S123+Q$quantity+HLOT123"))
+        }
+    }
 }

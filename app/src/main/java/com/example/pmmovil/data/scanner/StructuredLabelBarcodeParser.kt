@@ -33,7 +33,9 @@ object StructuredLabelBarcodeParser {
     data class ParsedLabel(
         val articulo: String? = null,
         val cantidad: Double? = null,
-        val lote: String? = null
+        val lote: String? = null,
+        /** Representación impresa, sin perder ceros ni decimales. */
+        val rawQuantity: String? = null
     )
 
     /**
@@ -44,31 +46,44 @@ object StructuredLabelBarcodeParser {
      * cual) sin falsos positivos sobre códigos de barras simples.
      */
     fun parse(raw: String): ParsedLabel? {
-        val trimmed = raw.trim()
+        val trimmed = BarcodeValueNormalizer.normalizeLabel(raw)
         if (!trimmed.startsWith("+")) return null
 
-        val segments = trimmed.uppercase().split("+").filter(String::isNotBlank)
+        val segments = trimmed.split("+").filter(String::isNotBlank)
         if (segments.size < 2) return null
 
         var articulo: String? = null
         var cantidad: Double? = null
         var lote: String? = null
+        var rawQuantity: String? = null
 
         for (segment in segments) {
             val (prefijo, tipo) = KNOWN_PREFIXES.firstOrNull { (prefijo, _) ->
-                segment.startsWith(prefijo)
+                segment.startsWith(prefijo, ignoreCase = true)
             } ?: continue
-            val valor = segment.removePrefix(prefijo).trim()
+            val valor = segment.substring(prefijo.length).trim()
             if (valor.isEmpty()) continue
             when (tipo) {
-                FieldType.ARTICULO -> articulo = valor
-                FieldType.CANTIDAD -> cantidad = valor.toDoubleOrNull()
-                FieldType.LOTE -> lote = valor
+                FieldType.ARTICULO -> {
+                    if (articulo != null && articulo != valor) return null
+                    articulo = valor
+                }
+                FieldType.CANTIDAD -> {
+                    val parsedQuantity = valor.toDoubleOrNull()
+                    if (parsedQuantity == null || !parsedQuantity.isFinite() || parsedQuantity < 0) return null
+                    if (cantidad != null && cantidad != parsedQuantity) return null
+                    cantidad = parsedQuantity
+                    rawQuantity = valor
+                }
+                FieldType.LOTE -> {
+                    if (lote != null && lote != valor) return null
+                    lote = valor
+                }
                 FieldType.FECHA, FieldType.CONTRATO, FieldType.DESCONOCIDO -> {}
             }
         }
 
         if (articulo == null) return null
-        return ParsedLabel(articulo, cantidad, lote)
+        return ParsedLabel(articulo, cantidad, lote, rawQuantity)
     }
 }

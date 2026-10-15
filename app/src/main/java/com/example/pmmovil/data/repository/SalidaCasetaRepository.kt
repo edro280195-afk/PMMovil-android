@@ -1,9 +1,11 @@
 package com.example.pmmovil.data.repository
 
 import com.example.pmmovil.data.api.PMMovilApi
+import com.example.pmmovil.data.model.CerrarRegistroRequest
 import com.example.pmmovil.data.model.RegistrarSalidaCajaRequest
 import com.example.pmmovil.data.model.RegistrarSalidaCajaResponse
 import com.example.pmmovil.data.model.SalidaCajaItem
+import com.example.pmmovil.data.model.SalidaPatioResponse
 import com.google.gson.JsonParser
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -23,6 +25,27 @@ class SalidaCasetaRepository @Inject constructor(
         } else {
             throw apiFailure(response, body?.message, "No se pudieron cargar las cajas en patio.")
         }
+    }
+
+    /** Patio clasificado por carril (lista / manual / en proceso / por cerrar). */
+    suspend fun getPatio(): Result<SalidaPatioResponse> = io {
+        val response = api.getSalidaPatio()
+        val body = response.body()
+        if (response.isSuccessful && body?.success == true) {
+            body
+        } else {
+            throw apiFailure(response, body?.message, "No se pudo cargar el patio.")
+        }
+    }
+
+    /** La relación ya salió: cierra solo el registro de patio de sus cajas. */
+    suspend fun cerrarRegistro(relno: String): Result<RegistrarSalidaCajaResponse> = io {
+        val response = api.cerrarRegistroSalida(CerrarRegistroRequest(relno = relno))
+        response.body() ?: throw apiFailure(
+            response = response,
+            bodyMessage = null,
+            fallback = "No se pudo cerrar el registro de patio."
+        )
     }
 
     suspend fun revisarRelacion(casetaId: String): Result<String> = io {

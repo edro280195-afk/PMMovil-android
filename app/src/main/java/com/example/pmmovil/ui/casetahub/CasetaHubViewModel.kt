@@ -6,6 +6,7 @@ import com.example.pmmovil.data.model.CasetaEntradaBusquedaItem
 import com.example.pmmovil.data.model.CasetaPreregistroEnCaminoItem
 import com.example.pmmovil.data.model.SalidaCajaItem
 import com.example.pmmovil.data.model.MobileModuleIds
+import com.example.pmmovil.data.signalr.WarehouseHubService
 import com.example.pmmovil.data.repository.AuthRepository
 import com.example.pmmovil.data.repository.CasetaEntradaRepository
 import com.example.pmmovil.data.printing.LabelZplFactory
@@ -77,6 +78,9 @@ data class CasetaHubUiState(
     val puedeSalidaFisica: Boolean = false,
     val feedbackSeq: Int = 0
 ) {
+    /** Una sola pantalla de salida: se ofrece con Lectura en la salida con relación (165) o en la manual (166). */
+    val puedeSalida: Boolean get() = puedeSalidaRelacion || puedeSalidaFisica
+
     val hayFiltros: Boolean
         get() = query.isNotBlank() ||
             filtroCliente != null ||
@@ -155,7 +159,8 @@ class CasetaHubViewModel @Inject constructor(
     private val zebraPrinterService: ZebraPrinterService,
     private val zebraLabelLayoutPreferences: ZebraLabelLayoutPreferences,
     private val labelZplFactory: LabelZplFactory,
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val warehouseHubService: WarehouseHubService
 ) : ViewModel() {
 
     private val puedePreregistro = authRepository.hasPermission(MobileModuleIds.GATE, "Agregar")
@@ -179,6 +184,45 @@ class CasetaHubViewModel @Inject constructor(
 
     init {
         refresh()
+        warehouseHubService.startConnection()
+        observePreregistroEvents()
+        viewModelScope.launch {
+            zebraLabelLayoutPreferences.syncWithServer()
+        }
+    }
+
+    private fun observePreregistroEvents() {
+        viewModelScope.launch {
+            warehouseHubService.preregistroUbicacionFlow.collect { event ->
+                _uiState.update { state ->
+                    val actualizada = state.enCamino.map { item ->
+                        if (item.folio != event.folio) item else item.copy(
+                            lat = event.lat,
+                            lon = event.lon,
+                            fechaUbicacion = event.fecha,
+                            etaMinutos = event.etaMinutos,
+                            etaKm = event.etaKm
+                        )
+                    }
+                    state.copy(enCamino = actualizada, lastUpdated = nowLabel())
+                }
+            }
+        }
+        viewModelScope.launch {
+            warehouseHubService.preregistroArriboFlow.collect {
+                refresh()
+            }
+        }
+        viewModelScope.launch {
+            warehouseHubService.preregistroAlertaFlow.collect {
+                refresh()
+            }
+        }
+        viewModelScope.launch {
+            warehouseHubService.preregistroCreadoFlow.collect {
+                refresh()
+            }
+        }
     }
 
     fun refresh() {
@@ -218,7 +262,11 @@ class CasetaHubViewModel @Inject constructor(
             // Falla en silencio: no es critico para el resto del hub.
             repository.getEnCamino()
                 .onSuccess { items -> enCamino = items }
-                .onFailure { }
+                .onFailure { error ->
+                    if (errorMessage == null) {
+                        errorMessage = error.message ?: "No se pudieron cargar los pre-registros en camino."
+                    }
+                }
 
             _uiState.update { current ->
                 current.copy(

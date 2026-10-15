@@ -11,6 +11,7 @@ import com.example.pmmovil.data.db.CasetaEntradaPhotoSyncDao
 import com.example.pmmovil.data.db.PdfAnnotationDraftDao
 import com.example.pmmovil.data.db.EntradaPhotoSyncDao
 import com.example.pmmovil.data.db.FotoDao
+import com.example.pmmovil.data.db.LabelCaptureDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -228,7 +229,8 @@ object DatabaseModule {
             migration9To10,
             migration10To11,
             migration11To12,
-            migration12To13
+            migration12To13,
+            migration13To14
         )
         .build()
     }
@@ -267,5 +269,31 @@ object DatabaseModule {
     @Provides
     fun providePdfAnnotationDraftDao(database: AppDatabase): PdfAnnotationDraftDao {
         return database.pdfAnnotationDraftDao()
+    }
+
+    @Provides
+    fun provideLabelCaptureDao(database: AppDatabase): LabelCaptureDao = database.labelCaptureDao()
+
+    private val migration13To14 = object : Migration(13, 14) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS label_capture_drafts (
+                    captureId TEXT NOT NULL PRIMARY KEY,
+                    reference TEXT NOT NULL,
+                    owner TEXT NOT NULL,
+                    photoPath TEXT NOT NULL,
+                    stateJson TEXT NOT NULL,
+                    requestJson TEXT,
+                    uploadPath TEXT,
+                    status TEXT NOT NULL,
+                    errorMessage TEXT,
+                    responseJson TEXT,
+                    createdAt INTEGER NOT NULL,
+                    updatedAt INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+        }
     }
 }

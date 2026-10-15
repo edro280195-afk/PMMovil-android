@@ -91,3 +91,30 @@ fun ZebraPrinterConfig.toPrinterDto(): ZebraPrinterDto =
         isDefault = false,
         isActive = true
     )
+
+data class ZebraLabelLayoutDto(
+    val id: Int = 0,
+    val layoutType: String = "",
+    val layoutJson: String = "",
+    val version: Int = 1,
+    val updatedBy: String? = null,
+    val updatedAt: String? = null
+)
+
+data class ZebraLabelLayoutListResponse(
+    val success: Boolean = false,
+    val message: String = "",
+    val items: List<ZebraLabelLayoutDto> = emptyList()
+)
+
+data class ZebraLabelLayoutSaveRequest(
+    val layoutType: String,
+    val layoutJson: String
+)
+
+data class ZebraLabelLayoutSaveResponse(
+    val success: Boolean = false,
+    val message: String = "",
+    val item: ZebraLabelLayoutDto? = null
+)
+

@@ -45,8 +45,8 @@
     <string name="home_module_map_subtitle">Locations</string>
     <string name="home_module_gate_operation_title">Gatehouse operation</string>
     <string name="home_module_gate_operation_subtitle">Entry and control</string>
-    <string name="home_module_relation_exit_title">Manifest exit</string>
-    <string name="home_module_relation_exit_subtitle">Authorized · gatehouse</string>
+    <string name="home_module_relation_exit_title">Gate exit</string>
+    <string name="home_module_relation_exit_subtitle">With manifest and manual</string>
     <string name="home_module_systems_title">Systems</string>
     <string name="home_module_systems_subtitle">Administration</string>
     <string name="home_module_gate_title">Control</string>

@@ -60,6 +60,22 @@ class HardwareBarcodeDecoder(
         }
     }
 
+    /**
+     * Indica si lo acumulado hasta ahora llega a la velocidad de un lector
+     * (decenas de milisegundos entre caracteres) y no de una persona tecleando.
+     * Sirve para reconocer el "keyboard wedge" interno de equipos como Honeywell,
+     * que inyecta las teclas desde un dispositivo virtual sin nombre de lector.
+     */
+    fun isBurstSoFar(minChars: Int = 3, maxAverageIntervalMillis: Long = 40L): Boolean {
+        val first = firstCharacterAt ?: return false
+        val last = lastCharacterAt ?: return false
+        if (buffer.length < minChars) return false
+        val averageInterval = (last - first) / (buffer.length - 1).coerceAtLeast(1)
+        return averageInterval <= maxAverageIntervalMillis
+    }
+
+    fun hasContent(): Boolean = buffer.isNotEmpty()
+
     fun reset() {
         buffer.setLength(0)
         firstCharacterAt = null

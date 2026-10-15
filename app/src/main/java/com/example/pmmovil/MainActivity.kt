@@ -5,6 +5,8 @@ import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -69,6 +71,11 @@ class MainActivity : AppCompatActivity() {
 
     private val barcodeDecoder = HardwareBarcodeDecoder()
 
+    private companion object {
+        // Tras la última tecla de una ráfaga sin Enter, espera esto antes de cerrar el código.
+        const val VIRTUAL_BURST_FLUSH_MILLIS = 150L
+    }
+
     override fun onResume() {
         super.onResume()
         // El modo lector pertenece a la actividad completa, no a LoginScreen.
@@ -98,13 +105,18 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val device = event.device
-        val isExternalInput = device != null && !device.isVirtual
+        val isVirtualSource = device == null || device.isVirtual
         val isScanner = isLikelyBarcodeScanner(
             deviceName = device?.name,
             isVirtual = device?.isVirtual ?: true
         )
-        if (!isExternalInput) {
-            return super.dispatchKeyEvent(event)
+
+        // Los lectores integrados (Honeywell, etc.) inyectan las teclas desde un
+        // dispositivo virtual. Antes se ignoraban por completo; ahora solo se
+        // tratan como lector si llegan en ráfaga, y el teclado en pantalla
+        // (que tecleado a mano nunca llega a esa velocidad) queda intacto.
+        if (isVirtualSource && event.action == KeyEvent.ACTION_UP && scanBurstActive) {
+            return true
         }
 
         if (event.action == KeyEvent.ACTION_DOWN) {
@@ -117,6 +129,10 @@ class MainActivity : AppCompatActivity() {
                     barcodeDecoder.complete()
                 } else {
                     barcodeDecoder.completeIfLikelyScan()
+                }
+                if (isVirtualSource) {
+                    scanFlushHandler.removeCallbacks(flushVirtualBurst)
+                    scanBurstActive = false
                 }
                 if (!code.isNullOrBlank()) {
                     sendHardwareScan(code)
@@ -140,12 +156,34 @@ class MainActivity : AppCompatActivity() {
                         )
                     }
                 }
+                if (isVirtualSource && barcodeDecoder.isBurstSoFar()) {
+                    // Ya es ráfaga de lector: se consumen las teclas restantes y,
+                    // si el lector no manda Enter, se cierra por inactividad.
+                    scanBurstActive = true
+                    scanFlushHandler.removeCallbacks(flushVirtualBurst)
+                    scanFlushHandler.postDelayed(flushVirtualBurst, VIRTUAL_BURST_FLUSH_MILLIS)
+                }
             }
         }
 
         // Un lector HID reconocido se consume siempre para que no escriba en inputs.
         // Un teclado externo generico solo dispara scan si el patron fue rapido.
-        return if (isScanner) true else super.dispatchKeyEvent(event)
+        return when {
+            isScanner -> true
+            isVirtualSource && scanBurstActive -> true
+            else -> super.dispatchKeyEvent(event)
+        }
+    }
+
+    private val scanFlushHandler = Handler(Looper.getMainLooper())
+    private var scanBurstActive = false
+
+    private val flushVirtualBurst = Runnable {
+        scanBurstActive = false
+        val code = barcodeDecoder.completeIfLikelyScan()
+        if (!code.isNullOrBlank()) {
+            sendHardwareScan(code)
+        }
     }
 
     private fun sendHardwareScan(code: String) {
@@ -448,8 +486,7 @@ class MainActivity : AppCompatActivity() {
                                 onNavigateBack = { navController.popBackStack() },
                                 onPreregistro = { navController.navigate("caseta_preregistro") },
                                 onNuevaEntrada = { navController.navigate("caseta_entrada") },
-                                onSalidaRelacion = { navController.navigate("caseta") },
-                                onSalidaFisica = { navController.navigate("salida_caseta") },
+                                onSalida = { navController.navigate("salida_caseta") },
                                 onAbrirCaja = { casetaId ->
                                     navController.navigate("caseta_entrada_editar/${Uri.encode(casetaId)}")
                                 },
@@ -759,12 +796,14 @@ class MainActivity : AppCompatActivity() {
                                     },
                                     onNavigateToCamera   = { cnofact, cclienteid, esDiscrepancia ->
                                         navController.navigate(
-                                            "camera/$cref/$cnofact/$cclienteid?esDiscrepancia=$esDiscrepancia"
+                                            // cnofact puede traer "/" (ej. SN-03335/26): hay que escaparlo
+                                            // o la ruta queda con segmentos de más y no coincide con el grafo.
+                                            "camera/${Uri.encode(cref)}/${Uri.encode(cnofact)}/${Uri.encode(cclienteid)}?esDiscrepancia=$esDiscrepancia"
                                         )
                                     },
                                     onNavigateToGallery  = { cnofact, cclienteid ->
                                         navController.navigate(
-                                            "gallery/$cref/$cnofact/$cclienteid"
+                                            "gallery/${Uri.encode(cref)}/${Uri.encode(cnofact)}/${Uri.encode(cclienteid)}"
                                         )
                                     },
                                     onNavigateToScanner  = {
@@ -862,7 +901,7 @@ class MainActivity : AppCompatActivity() {
                                 },
                                 onTakePhotos = {
                                     navController.navigate(
-                                        "camera/$cref/$cno/$cli?esDiscrepancia=false"
+                                        "camera/${Uri.encode(cref)}/${Uri.encode(cno)}/${Uri.encode(cli)}?esDiscrepancia=false"
                                     )
                                 }
                             )

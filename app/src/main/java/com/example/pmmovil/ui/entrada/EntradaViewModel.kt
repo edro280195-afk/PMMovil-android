@@ -126,6 +126,7 @@ class EntradaViewModel @Inject constructor(
     private val zebraPrinterPreferences: ZebraPrinterPreferences,
     private val zebraPrinterService: ZebraPrinterService,
     private val zebraPrinterRepository: ZebraPrinterRepository,
+    private val zebraLabelLayoutPreferences: com.example.pmmovil.data.printing.ZebraLabelLayoutPreferences,
     private val labelZplFactory: LabelZplFactory,
     private val warehouseHubService: WarehouseHubService,
     @ApplicationContext private val context: Context
@@ -163,6 +164,9 @@ class EntradaViewModel @Inject constructor(
 
     init {
         loadInitialData()
+        viewModelScope.launch {
+            zebraLabelLayoutPreferences.syncWithServer()
+        }
     }
 
     private fun emptyForm() = EntradaFormSnapshot(

@@ -152,7 +152,11 @@ class LiveTextOcrAnalyzer(
                         ?: LocalTextOcrResult("", emptyList())
                     val barcodeValues = barcodes
                         ?.mapNotNull { it.rawValue ?: it.displayValue }
-                        ?.map(BarcodeValueNormalizer::normalize)
+                        ?.map { value ->
+                            if (formatosDeCodigo == BarcodeFormatSets.WAREHOUSE_PRODUCT_LABELS) {
+                                BarcodeValueNormalizer.normalizeLabel(value)
+                            } else BarcodeValueNormalizer.normalize(value)
+                        }
                         ?.filter(String::isNotBlank)
                         ?: emptyList()
 

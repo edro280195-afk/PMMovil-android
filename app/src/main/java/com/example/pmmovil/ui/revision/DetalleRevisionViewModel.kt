@@ -14,6 +14,7 @@ import com.example.pmmovil.data.repository.AuthRepository
 import com.example.pmmovil.data.repository.RevisionRepository
 import com.example.pmmovil.data.scanner.StructuredLabelBarcodeParser
 import com.example.pmmovil.data.signalr.CierreForzosoMessage
+import com.example.pmmovil.data.signalr.RevisionActualizadaMessage
 import com.example.pmmovil.data.signalr.WarehouseHubService
 import com.example.pmmovil.di.ApplicationScope
 import com.example.pmmovil.ui.localization.UiText
@@ -83,6 +84,7 @@ class DetalleRevisionViewModel @Inject constructor(
     private val hubService: WarehouseHubService,
     private val unlockStore: UnlockStore,
     private val fotoDao: FotoDao,
+    private val labelCaptureDao: com.example.pmmovil.data.db.LabelCaptureDao,
     @ApplicationScope private val applicationScope: CoroutineScope,
     @ApplicationContext private val appContext: Context,
     savedStateHandle: SavedStateHandle
@@ -228,6 +230,10 @@ class DetalleRevisionViewModel @Inject constructor(
             started = SharingStarted.WhileSubscribed(5_000),
             initialValue = 0
         )
+
+    private val labelCaptureOwner = authRepository.getUsername()?.trim()?.lowercase(Locale.ROOT).orEmpty()
+    private val pendingCaptureCount = labelCaptureDao.observePendingCount(crefAgrupada, labelCaptureOwner)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
 
     private val _isUploadingFoto = MutableStateFlow(false)
     val isUploadingFoto: StateFlow<Boolean> = _isUploadingFoto.asStateFlow()
@@ -397,6 +403,7 @@ class DetalleRevisionViewModel @Inject constructor(
     private var pollingJob: Job? = null
     private var presenceJob: Job? = null
     private var photosJob: Job? = null
+    private var isReviewSessionInitializing = true
     private var revisionFinalizada = false
 
     init {
@@ -512,12 +519,17 @@ class DetalleRevisionViewModel @Inject constructor(
     /** Serializa toma + cronómetro para no competir al abrir el escáner. */
     private fun initializeReviewSession() {
         viewModelScope.launch {
-            if (canEdit()) {
-                repository.registrarTomaDocumento(crefAgrupada)
-                    .onSuccess { _tomaDocumentoRegistrada.value = true }
-            }
+            try {
+                if (canEdit()) {
+                    repository.registrarTomaDocumento(crefAgrupada)
+                        .onSuccess { _tomaDocumentoRegistrada.value = true }
+                }
 
-            initializeTimerState()
+                initializeTimerState()
+            } finally {
+                isReviewSessionInitializing = false
+                sincronizarEstadoTimer()
+            }
         }
     }
 
@@ -638,8 +650,6 @@ class DetalleRevisionViewModel @Inject constructor(
     }
 
     private fun observeSignalR() {
-        hubService.startConnection()
-
         presenceJob?.cancel()
         presenceJob = viewModelScope.launch {
             while (isActive) {
@@ -743,6 +753,158 @@ class DetalleRevisionViewModel @Inject constructor(
                     _cierreForzoso.value = msg
                 }
             }
+        }
+
+        // Los eventos de SignalR usan snapshots completos publicados por el
+        // API después de guardar. Se aplican al estado local sin volver a
+        // escribirlos para evitar ciclos entre clientes.
+        viewModelScope.launch {
+            hubService.revisionActualizadaFlow.collect(::aplicarRevisionActualizada)
+        }
+
+        viewModelScope.launch {
+            hubService.revisionEstadoFlow.collect { message ->
+                if (!message.creferencia.equals(crefAgrupada, ignoreCase = true)) return@collect
+
+                if (message.estado.equals("FINALIZADA", ignoreCase = true)) {
+                    marcarRevisionFinalizada()
+                } else if (
+                    message.estado.equals("PAUSADA", ignoreCase = true) &&
+                    message.usuario.equals(authRepository.getUsername(), ignoreCase = true)
+                ) {
+                    _timerActivo.value = false
+                    timerJob?.cancel()
+                }
+
+                recargarSnapshotRevision()
+                if (!isReviewSessionInitializing) sincronizarEstadoTimer()
+            }
+        }
+
+        viewModelScope.launch {
+            hubService.revisionCompletadaFlow.collect { message ->
+                if (message.creferencia.equals(crefAgrupada, ignoreCase = true)) {
+                    marcarRevisionFinalizada()
+                }
+            }
+        }
+
+        // SignalR no guarda eventos mientras la conexión está pendiente o
+        // fuera de línea. Al quedar listo se lee el estado persistido para
+        // recuperar cualquier cambio ocurrido en ese intervalo.
+        viewModelScope.launch {
+            hubService.connectionReadyFlow.collect {
+                recargarSnapshotRevision()
+                if (!isReviewSessionInitializing) sincronizarEstadoTimer()
+            }
+        }
+
+        // Los collectors quedan instalados antes de iniciar/reusar el hub;
+        // así no se pierde el primer evento en una conexión ya activa.
+        hubService.startConnection()
+    }
+
+    private fun aplicarRevisionActualizada(message: RevisionActualizadaMessage) {
+        if (!message.creferencia.equals(crefAgrupada, ignoreCase = true)) return
+
+        when (message.entidad.uppercase(Locale.ROOT)) {
+            "FACTURA" -> {
+                val factura = message.factura ?: return
+                _facturas.update { facturas ->
+                    facturas.map { current ->
+                        if (current.Cnofact.equals(factura.Cnofact, ignoreCase = true)) factura else current
+                    }
+                }
+            }
+            "PARTIDA" -> {
+                val partida = message.partida ?: return
+                _partidas.update { partidas ->
+                    (partidas.filterNot { it.IdRevdet == partida.IdRevdet } + partida)
+                        .sortedWith(compareBy<PartidaRevisionDto>({ it.Cnofact }, { it.IdRevdet }))
+                }
+            }
+            "PARTIDA_ELIMINADA" -> {
+                val idRevdet = message.idRevdet ?: return
+                _partidas.update { partidas -> partidas.filterNot { it.IdRevdet == idRevdet } }
+            }
+            "ENTRADA" -> _observacionGeneral.value = message.observacionRevision.orEmpty()
+            "EDITORES_ENTRADA" -> {
+                val facturasLiberadas = message.cnofacts.orEmpty().map { it.trim() }.toSet()
+                if (facturasLiberadas.isEmpty()) return
+                _facturas.update { facturas ->
+                    facturas.map { factura ->
+                        if (facturasLiberadas.contains(factura.Cnofact.trim())) factura.copy(UsuEdit = "") else factura
+                    }
+                }
+            }
+            "FOTOS" -> cargarFotos()
+        }
+    }
+
+    private fun recargarSnapshotRevision() {
+        viewModelScope.launch {
+            repository.getEntradaCompleta(crefAgrupada)
+                .onSuccess { response ->
+                    if (!response.success) return@onSuccess
+
+                    val cnofactSeleccionada = _facturas.value
+                        .getOrNull(_selectedFacturaIndex.value)
+                        ?.Cnofact
+                    val facturasActualizadas = response.facturas.orEmpty()
+                    _facturas.value = facturasActualizadas
+                    _partidas.value = response.partidas.orEmpty()
+                    _observacionGeneral.value = response.observacionRevision.orEmpty()
+                    cargarFotos()
+
+                    val nuevoIndice = cnofactSeleccionada?.let { cnofact ->
+                        facturasActualizadas.indexOfFirst { it.Cnofact.equals(cnofact, ignoreCase = true) }
+                    } ?: -1
+                    _selectedFacturaIndex.value = if (nuevoIndice >= 0) {
+                        nuevoIndice
+                    } else {
+                        _selectedFacturaIndex.value.coerceIn(0, (facturasActualizadas.size - 1).coerceAtLeast(0))
+                    }
+                    _partidaActivaIndex.value = _partidaActivaIndex.value.coerceAtLeast(1)
+                }
+                .onFailure { error ->
+                    RevisionDiagnostics.record(appContext, "Error actualizando revisión en tiempo real", error)
+                }
+        }
+    }
+
+    private fun marcarRevisionFinalizada() {
+        revisionFinalizada = true
+        _entradaCerrada.value = true
+        _timerActivo.value = false
+        timerJob?.cancel()
+        pollingJob?.cancel()
+    }
+
+    private fun sincronizarEstadoTimer() {
+        viewModelScope.launch {
+            repository.getEstadoTimer(crefAgrupada)
+                .onSuccess { estado ->
+                    revisionFinalizada = estado.finRevision
+                    _entradaCerrada.value = estado.finRevision
+                    _usuarioAsignado.value = estado.usuarioAsignado
+
+                    if (estado.finRevision) {
+                        marcarRevisionFinalizada()
+                    } else if (estado.activo) {
+                        _timerActivo.value = true
+                        if (timerJob?.isActive != true) {
+                            _timerSeconds.value = estado.segundosAcumulados
+                            startTimerTick()
+                        }
+                    } else {
+                        _timerActivo.value = false
+                        timerJob?.cancel()
+                        _timerSeconds.value = estado.segundosAcumulados
+                    }
+                }
+                .onFailure { error ->
+                    RevisionDiagnostics.record(appContext, "Error sincronizando el cronómetro de revisión", error)
+                }
         }
     }
 
@@ -1479,6 +1641,10 @@ class DetalleRevisionViewModel @Inject constructor(
             denyPermission(R.string.permission_close_reviews)
             return
         }
+        if (pendingCaptureCount.value > 0) {
+            _toast.value = resource(R.string.label_capture_finish_pending)
+            return
+        }
         // Sin al menos 1 foto (ya subida o todavía pendiente de subir) no se
         // deja terminar la revisión (feedback de Eduardo, 14/sept): sin
         // evidencia fotográfica no hay forma de sustentar que la revisión
@@ -1492,6 +1658,13 @@ class DetalleRevisionViewModel @Inject constructor(
             return
         }
         viewModelScope.launch {
+            // El flujo observado da respuesta inmediata en pantalla, pero la
+            // consulta a Room dentro de la corrutina cierra la ventana entre
+            // el último valor observado y el inicio del cierre.
+            if (labelCaptureDao.pendingCount(crefAgrupada, labelCaptureOwner) > 0) {
+                _toast.value = resource(R.string.label_capture_finish_pending)
+                return@launch
+            }
             repository.validarCierre(crefAgrupada)
                 .onSuccess { resp ->
                     if (!resp.facturasSinRevisor.isNullOrEmpty()) {

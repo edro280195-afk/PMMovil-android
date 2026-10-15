@@ -42,6 +42,9 @@ class CasetaSearchEditViewModel @Inject constructor(
 
     init {
         searchNow()
+        viewModelScope.launch {
+            zebraLabelLayoutPreferences.syncWithServer()
+        }
     }
 
     fun setQuery(value: String) {

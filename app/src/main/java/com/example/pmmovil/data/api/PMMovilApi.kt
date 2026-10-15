@@ -96,6 +96,20 @@ interface PMMovilApi {
         @Body request: ZebraPrinterSaveRequest
     ): Response<ZebraPrinterSaveResponse>
 
+    @GET("ZebraPrinter/layouts")
+    suspend fun getZebraLabelLayouts(): Response<ZebraLabelLayoutListResponse>
+
+    @GET("ZebraPrinter/layout/{type}")
+    suspend fun getZebraLabelLayout(
+        @Path("type") type: String
+    ): Response<ZebraLabelLayoutSaveResponse>
+
+    @PUT("ZebraPrinter/layout/{type}")
+    suspend fun saveZebraLabelLayout(
+        @Path("type") type: String,
+        @Body request: ZebraLabelLayoutSaveRequest
+    ): Response<ZebraLabelLayoutSaveResponse>
+
     @GET("Foto/entrada/{cref}")
     suspend fun getEntradaPhotos(
         @Path("cref") reference: String
@@ -189,6 +203,19 @@ interface PMMovilApi {
 
     @PATCH("Revision/entrada/hazmat")
     suspend fun guardarHazmatRevision(@Body request: GuardarHazmatRevisionRequest): Response<SimpleSuccessResponse>
+
+    @GET("Revision/label-captures/context/{idRevdet}")
+    suspend fun getLabelCaptureContext(
+        @Path("idRevdet") idRevdet: Int,
+        @Query("crefAgrupada") crefAgrupada: String,
+        @Header("Authorization") authorization: String
+    ): Response<LabelCaptureResponse>
+
+    @POST("Revision/label-captures/confirm")
+    suspend fun confirmLabelCapture(
+        @Body request: ConfirmLabelCaptureRequest,
+        @Header("Authorization") authorization: String
+    ): Response<LabelCaptureResponse>
 
     @POST("Revision/factura/limpiar-revisador")
     suspend fun limpiarRevisor(@Body request: CnofactRequest): Response<SimpleSuccessResponse>
@@ -508,6 +535,15 @@ interface PMMovilApi {
     suspend fun revisarSalidaCasetaRelacion(
         @Query("casetaId") casetaId: String
     ): Response<RevisarRelacionResponse>
+
+    // Patio ya clasificado por carril (pantalla unificada de salida).
+    @GET("SalidaCaseta/patio")
+    suspend fun getSalidaPatio(): Response<SalidaPatioResponse>
+
+    @POST("SalidaCaseta/cerrar-registro")
+    suspend fun cerrarRegistroSalida(
+        @Body request: CerrarRegistroRequest
+    ): Response<RegistrarSalidaCajaResponse>
 
     @POST("SalidaCaseta/registrar")
     suspend fun registrarSalidaCaseta(

@@ -2,6 +2,7 @@ package com.example.pmmovil.ui.printer
 
 import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.example.pmmovil.data.printing.LabelBitmapRenderer
 import com.example.pmmovil.data.printing.ZebraLabelData
 import com.example.pmmovil.data.printing.ZebraLabelLayoutPreferences
@@ -10,6 +11,7 @@ import com.example.pmmovil.data.printing.ZebraZplBuilder
 import com.example.pmmovil.data.printing.ZplGraphicEncoder
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.launch
 
 /** Miniatura fiel de una plantilla: mismo raster de 1-bit que se manda a la Zebra. */
 data class LabelThumbnail(
@@ -28,6 +30,12 @@ class LabelTypePickerViewModel @Inject constructor(
     private val labelBitmapRenderer: LabelBitmapRenderer,
     private val layoutPreferences: ZebraLabelLayoutPreferences
 ) : ViewModel() {
+
+    init {
+        viewModelScope.launch {
+            layoutPreferences.syncWithServer()
+        }
+    }
 
     private val sampleLabel: ZebraLabelData = ZebraZplBuilder.buildTestLabel()
 

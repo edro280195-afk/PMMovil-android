@@ -45,8 +45,8 @@
     <string name="home_module_map_subtitle">Ubicaciones</string>
     <string name="home_module_gate_operation_title">Operación de caseta</string>
     <string name="home_module_gate_operation_subtitle">Entradas y control</string>
-    <string name="home_module_relation_exit_title">Salida de relación</string>
-    <string name="home_module_relation_exit_subtitle">Autorizada · caseta</string>
+    <string name="home_module_relation_exit_title">Salida de caseta</string>
+    <string name="home_module_relation_exit_subtitle">Con relación y manual</string>
     <string name="home_module_systems_title">Sistemas</string>
     <string name="home_module_systems_subtitle">Administración</string>
     <string name="home_module_gate_title">Control</string>

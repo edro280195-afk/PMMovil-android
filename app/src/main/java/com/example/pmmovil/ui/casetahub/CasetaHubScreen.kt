@@ -42,6 +42,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.ArrowDownward
@@ -139,8 +140,7 @@ fun CasetaHubScreen(
     onNavigateBack: () -> Unit,
     onPreregistro: () -> Unit,
     onNuevaEntrada: () -> Unit,
-    onSalidaRelacion: () -> Unit,
-    onSalidaFisica: () -> Unit,
+    onSalida: () -> Unit,
     onAbrirCaja: (String) -> Unit,
     onNavigateToScanner: () -> Unit,
     onVerMapaCamiones: () -> Unit,
@@ -200,12 +200,10 @@ fun CasetaHubScreen(
                     onNavigateBack = onNavigateBack,
                     onPreregistro = onPreregistro,
                     onNuevaEntrada = onNuevaEntrada,
-                    onSalidaRelacion = onSalidaRelacion,
-                    onSalidaFisica = onSalidaFisica,
+                    onSalida = onSalida,
                     puedePreregistro = state.puedePreregistro,
                     puedeNuevaEntrada = state.puedeNuevaEntrada,
-                    puedeSalidaRelacion = state.puedeSalidaRelacion,
-                    puedeSalidaFisica = state.puedeSalidaFisica,
+                    puedeSalida = state.puedeSalida,
                     onNavigateToScanner = onNavigateToScanner,
                     onVerMapaCamiones = onVerMapaCamiones,
                     onFacetTap = { facetSheet = it },
@@ -219,12 +217,10 @@ fun CasetaHubScreen(
                     onNavigateBack = onNavigateBack,
                     onPreregistro = onPreregistro,
                     onNuevaEntrada = onNuevaEntrada,
-                    onSalidaRelacion = onSalidaRelacion,
-                    onSalidaFisica = onSalidaFisica,
+                    onSalida = onSalida,
                     puedePreregistro = state.puedePreregistro,
                     puedeNuevaEntrada = state.puedeNuevaEntrada,
-                    puedeSalidaRelacion = state.puedeSalidaRelacion,
-                    puedeSalidaFisica = state.puedeSalidaFisica,
+                    puedeSalida = state.puedeSalida,
                     onNavigateToScanner = onNavigateToScanner,
                     onVerMapaCamiones = onVerMapaCamiones,
                     onFacetTap = { facetSheet = it },
@@ -279,12 +275,10 @@ private fun MobileHub(
     onNavigateBack: () -> Unit,
     onPreregistro: () -> Unit,
     onNuevaEntrada: () -> Unit,
-    onSalidaRelacion: () -> Unit,
-    onSalidaFisica: () -> Unit,
+    onSalida: () -> Unit,
     puedePreregistro: Boolean,
     puedeNuevaEntrada: Boolean,
-    puedeSalidaRelacion: Boolean,
-    puedeSalidaFisica: Boolean,
+    puedeSalida: Boolean,
     onNavigateToScanner: () -> Unit,
     onVerMapaCamiones: () -> Unit,
     onFacetTap: (CasetaHubFacet) -> Unit,
@@ -326,12 +320,10 @@ private fun MobileHub(
                     pendientes = state.totalEnPlanta,
                     onPreregistro = onPreregistro,
                     onEntrada = onNuevaEntrada,
-                    onSalidaRelacion = onSalidaRelacion,
-                    onSalidaFisica = onSalidaFisica,
+                    onSalida = onSalida,
                     puedePreregistro = puedePreregistro,
                     puedeNuevaEntrada = puedeNuevaEntrada,
-                    puedeSalidaRelacion = puedeSalidaRelacion,
-                    puedeSalidaFisica = puedeSalidaFisica,
+                    puedeSalida = puedeSalida,
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 16.dp)
                 )
             }
@@ -428,12 +420,10 @@ private fun TabletHub(
     onNavigateBack: () -> Unit,
     onPreregistro: () -> Unit,
     onNuevaEntrada: () -> Unit,
-    onSalidaRelacion: () -> Unit,
-    onSalidaFisica: () -> Unit,
+    onSalida: () -> Unit,
     puedePreregistro: Boolean,
     puedeNuevaEntrada: Boolean,
-    puedeSalidaRelacion: Boolean,
-    puedeSalidaFisica: Boolean,
+    puedeSalida: Boolean,
     onNavigateToScanner: () -> Unit,
     onVerMapaCamiones: () -> Unit,
     onFacetTap: (CasetaHubFacet) -> Unit,
@@ -515,12 +505,10 @@ private fun TabletHub(
                     pendientes = state.totalEnPlanta,
                     onPreregistro = onPreregistro,
                     onEntrada = onNuevaEntrada,
-                    onSalidaRelacion = onSalidaRelacion,
-                    onSalidaFisica = onSalidaFisica,
+                    onSalida = onSalida,
                     puedePreregistro = puedePreregistro,
                     puedeNuevaEntrada = puedeNuevaEntrada,
-                    puedeSalidaRelacion = puedeSalidaRelacion,
-                    puedeSalidaFisica = puedeSalidaFisica,
+                    puedeSalida = puedeSalida,
                     vertical = true,
                     entradasHoy = state.entradasHoy
                 )
@@ -1159,12 +1147,10 @@ private fun AccionesCaseta(
     pendientes: Int,
     onPreregistro: () -> Unit,
     onEntrada: () -> Unit,
-    onSalidaRelacion: () -> Unit,
-    onSalidaFisica: () -> Unit,
+    onSalida: () -> Unit,
     puedePreregistro: Boolean,
     puedeNuevaEntrada: Boolean,
-    puedeSalidaRelacion: Boolean,
-    puedeSalidaFisica: Boolean,
+    puedeSalida: Boolean,
     modifier: Modifier = Modifier,
     vertical: Boolean = false,
     entradasHoy: Int = 0
@@ -1192,22 +1178,13 @@ private fun AccionesCaseta(
                     onClick = onEntrada
                 )
             }
-            if (puedeSalidaRelacion) {
+            if (puedeSalida) {
                 AccionAncha(
-                    icon = Icons.Default.ArrowUpward,
-                    titulo = "Salida de relación",
-                    detalle = "Autorizada",
-                    variant = AccionVariant.SALIDA_RELACION,
-                    onClick = onSalidaRelacion
-                )
-            }
-            if (puedeSalidaFisica) {
-                AccionAncha(
-                    icon = Icons.Default.LocalShipping,
-                    titulo = "Salida física de caja",
+                    icon = Icons.AutoMirrored.Filled.Logout,
+                    titulo = "Salida",
                     detalle = if (pendientes > 0) "$pendientes en patio" else "Patio",
-                    variant = AccionVariant.SALIDA_FISICA,
-                    onClick = onSalidaFisica
+                    variant = AccionVariant.SALIDA,
+                    onClick = onSalida
                 )
             }
         }
@@ -1221,19 +1198,14 @@ private fun AccionesCaseta(
                     AccionTile(Icons.Default.ArrowDownward, "Entrada", AccionVariant.ENTRADA, onEntrada, Modifier.weight(1f))
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (puedeSalidaRelacion) {
-                    AccionTile(Icons.Default.ArrowUpward, "Salida de relación", AccionVariant.SALIDA_RELACION, onSalidaRelacion, Modifier.weight(1f))
-                }
-                if (puedeSalidaFisica) {
-                    AccionTile(Icons.Default.LocalShipping, "Salida física", AccionVariant.SALIDA_FISICA, onSalidaFisica, Modifier.weight(1f), pendientes.takeIf { it > 0 })
-                }
+            if (puedeSalida) {
+                AccionTile(Icons.AutoMirrored.Filled.Logout, "Salida", AccionVariant.SALIDA, onSalida, Modifier.fillMaxWidth(), pendientes.takeIf { it > 0 })
             }
         }
     }
 }
 
-private enum class AccionVariant { PRE, ENTRADA, SALIDA_RELACION, SALIDA_FISICA }
+private enum class AccionVariant { PRE, ENTRADA, SALIDA }
 
 @Composable
 private fun AccionTile(
@@ -1254,7 +1226,7 @@ private fun AccionTile(
         color = if (esEntrada) Color.Transparent else Color.White,
         border = when (variant) {
             AccionVariant.PRE -> BorderStroke(1.5.dp, Color(0xFFEAB308))
-            AccionVariant.SALIDA_RELACION, AccionVariant.SALIDA_FISICA -> BorderStroke(1.dp, PmmNavyBorder)
+            AccionVariant.SALIDA -> BorderStroke(1.dp, PmmNavyBorder)
             AccionVariant.ENTRADA -> null
         },
         shadowElevation = if (esEntrada) 8.dp else 3.dp
@@ -1328,7 +1300,7 @@ private fun AccionAncha(
         color = if (esEntrada) Color.Transparent else Color.White,
         border = when (variant) {
             AccionVariant.PRE -> BorderStroke(1.5.dp, Color(0xFFEAB308))
-            AccionVariant.SALIDA_RELACION, AccionVariant.SALIDA_FISICA -> BorderStroke(1.dp, PmmNavyBorder)
+            AccionVariant.SALIDA -> BorderStroke(1.dp, PmmNavyBorder)
             AccionVariant.ENTRADA -> null
         },
         shadowElevation = if (esEntrada) 8.dp else 3.dp
@@ -1377,8 +1349,7 @@ private fun AccionGlyph(
     val (fondo, tinte) = when (variant) {
         AccionVariant.PRE -> Color(0xFFFDE68A) to Color(0xFF854D0E)
         AccionVariant.ENTRADA -> Color.White.copy(alpha = 0.16f) to Color.White
-        AccionVariant.SALIDA_RELACION -> Color(0xFFE0E7FF) to PmmBlueDeep
-        AccionVariant.SALIDA_FISICA -> Color(0xFFD1FAE5) to Color(0xFF15803D)
+        AccionVariant.SALIDA -> Color(0xFFD1FAE5) to Color(0xFF15803D)
     }
     Box(
         modifier = Modifier

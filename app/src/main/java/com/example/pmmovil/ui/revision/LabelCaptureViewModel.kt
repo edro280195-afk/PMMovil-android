@@ -1,361 +1,441 @@
 package com.example.pmmovil.ui.revision
 
 import android.os.SystemClock
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.pmmovil.data.model.ConfirmLabelCaptureRequest
+import com.example.pmmovil.data.model.LabelCaptureDraftEntity
+import com.example.pmmovil.data.model.LabelCaptureFields
+import com.example.pmmovil.data.model.LabelCaptureHazmat
+import com.example.pmmovil.data.model.LabelCaptureObservation
+import com.example.pmmovil.data.model.LabelCaptureResponse
+import com.example.pmmovil.data.model.LabelCaptureSnapshot
+import com.example.pmmovil.data.model.LabelCaptureStatus
 import com.example.pmmovil.data.model.PaisDto
+import com.example.pmmovil.data.model.PartidaRevisionDto
 import com.example.pmmovil.data.ocr.CountryCatalogMatcher
 import com.example.pmmovil.data.ocr.LabelFieldExtractor
 import com.example.pmmovil.data.ocr.LocalTextOcr
 import com.example.pmmovil.data.ocr.LocalTextOcrResult
 import com.example.pmmovil.data.ocr.PaddleOcrEngine
+import com.example.pmmovil.data.ocr.PartidaMatcher
 import com.example.pmmovil.data.ocr.PhotoBarcodeScanner
-import com.example.pmmovil.data.repository.RevisionRepository
+import com.example.pmmovil.data.repository.LabelCaptureRepository
+import com.example.pmmovil.di.ApplicationScope
 import com.example.pmmovil.ui.scanner.BarcodeFormatSets
-import com.example.pmmovil.data.ocr.mergeLocalResults
+import com.google.gson.Gson
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.io.File
 import javax.inject.Inject
 
-/**
- * Lee una foto de etiqueta y propone los campos de la partida.
- *
- * Vive aparte de [DetalleRevisionViewModel] a proposito: aquel ya carga facturas,
- * partidas, paises, fotos, hazmat y permisos. Esto es una sola cosa -- foto entra,
- * campos salen -- y asi se puede reusar tal cual en Entrada Bodega o en el censo
- * de rack sin arrastrar la revision completa.
- *
- * Ver docs/ia-revision-fisica.md (secciones 6 y 11).
- */
+/** Conserva una captura hasta que el servidor confirma datos y evidencia juntos. */
 @HiltViewModel
 class LabelCaptureViewModel @Inject constructor(
     private val paddleOcrEngine: PaddleOcrEngine,
     private val localTextOcr: LocalTextOcr,
     private val photoBarcodeScanner: PhotoBarcodeScanner,
-    private val repository: RevisionRepository
+    private val repository: LabelCaptureRepository,
+    @ApplicationScope private val applicationScope: CoroutineScope
 ) : ViewModel() {
+    enum class Destino { PARTIDA, HAZMAT, NINGUNO }
 
-    /** A donde va cada campo cuando el revisador lo acepta. */
-    enum class Destino {
-        /** Columna de la partida, via DetalleRevisionViewModel.actualizarDatoPartida. */
-        PARTIDA,
-
-        /** traf3, que es por referencia y no por partida: UN, clase y grupo. */
-        HAZMAT,
-
-        /** Solo se muestra. */
-        NINGUNO
-    }
-
-    /**
-     * Un campo que la etiqueta entrego. [escribible] dice si el revisador puede
-     * mandarlo a la partida con un toque, o si solo es para que lo vea.
-     */
     data class CampoPropuesto(
         val leido: LabelFieldExtractor.CampoLeido,
         val escribible: Boolean,
         val aceptado: Boolean,
         val destino: Destino = Destino.NINGUNO,
-        /**
-         * Lo que de verdad se guarda. Casi siempre es [leido].valor, pero el pais
-         * se escribe como codigo de 3 letras aunque la etiqueta diga "THAILAND".
-         */
         val valorAEscribir: String = leido.valor,
-        /** Aclaracion para la pantalla, p. ej. el nombre del pais resuelto. */
         val detalle: String? = null
     )
 
     data class Estado(
         val analizando: Boolean = false,
-        /**
-         * Ya hay campos en pantalla (salieron del codigo, que es exacto) pero el
-         * OCR sigue corriendo por si la etiqueta trae mas datos en texto. Sirve
-         * para no hacer esperar al revisador por lo que ya se sabe.
-         */
         val refinando: Boolean = false,
         val fotoPath: String? = null,
         val campos: List<CampoPropuesto> = emptyList(),
         val textoCrudo: String = "",
-        val error: String? = null
+        val error: String? = null,
+        val captureId: String? = null,
+        val rawCodes: List<String> = emptyList(),
+        val observations: List<LabelFieldExtractor.CampoLeido> = emptyList(),
+        val conflicts: List<LabelFieldExtractor.FieldConflict> = emptyList(),
+        val resolvedConflicts: Set<LabelFieldExtractor.Campo> = emptySet(),
+        val availablePartidas: List<PartidaRevisionDto> = emptyList(),
+        val candidates: List<PartidaMatcher.Candidate> = emptyList(),
+        val selectedPartida: PartidaRevisionDto? = null,
+        val snapshot: LabelCaptureSnapshot? = null,
+        val loadingContext: Boolean = false,
+        val canEdit: Boolean = false,
+        val canMarkReviewed: Boolean = false,
+        val identityAccepted: Boolean = false,
+        val physicalReviewConfirmed: Boolean = false,
+        val syncStatus: String = LabelCaptureStatus.DRAFT,
+        val syncMessage: String? = null,
+        val readingMillis: Long? = null
     ) {
         val huboLectura: Boolean get() = campos.isNotEmpty()
         val escribibles: List<CampoPropuesto> get() = campos.filter { it.escribible }
         val aceptados: List<CampoPropuesto> get() = campos.filter { it.escribible && it.aceptado }
+        val unresolvedConflicts: List<LabelFieldExtractor.FieldConflict>
+            get() = conflicts.filter { it.field !in resolvedConflicts }
+        val canSave: Boolean get() = !analizando && !refinando && !loadingContext && canEdit &&
+            selectedPartida != null && snapshot != null && identityAccepted &&
+            syncStatus == LabelCaptureStatus.DRAFT && captureId != null
+        val canComplete: Boolean get() = canSave && canMarkReviewed && physicalReviewConfirmed && unresolvedConflicts.isEmpty()
     }
 
+    private val gson = Gson()
     private val _estado = MutableStateFlow(Estado())
-    val estado: StateFlow<Estado> = _estado.asStateFlow()
+    val estado = _estado.asStateFlow()
+    private val _drafts = MutableStateFlow<List<LabelCaptureDraftEntity>>(emptyList())
+    val drafts = _drafts.asStateFlow()
+    private var reference = ""
+    private var countries: List<PaisDto> = emptyList()
+    private var partidas: List<PartidaRevisionDto> = emptyList()
+    private var analysisJob: Job? = null
+    private var contextJob: Job? = null
+    private var observationJob: Job? = null
+    private var persistenceJob: Job? = null
+    private var generation = 0L
 
-    /**
-     * @param codigosEnVivo codigos que el lector ya decodifico apuntando a la
-     *        misma etiqueta. Un codigo le gana al texto porque es exacto.
-     */
-    fun analizar(
-        path: String,
-        codigosEnVivo: List<String> = emptyList(),
-        catalogoPaises: List<PaisDto> = emptyList()
-    ) {
-        _estado.value = Estado(analizando = true, fotoPath = path)
-        viewModelScope.launch {
-            val arranque = SystemClock.elapsedRealtime()
-
-            // ── 1. Codigo y texto, A LA VEZ ─────────────────────────────────
-            // Son motores distintos y no compiten por lo mismo; el analizador
-            // en vivo ya los corre en paralelo sobre cada cuadro. En serie se
-            // sumaban: 495 ms de codigo + 604 ms de texto = 1,102 ms medidos,
-            // cuando el codigo casi siempre vuelve con las manos vacias. En
-            // paralelo el total es el del mas lento, no la suma.
-            //
-            // El codigo se busca en la FOTO y no solo en lo que vio el video: el
-            // cuadro en vivo va a 640x480 y ahi un DataMatrix de etiqueta no
-            // tiene pixeles para decodificarse; la foto son 4080x3072.
-            val tEtapa1 = SystemClock.elapsedRealtime()
-            val (deLaFoto, mlKit) = coroutineScope {
-                val tareaCodigos = async {
-                    photoBarcodeScanner
-                        .leer(path, BarcodeFormatSets.WAREHOUSE_PRODUCT_LABELS)
-                        .getOrDefault(emptyList())
-                }
-                val tareaTexto = async { localTextOcr.readFromFile(path).getOrNull() }
-                tareaCodigos.await() to tareaTexto.await()
+    fun configure(crefAgrupada: String, available: List<PartidaRevisionDto>, catalog: List<PaisDto>) {
+        partidas = available
+        countries = catalog
+        _estado.value = _estado.value.copy(availablePartidas = available)
+        if (reference == crefAgrupada) return
+        reference = crefAgrupada
+        observationJob?.cancel()
+        observationJob = viewModelScope.launch {
+            repository.observe(crefAgrupada).collect { records ->
+                _drafts.value = records
+                val active = records.firstOrNull { it.captureId == _estado.value.captureId } ?: return@collect
+                val response = active.responseJson?.let { gson.fromJson(it, LabelCaptureResponse::class.java) }
+                _estado.value = _estado.value.copy(
+                    syncStatus = active.status,
+                    syncMessage = active.errorMessage ?: response?.message,
+                    snapshot = if (active.status == LabelCaptureStatus.CONFIRMED) response?.snapshot else _estado.value.snapshot
+                )
             }
-            val codigosTotales = (codigosEnVivo + deLaFoto).distinct()
-            Log.d(
-                "LABEL_CAPTURE",
-                "etapa1 ${SystemClock.elapsedRealtime() - tEtapa1}ms | " +
-                    "codigos vivo=${codigosEnVivo.size} foto=${deLaFoto.size} " +
-                    // El contenido importa tanto como la cantidad: si el codigo
-                    // no viene en formato GS1 (identificadores (10), (21), (30))
-                    // el extractor no puede mapearlo a un campo.
-                    "valores=${codigosTotales.joinToString(" | ") { it.take(60) }} | " +
-                    "texto=${mlKit?.rawText?.length ?: 0} chars"
-            )
-
-            // ── 2. ¿Con esto alcanza? ───────────────────────────────────────
-            val porCodigo = LabelFieldExtractor.extraer("", codigosTotales)
-            val camposDeTexto = mlKit?.let { LabelFieldExtractor.extraer(it.rawText) }.orEmpty()
-
-            val resultado = if (porCodigo.isNotEmpty() || camposDeTexto.isNotEmpty()) {
-                mlKit
-            } else {
-                // Ni el codigo ni el texto rapido sacaron nada: ahora si vale la
-                // pena pagar Paddle.
-                conPaddleDeRespaldo(path, mlKit)
-            }
-            if (resultado == null) {
-                // Si el codigo ya habia dado campos, se conservan: que el OCR no
-                // encuentre texto no invalida lo que el codigo dijo.
-                if (porCodigo.isEmpty()) {
-                    _estado.value = Estado(
-                        fotoPath = path,
-                        error = "No se alcanzo a leer la etiqueta. Acercate o cambia el angulo para quitar el reflejo."
-                    )
-                } else {
-                    _estado.value = _estado.value.copy(refinando = false)
-                }
-                return@launch
-            }
-
-            val codigos = (codigosTotales + resultado.barcodes).distinct()
-            val campos = LabelFieldExtractor.extraer(resultado.rawText, codigos)
-            Log.d(
-                "LABEL_CAPTURE",
-                "campos=${campos.size} codigos=${codigos.size} " +
-                    "texto=${resultado.rawText.length} chars " +
-                    "total=${SystemClock.elapsedRealtime() - arranque}ms"
-            )
-
-            _estado.value = Estado(
-                fotoPath = path,
-                textoCrudo = resultado.rawText,
-                campos = campos.map { leido -> aPropuesto(leido, catalogoPaises) },
-                error = if (campos.isEmpty()) {
-                    "Se leyo la etiqueta pero no trae ninguna de las anclas conocidas " +
-                        "(LOT, PART, Qty...). Captura el dato a mano."
-                } else {
-                    null
-                }
-            )
         }
     }
 
-    /**
-     * Decide si un campo leido se puede escribir y con que valor.
-     *
-     * El pais es el unico que necesita traduccion: `cpaisorigen` es varchar(3) y
-     * el catalogo esta en espanol, asi que "THAILAND" tiene que volverse "THA"
-     * antes de guardarse. Si no se puede resolver con certeza, el campo baja a
-     * solo referencia en vez de escribir algo a medias.
-     */
-    private fun aPropuesto(
-        leido: LabelFieldExtractor.CampoLeido,
-        catalogoPaises: List<PaisDto>
-    ): CampoPropuesto {
-        if (leido.campo == LabelFieldExtractor.Campo.PAIS_ORIGEN) {
-            val catalogo = catalogoPaises.mapNotNull { pais ->
-                val codigo = pais.codigo?.trim().orEmpty()
-                val nombre = (pais.descrip ?: pais.cnombre).orEmpty()
-                if (codigo.isEmpty()) null else CountryCatalogMatcher.PaisCatalogo(codigo, nombre)
+    /** Los códigos del preview solo guían. La evidencia se extrae de la foto actual. */
+    fun analizar(path: String, codigosEnVivo: List<String> = emptyList(), catalogoPaises: List<PaisDto> = countries,
+                 initialPartidaId: Int? = null) {
+        countries = catalogoPaises
+        cancelReading()
+        val token = generation
+        _estado.value = Estado(analizando = true, fotoPath = path, availablePartidas = partidas)
+        analysisJob = viewModelScope.launch {
+            try {
+                check(reference.isNotBlank()) { "No se identificó la referencia de revisión." }
+                val draft = repository.createDraft(reference, path, gson.toJson(_estado.value))
+                ensureActive()
+                if (token != generation) return@launch
+                _estado.value = _estado.value.copy(captureId = draft.captureId, fotoPath = draft.photoPath)
+                // Se retira únicamente la copia temporal creada por esta pantalla.
+                val source = File(path)
+                if (source.parentFile?.name == "revision_label_capture") source.delete()
+                readPhoto(draft.photoPath, token, improve = false, initialPartidaId = initialPartidaId)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (token == generation) update(_estado.value.copy(analizando = false, error = error.message ?: "No se pudo leer la etiqueta."))
             }
-            val resuelto = CountryCatalogMatcher.emparejar(leido.valor, catalogo)
-            return CampoPropuesto(
-                leido = leido,
-                escribible = resuelto != null,
-                aceptado = resuelto != null,
-                destino = if (resuelto != null) Destino.PARTIDA else Destino.NINGUNO,
-                valorAEscribir = resuelto?.codigo ?: leido.valor,
-                detalle = resuelto?.let { "${it.codigo} · ${it.nombre}" }
-                    ?: "No esta en el catalogo: captúralo a mano"
-            )
         }
-        if (leido.campo in CAMPOS_HAZMAT) {
-            return CampoPropuesto(
-                leido = leido,
-                escribible = true,
-                aceptado = true,
-                destino = Destino.HAZMAT,
-                detalle = "Se guarda en traf3, para toda la referencia"
-            )
+    }
+
+    private suspend fun readPhoto(path: String, token: Long, improve: Boolean, initialPartidaId: Int? = null) {
+        val previous = _estado.value
+        val started = SystemClock.elapsedRealtime()
+        val (codes, mlKit) = coroutineScope {
+            val barcodeTask = async { photoBarcodeScanner.leer(path, BarcodeFormatSets.WAREHOUSE_PRODUCT_LABELS).getOrDefault(emptyList()) }
+            val textTask = async { localTextOcr.readFromFile(path).getOrNull() }
+            barcodeTask.await() to textTask.await()
         }
-        val aPartida = CAMPOS_ESCRIBIBLES[leido.campo]
-        return CampoPropuesto(
-            leido = leido,
-            escribible = aPartida != null,
-            // Se aceptan por omision; el revisador desmarca lo que no cuadre.
-            aceptado = aPartida != null,
-            destino = if (aPartida != null) Destino.PARTIDA else Destino.NINGUNO
-        )
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        val initial = LabelFieldExtractor.extractDetailed(mlKit?.rawText.orEmpty(), codes)
+        val textResult = if (improve || initial.fields.isEmpty() && initial.conflicts.isEmpty()) {
+            paddleOcrEngine.readFromFile(path).getOrNull() ?: mlKit
+        } else mlKit
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        if (token != generation) return
+        val rawText = textResult?.rawText.orEmpty()
+        val extraction = LabelFieldExtractor.extractDetailed(rawText, codes)
+        val oldByField = previous.campos.associateBy { it.leido.campo }
+        val proposed = extraction.fields.map { freshReading ->
+            val fresh = aPropuesto(freshReading)
+            val old = oldByField[freshReading.campo]
+            when {
+                old == null -> fresh
+                old.valorAEscribir != old.leido.valor || fresh.valorAEscribir == old.leido.valor ->
+                    old.copy(aceptado = old.aceptado, detalle = fresh.detalle ?: old.detalle)
+                else -> fresh
+            }
+        }.toMutableList()
+        val resolvedAfterImprove = previous.resolvedConflicts.toMutableSet()
+        extraction.conflicts.forEach { conflict ->
+            val previousChoice = oldByField[conflict.field]
+            proposed.removeAll { it.leido.campo == conflict.field }
+            if (improve && conflict.field in previous.resolvedConflicts && previousChoice != null) {
+                proposed.add(previousChoice)
+            } else {
+                conflict.observations.firstOrNull()?.let { first ->
+                    proposed.add(aPropuesto(first).copy(aceptado = false, detalle = "Hay lecturas diferentes. Elige el valor correcto."))
+                }
+                resolvedAfterImprove.remove(conflict.field)
+            }
+        }
+        if (improve) {
+            previous.campos.filter { old -> old.valorAEscribir != old.leido.valor && proposed.none { it.leido.campo == old.leido.campo } }
+                .forEach(proposed::add)
+        }
+        val matching = PartidaMatcher.match(partidas, proposed.map { it.leido.copy(valor = it.valorAEscribir) }, rawText)
+        val selectedBefore = previous.selectedPartida
+        update(_estado.value.copy(
+            analizando = false, refinando = false, campos = proposed, textoCrudo = rawText,
+            rawCodes = codes, observations = extraction.observations, conflicts = extraction.conflicts,
+            resolvedConflicts = resolvedAfterImprove, candidates = matching.candidates,
+            selectedPartida = selectedBefore, readingMillis = SystemClock.elapsedRealtime() - started,
+            identityAccepted = if (improve) previous.identityAccepted else false,
+            physicalReviewConfirmed = if (improve) previous.physicalReviewConfirmed else false,
+            error = if (proposed.isEmpty()) "No se identificaron campos. Puedes elegir la partida y conservar la foto como avance." else null
+        ))
+        val selectedId = initialPartidaId ?: selectedBefore?.IdRevdet ?: matching.suggestedPartidaId
+        if (selectedId != null && selectedId != selectedBefore?.IdRevdet) selectPartida(selectedId)
+    }
+
+    fun selectPartida(idRevdet: Int) {
+        if (_estado.value.syncStatus != LabelCaptureStatus.DRAFT) return
+        contextJob?.cancel()
+        val selected = partidas.firstOrNull { it.IdRevdet == idRevdet }
+        update(_estado.value.copy(selectedPartida = selected, snapshot = null, loadingContext = selected != null,
+            identityAccepted = false, physicalReviewConfirmed = false, canEdit = false, canMarkReviewed = false))
+        if (selected == null) return
+        val captureId = _estado.value.captureId
+        contextJob = viewModelScope.launch {
+            val result = repository.getContext(selected.IdRevdet, reference)
+            if (_estado.value.captureId != captureId || _estado.value.selectedPartida?.IdRevdet != selected.IdRevdet) return@launch
+            result.onSuccess { response ->
+                update(_estado.value.copy(snapshot = response.snapshot, loadingContext = false, canEdit = response.canEdit,
+                    canMarkReviewed = response.canMarkReviewed, error = if (response.canEdit) null else response.message))
+            }.onFailure { error ->
+                update(_estado.value.copy(loadingContext = false, error = error.message))
+            }
+        }
     }
 
     fun alternar(campo: LabelFieldExtractor.Campo) {
-        _estado.value = _estado.value.copy(
-            campos = _estado.value.campos.map {
-                if (it.leido.campo == campo && it.escribible) it.copy(aceptado = !it.aceptado) else it
-            }
-        )
+        if (_estado.value.syncStatus != LabelCaptureStatus.DRAFT) return
+        if (_estado.value.unresolvedConflicts.any { it.field == campo }) return
+        update(_estado.value.copy(campos = _estado.value.campos.map {
+            if (it.leido.campo == campo && it.escribible) it.copy(aceptado = !it.aceptado) else it
+        }))
     }
 
-    /**
-     * Manda los datos del rombo a traf3. Van juntos en una sola llamada porque
-     * son un solo hecho: este embarque es material peligroso tal y tal.
-     */
-    fun guardarHazmat(
-        crefAgrupada: String,
-        campos: List<CampoPropuesto>,
-        onResultado: (Boolean) -> Unit = {}
-    ) {
-        val delRombo = campos.filter { it.destino == Destino.HAZMAT }
-        if (crefAgrupada.isBlank() || delRombo.isEmpty()) {
-            onResultado(false)
-            return
+    fun editField(field: LabelFieldExtractor.Campo, value: String) {
+        if (_estado.value.syncStatus != LabelCaptureStatus.DRAFT) return
+        val current = _estado.value.campos.firstOrNull { it.leido.campo == field } ?: return
+        val corrected = aPropuesto(current.leido.copy(valor = value.trim()))
+        update(_estado.value.copy(campos = _estado.value.campos.map {
+            if (it.leido.campo == field) corrected.copy(leido = current.leido) else it
+        }, resolvedConflicts = _estado.value.resolvedConflicts + field))
+        if (field == LabelFieldExtractor.Campo.NUMERO_PARTE) {
+            val fields = _estado.value.campos.map { it.leido.copy(valor = it.valorAEscribir) }
+            val match = PartidaMatcher.match(partidas, fields, _estado.value.textoCrudo)
+            update(_estado.value.copy(candidates = match.candidates, identityAccepted = false))
         }
-        fun valor(campo: LabelFieldExtractor.Campo) =
-            delRombo.firstOrNull { it.leido.campo == campo }?.valorAEscribir
+    }
 
+    fun acceptIdentity(accepted: Boolean) = update(_estado.value.copy(identityAccepted = accepted))
+    fun confirmPhysicalReview(confirmed: Boolean) = update(_estado.value.copy(physicalReviewConfirmed = confirmed))
+
+    fun save(markReviewed: Boolean) {
+        val state = _estado.value
+        if (!state.canSave || markReviewed && !state.canComplete) return
+        val selected = state.selectedPartida ?: return
+        val captureId = state.captureId ?: return
+        val snapshot = state.snapshot ?: return
+        fun accepted(field: LabelFieldExtractor.Campo): String? = state.aceptados.firstOrNull { it.leido.campo == field }?.valorAEscribir
+        val hazmat = LabelCaptureHazmat(accepted(LabelFieldExtractor.Campo.UN_HAZMAT),
+            accepted(LabelFieldExtractor.Campo.CLASE_HAZMAT), accepted(LabelFieldExtractor.Campo.GRUPO_EMBALAJE))
+        val request = ConfirmLabelCaptureRequest(
+            captureId = captureId, crefAgrupada = reference, idRevdet = selected.IdRevdet, expectedSnapshot = snapshot,
+            fields = LabelCaptureFields(accepted(LabelFieldExtractor.Campo.LOTE), accepted(LabelFieldExtractor.Campo.NUMERO_SERIE),
+                accepted(LabelFieldExtractor.Campo.MARCA), accepted(LabelFieldExtractor.Campo.MODELO), accepted(LabelFieldExtractor.Campo.PAIS_ORIGEN)),
+            hazmat = hazmat.takeIf { it.un != null || it.clase != null || it.grupo != null },
+            markReviewed = markReviewed, physicalReviewConfirmed = state.physicalReviewConfirmed,
+            observations = state.observations.take(64).map { reading ->
+                val proposal = state.campos.firstOrNull { it.leido.campo == reading.campo }
+                LabelCaptureObservation(
+                    field = reading.campo.name,
+                    value = reading.valor,
+                    rawValue = reading.rawValue,
+                    source = reading.origen.name,
+                    accepted = proposal?.let {
+                        it.escribible && it.aceptado && it.valorAEscribir.equals(reading.valor, ignoreCase = true)
+                    } == true
+                )
+            },
+            rawText = state.textoCrudo.take(16000), rawCodes = state.rawCodes.take(64).map { it.take(1024) }
+        )
+        _estado.value = state.copy(syncStatus = LabelCaptureStatus.PENDING, syncMessage = "Preparando la evidencia…")
         viewModelScope.launch {
-            val r = repository.guardarHazmatRevision(
-                crefAgrupada = crefAgrupada,
-                un = valor(LabelFieldExtractor.Campo.UN_HAZMAT),
-                // La clase se lee como "3 · LIQUIDO"; a la columna va solo el codigo.
-                clase = valor(LabelFieldExtractor.Campo.CLASE_HAZMAT)?.substringBefore(' ')?.trim(),
-                grupo = valor(LabelFieldExtractor.Campo.GRUPO_EMBALAJE)
-            )
-            onResultado(r.isSuccess)
+            try {
+                persistenceJob?.join()
+                repository.saveState(captureId, gson.toJson(state.copy(availablePartidas = emptyList(), candidates = emptyList())))
+                repository.queue(captureId, request)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                _estado.value = _estado.value.copy(syncStatus = LabelCaptureStatus.DRAFT, syncMessage = null, error = error.message)
+            }
         }
     }
 
-    fun limpiar() {
-        _estado.value = Estado()
+    fun improveReading() {
+        val state = _estado.value
+        if (state.syncStatus != LabelCaptureStatus.DRAFT || state.analizando || state.refinando) return
+        val path = state.fotoPath ?: return
+        cancelReading()
+        val token = generation
+        update(state.copy(refinando = true))
+        analysisJob = viewModelScope.launch {
+            try { readPhoto(path, token, improve = true) }
+            catch (error: CancellationException) { throw error }
+            catch (error: Exception) { if (token == generation) update(_estado.value.copy(refinando = false, error = error.message)) }
+        }
     }
 
-    /**
-     * Reconocimiento de texto en cascada: **el motor barato primero**.
-     *
-     * Medido en el Pixel con la etiqueta de allnex SETAL impresa en papel:
-     *
-     * ```
-     * OCR_PADDLE: lineas=45 det=511ms rec=4677ms total=5220ms
-     * LABEL_CAPTURE: campos=2 total=6034ms
-     * ```
-     *
-     * El costo no esta en la deteccion sino en el **reconocimiento renglon por
-     * renglon**: 45 renglones, y casi todos son el parrafo de advertencias de
-     * riesgo, que no aporta ningun campo. En pantalla eran 23 renglones y 1,113
-     * ms; impresa y bien enfocada la etiqueta entrega el doble de renglones y
-     * el tiempo se cuadruplica. Mejor foto, mas lento: al reves de lo deseable.
-     *
-     * ML Kit sobre la misma foto a resolucion completa tarda ~600 ms y en las
-     * pruebas entrego 111 candidatos. Para una etiqueta **impresa, enfocada y
-     * bien iluminada** alcanza de sobra, asi que va primero y Paddle queda de
-     * red de seguridad.
-     *
-     * **Esto invierte la regla general del proyecto** ("Paddle es el motor
-     * primario para fotos estaticas"), y a proposito: esa regla se fijo para
-     * placas y numeros de caja -- texto industrial golpeado, con estarcido y
-     * poco contraste -- donde Paddle gana claro. Una etiqueta de producto
-     * recien impresa es el caso facil. Si en bodega aparecen etiquetas sucias o
-     * desgastadas donde ML Kit falle, la vuelta atras es cambiar el orden de
-     * estas dos llamadas.
-     *
-     * Secuencial a proposito: correr los dos motores a la vez duplica el pico
-     * de CPU y deja al HAL de la camara sin buffers.
-     */
-    private suspend fun conPaddleDeRespaldo(
-        path: String,
-        mlKit: LocalTextOcrResult?
-    ): LocalTextOcrResult? {
-        val tPaddle = SystemClock.elapsedRealtime()
-        val paddle = paddleOcrEngine.readFromFile(path).getOrNull()
-        Log.d(
-            "LABEL_CAPTURE",
-            "paddle (red de seguridad): texto=${paddle?.rawText?.length ?: 0} chars " +
-                "en ${SystemClock.elapsedRealtime() - tPaddle}ms"
-        )
+    fun restoreDraft(captureId: String) {
+        val draft = _drafts.value.firstOrNull { it.captureId == captureId } ?: return
+        cancelReading()
+        val restored = runCatching { gson.fromJson(draft.stateJson, Estado::class.java) }.getOrNull() ?: Estado()
+        _estado.value = restored.copy(captureId = draft.captureId, fotoPath = draft.photoPath,
+            availablePartidas = partidas, analizando = false, refinando = false, loadingContext = false,
+            syncStatus = draft.status, syncMessage = draft.errorMessage)
+        val match = PartidaMatcher.match(partidas, restored.campos.map { it.leido.copy(valor = it.valorAEscribir) }, restored.textoCrudo)
+        _estado.value = _estado.value.copy(candidates = match.candidates)
+        if (draft.status == LabelCaptureStatus.PENDING) repository.schedule(captureId)
+    }
 
-        val fusionado = mergeLocalResults(
-            paddle ?: LocalTextOcrResult("", emptyList()),
-            mlKit ?: LocalTextOcrResult("", emptyList())
-        )
-        return fusionado.takeIf { it.rawText.isNotBlank() || it.candidates.isNotEmpty() }
+    fun retry() {
+        val id = _estado.value.captureId ?: return
+        viewModelScope.launch {
+            try { repository.retry(id) }
+            catch (error: Exception) { _estado.value = _estado.value.copy(error = error.message) }
+        }
+    }
+
+    fun discardDraft(onDiscarded: () -> Unit = {}) {
+        val state = _estado.value
+        if (state.syncStatus == LabelCaptureStatus.PENDING) return
+        cancelReading()
+        viewModelScope.launch {
+            try {
+                persistenceJob?.join()
+                state.captureId?.let { repository.discard(it) }
+                _estado.value = Estado(availablePartidas = partidas)
+                onDiscarded()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) { _estado.value = _estado.value.copy(error = error.message) }
+        }
+    }
+
+    fun reloadContext() {
+        val state = _estado.value
+        val id = state.selectedPartida?.IdRevdet ?: return
+        if (state.syncStatus == LabelCaptureStatus.DRAFT) { selectPartida(id); return }
+        if (state.syncStatus != LabelCaptureStatus.BLOCKED) return
+        viewModelScope.launch {
+            try {
+                val draft = repository.reopenConflict(requireNotNull(state.captureId))
+                _estado.value = state.copy(captureId = draft.captureId, fotoPath = draft.photoPath,
+                    syncStatus = LabelCaptureStatus.DRAFT, syncMessage = null, snapshot = null, identityAccepted = false,
+                    physicalReviewConfirmed = false)
+                selectPartida(id)
+            } catch (error: Exception) { _estado.value = _estado.value.copy(error = error.message) }
+        }
+    }
+
+    /** Cerrar conserva el borrador; una confirmación ya recibida puede retirarse localmente. */
+    fun limpiar() {
+        val state = _estado.value
+        cancelReading()
+        if (state.captureId != null) {
+            val previous = persistenceJob
+            persistenceJob = applicationScope.launch {
+                previous?.join()
+                runCatching {
+                    if (state.syncStatus == LabelCaptureStatus.CONFIRMED) repository.discard(state.captureId)
+                    else repository.saveState(state.captureId, gson.toJson(state.copy(availablePartidas = emptyList(), candidates = emptyList())))
+                }
+            }
+        }
+        _estado.value = Estado(availablePartidas = partidas)
+    }
+
+    private fun cancelReading() {
+        generation++
+        analysisJob?.cancel()
+        contextJob?.cancel()
+    }
+
+    private fun update(state: Estado) {
+        _estado.value = state
+        val id = state.captureId ?: return
+        if (state.syncStatus == LabelCaptureStatus.DRAFT) {
+            val previous = persistenceJob
+            val json = gson.toJson(state.copy(availablePartidas = emptyList(), candidates = emptyList()))
+            persistenceJob = applicationScope.launch {
+                previous?.join()
+                runCatching { repository.saveState(id, json) }
+            }
+        }
+    }
+
+    private fun aPropuesto(leido: LabelFieldExtractor.CampoLeido): CampoPropuesto {
+        if (leido.campo == LabelFieldExtractor.Campo.PAIS_ORIGEN) {
+            val catalog = countries.mapNotNull { country ->
+                val code = country.codigo?.trim().orEmpty()
+                val name = (country.descrip ?: country.cnombre).orEmpty()
+                if (code.isEmpty()) null else CountryCatalogMatcher.PaisCatalogo(code, name)
+            }
+            val resolved = CountryCatalogMatcher.emparejar(leido.valor, catalog)
+            return CampoPropuesto(leido, resolved != null, resolved != null, Destino.PARTIDA,
+                resolved?.codigo ?: leido.valor, resolved?.let { "${it.codigo} · ${it.nombre}" } ?: "Elige un país válido del catálogo.")
+        }
+        if (leido.campo in CAMPOS_HAZMAT) {
+            val valid = when (leido.campo) {
+                LabelFieldExtractor.Campo.UN_HAZMAT -> Regex("\\d{4}").matches(leido.valor)
+                LabelFieldExtractor.Campo.CLASE_HAZMAT -> Regex("[1-9](?:\\.[1-9])?").matches(leido.valor)
+                LabelFieldExtractor.Campo.GRUPO_EMBALAJE -> leido.valor in setOf("I", "II", "III")
+                else -> false
+            }
+            return CampoPropuesto(leido, valid, valid, Destino.HAZMAT,
+                detalle = if (valid) "Se coteja con el Hazmat vigente de la referencia." else "Verifica el formato antes de guardar.")
+        }
+        val writable = leido.campo in CAMPOS_ESCRIBIBLES && leido.valor.isNotBlank()
+        return CampoPropuesto(leido, writable, writable, if (writable) Destino.PARTIDA else Destino.NINGUNO)
     }
 
     companion object {
-        /**
-         * Campos que SI se pueden mandar a la partida, con el nombre que espera
-         * `DetalleRevisionViewModel.actualizarDatoPartida`.
-         *
-         * Los que no estan aqui se muestran pero no se escriben, y cada ausencia
-         * tiene razon:
-         *
-         *  - **Numero de parte**: `actualizarDatoPartida` no lo maneja; viene del
-         *    pedimento y no se edita en revision.
-         *  - **Cantidad y piezas por empaque**: la etiqueta dice piezas POR EMPAQUE
-         *    ("10 PCS", "Qty: 1 of 2"). El campo de la partida es el TOTAL de
-         *    piezas. Meter uno en el otro es justo el error silencioso que
-         *    queremos quitar, asi que lo decide el revisador.
-         *  - **UN, clase y grupo de embalaje**: no van a la partida sino a `traf3`,
-         *    que es por referencia. Se escriben con [guardarHazmat] y por eso no
-         *    estan en este mapa, pero si son escribibles (ver [CAMPOS_HAZMAT]).
-         */
-        val CAMPOS_ESCRIBIBLES: Map<LabelFieldExtractor.Campo, String> = mapOf(
-            LabelFieldExtractor.Campo.LOTE to "numLote",
-            LabelFieldExtractor.Campo.NUMERO_SERIE to "numSer",
-            // Se escribe el CODIGO que resolvio CountryCatalogMatcher, no el
-            // texto de la etiqueta: la columna es varchar(3).
-            LabelFieldExtractor.Campo.PAIS_ORIGEN to "cPaisOrigen"
+        val CAMPOS_ESCRIBIBLES = mapOf(
+            LabelFieldExtractor.Campo.LOTE to "numLote", LabelFieldExtractor.Campo.NUMERO_SERIE to "numSer",
+            LabelFieldExtractor.Campo.PAIS_ORIGEN to "cPaisOrigen", LabelFieldExtractor.Campo.MARCA to "marca",
+            LabelFieldExtractor.Campo.MODELO to "modelo"
         )
-
-        /** Los tres datos del rombo. No van a la partida: van a traf3. */
-        val CAMPOS_HAZMAT = setOf(
-            LabelFieldExtractor.Campo.UN_HAZMAT,
-            LabelFieldExtractor.Campo.CLASE_HAZMAT,
-            LabelFieldExtractor.Campo.GRUPO_EMBALAJE
-        )
+        val CAMPOS_HAZMAT = setOf(LabelFieldExtractor.Campo.UN_HAZMAT,
+            LabelFieldExtractor.Campo.CLASE_HAZMAT, LabelFieldExtractor.Campo.GRUPO_EMBALAJE)
     }
 }

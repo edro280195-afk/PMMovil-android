@@ -24,5 +24,6 @@ include(":app")
 include(":device-agent")
 include(":baselineprofile")
 include(":ppocr-sdk")
- 
+include(":mapspike")
 include(":arlab")
+ 

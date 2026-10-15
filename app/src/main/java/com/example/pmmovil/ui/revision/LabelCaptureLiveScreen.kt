@@ -215,12 +215,9 @@ fun LabelCaptureLiveScreen(
         ) { resultado ->
             if (capturandoState.value) return@LiveTextOcrAnalyzer
 
-            // Los códigos se acumulan: el decodificador los ve un cuadro y al
-            // siguiente ya no, y perder un código exacto por un parpadeo sería
-            // tirar el dato más confiable que trae la etiqueta.
-            if (resultado.barcodes.isNotEmpty()) {
-                codigosVistos = (codigosVistos + resultado.barcodes).distinct()
-            }
+            // Cada cuadro guía su propio encuadre. No conserva códigos de otra
+            // etiqueta que se haya enfocado antes durante esta apertura.
+            codigosVistos = resultado.barcodes.distinct()
             val campos = LabelFieldExtractor.extraer(resultado.rawText, codigosVistos)
             camposEnVivo = campos
             val listo = juez.evaluar(campos, geometria)
@@ -722,6 +719,8 @@ private fun nombreCortoDeCampo(campo: LabelFieldExtractor.Campo): String = when 
     LabelFieldExtractor.Campo.UN_HAZMAT -> "UN"
     LabelFieldExtractor.Campo.CLASE_HAZMAT -> "CLASE"
     LabelFieldExtractor.Campo.GRUPO_EMBALAJE -> "GRUPO"
+    LabelFieldExtractor.Campo.MARCA -> "MARCA"
+    LabelFieldExtractor.Campo.MODELO -> "MODELO"
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -1,6 +1,8 @@
 package com.example.pmmovil.data.repository
 
 import com.example.pmmovil.data.api.PMMovilApi
+import com.example.pmmovil.data.model.ZebraLabelLayoutDto
+import com.example.pmmovil.data.model.ZebraLabelLayoutSaveRequest
 import com.example.pmmovil.data.model.ZebraPrinterDto
 import com.example.pmmovil.data.model.ZebraPrinterSaveRequest
 import com.google.gson.JsonParser
@@ -45,6 +47,26 @@ class ZebraPrinterRepository @Inject constructor(
             body.item
         } else {
             throw apiFailure(response, body?.message, "No se pudo guardar la impresora Zebra.")
+        }
+    }
+
+    suspend fun getLabelLayouts(): Result<List<ZebraLabelLayoutDto>> = io {
+        val response = api.getZebraLabelLayouts()
+        val body = response.body()
+        if (response.isSuccessful && body?.success == true) {
+            body.items
+        } else {
+            throw apiFailure(response, body?.message, "No se pudieron cargar las plantillas de etiquetas.")
+        }
+    }
+
+    suspend fun saveLabelLayout(type: String, layoutJson: String): Result<ZebraLabelLayoutDto> = io {
+        val response = api.saveZebraLabelLayout(type, ZebraLabelLayoutSaveRequest(type, layoutJson))
+        val body = response.body()
+        if (response.isSuccessful && body?.success == true && body.item != null) {
+            body.item
+        } else {
+            throw apiFailure(response, body?.message, "No se pudo guardar la plantilla de etiqueta.")
         }
     }
 

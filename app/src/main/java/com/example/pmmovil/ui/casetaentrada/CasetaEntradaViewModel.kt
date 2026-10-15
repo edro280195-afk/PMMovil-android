@@ -402,6 +402,9 @@ class CasetaEntradaViewModel @Inject constructor(
         loadFrequentCatalogs()
         observeDrafts()
         observeFormChangesForAutosave()
+        viewModelScope.launch {
+            zebraLabelLayoutPreferences.syncWithServer()
+        }
     }
 
     // La lista de borradores la manda Room: cualquier alta/baja se refleja sola
@@ -1033,6 +1036,10 @@ class CasetaEntradaViewModel @Inject constructor(
      * es un pre-registro, solo se avisa; no se toca ningun campo del formulario.
      */
     fun onScannerInput(raw: String) {
+        val current = _uiState.value
+        if (current.isValidatingPreregistro || current.preregistroPendiente != null) {
+            return
+        }
         val trimmedRaw = raw.trim()
         if (trimmedRaw.startsWith("PMMPR|")) {
             applyPreregistro(trimmedRaw)
@@ -1058,6 +1065,10 @@ class CasetaEntradaViewModel @Inject constructor(
      * capturado -- el cotejo dejaba de ser un filtro real.
      */
     fun applyPreregistro(codigo: String) {
+        val current = _uiState.value
+        if (current.isValidatingPreregistro || current.preregistroPendiente != null) {
+            return
+        }
         viewModelScope.launch {
             _uiState.update { it.copy(isValidatingPreregistro = true) }
             repository.validatePreregistro(codigo)
@@ -1479,7 +1490,9 @@ class CasetaEntradaViewModel @Inject constructor(
                 user = state.currentUser,
                 userName = state.currentUserName.ifBlank { state.currentUser },
                 plant = state.currentPlant,
-                diferirCorreo = state.form.localPhotoPaths.isNotEmpty()
+                diferirCorreo = state.form.localPhotoPaths.isNotEmpty(),
+                preregistroFolio = state.preregistroFolio,
+                placasNoCoinciden = state.preregistroPlacasConfirmadas == false
             )
 
             repository.save(request)
@@ -1496,25 +1509,6 @@ class CasetaEntradaViewModel @Inject constructor(
                         firstPhotoIndex = state.form.remotePhotos.mapNotNull { it.sourceIndex }.maxOrNull()?.plus(1) ?: 1,
                         isUpdate = state.form.updated
                     )
-
-                    // Si el registro vino de un pre-registro (QR de garita), marcarlo como
-                    // usado AHORA que la entrada ya quedo en `caseta` -- nunca antes, para que
-                    // un escaneo accidental no queme el codigo del chofer. No bloquea ni
-                    // revierte el guardado si esta llamada falla: la entrada ya es valida.
-                    // Si falla (permisos, red) SI se avisa en el mensaje final -- antes quedaba
-                    // solo en el log y el pre-registro se veia "Vigente" para siempre sin que
-                    // nadie se enterara.
-                    var preregistroCierreAviso: String? = null
-                    if (state.form.origenPreRegistro && state.preregistroFolio.isNotBlank() && response.casetaId.isNotBlank()) {
-                        repository.usePreregistro(
-                            folio = state.preregistroFolio,
-                            casetaId = response.casetaId,
-                            placasNoCoinciden = state.preregistroPlacasConfirmadas == false
-                        ).onFailure { ex ->
-                            Log.w("CasetaEntradaViewModel", "No se pudo marcar el pre-registro ${state.preregistroFolio} como usado: ${ex.message}")
-                            preregistroCierreAviso = "Aviso: la entrada quedo guardada pero no se pudo cerrar el folio de pre-registro ${state.preregistroFolio} (revisa permisos o conexion)."
-                        }
-                    }
 
                     // El folio ya quedo guardado. Los archivos se borran solo
                     // despues de que el worker confirme cada foto; asi una falla
@@ -1539,7 +1533,6 @@ class CasetaEntradaViewModel @Inject constructor(
                                 if (queuedPhotos > 0) {
                                     append(" Fotos en cola para sincronizar: $queuedPhotos.")
                                 }
-                                preregistroCierreAviso?.let { append(" $it") }
                             },
                             feedbackSeq = st.feedbackSeq + 1,
                             savedSeq = st.savedSeq + 1,
@@ -2461,7 +2454,9 @@ private fun CasetaEntradaForm.toRequest(
     user: String,
     userName: String,
     plant: String,
-    diferirCorreo: Boolean = false
+    diferirCorreo: Boolean = false,
+    preregistroFolio: String = "",
+    placasNoCoinciden: Boolean = false
 ): CasetaEntradaGuardarRequest {
     return CasetaEntradaGuardarRequest(
         usuario = user,
@@ -2502,6 +2497,8 @@ private fun CasetaEntradaForm.toRequest(
         idcaseta = idCaseta,
         actualizado = updated,
         origenPreRegistro = origenPreRegistro,
+        preregistroFolio = preregistroFolio,
+        placasNoCoinciden = placasNoCoinciden,
         tipoRegistro = tipoRegistro
     )
 }

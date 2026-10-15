@@ -187,6 +187,16 @@ class AuthRepository @Inject constructor(
         return prefs.getString("AUTH_TOKEN", null)
     }
 
+    data class SessionCredentials(val username: String, val token: String)
+
+    /** Lee usuario y token del mismo snapshot para las colas pertenecientes a un usuario. */
+    fun getSessionCredentials(): SessionCredentials? {
+        val values = prefs.all
+        val username = (values["AUTH_USER"] as? String)?.substringBefore(';')?.trim().orEmpty()
+        val token = (values["AUTH_TOKEN"] as? String).orEmpty()
+        return if (username.isBlank() || token.isBlank()) null else SessionCredentials(username, token)
+    }
+
     fun hasActiveSession(): Boolean {
         return !getToken().isNullOrBlank()
     }

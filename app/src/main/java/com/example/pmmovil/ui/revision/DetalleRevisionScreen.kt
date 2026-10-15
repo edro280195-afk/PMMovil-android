@@ -236,9 +236,21 @@ fun DetalleRevisionScreen(
     // paises, fotos, hazmat y permisos.
     val labelCaptureViewModel: LabelCaptureViewModel = hiltViewModel()
     val labelCaptureEstado by labelCaptureViewModel.estado.collectAsState()
+    val labelCaptureDrafts by labelCaptureViewModel.drafts.collectAsState()
     var capturandoEtiqueta by remember { mutableStateOf(false) }
     var partidaParaEtiqueta by remember { mutableStateOf<PartidaRevisionDto?>(null) }
+    var showCaptureDrafts by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(viewModel.crefAgrupada, todasLasPartidas, paisesList) {
+        labelCaptureViewModel.configure(viewModel.crefAgrupada, todasLasPartidas, paisesList)
+    }
+    LaunchedEffect(labelCaptureDrafts.filter { it.status == com.example.pmmovil.data.model.LabelCaptureStatus.CONFIRMED }.map { it.captureId }) {
+        if (labelCaptureDrafts.any { it.status == com.example.pmmovil.data.model.LabelCaptureStatus.CONFIRMED }) {
+            viewModel.loadData()
+            viewModel.cargarFotos()
+        }
+    }
 
     LaunchedEffect(navegarAtras) {
         if (navegarAtras) {
@@ -864,7 +876,16 @@ fun DetalleRevisionScreen(
                     isPdfOpen = !isPdfOpen
                 },
                 onCompartir = viewModel::compartirEntrada,
-                isSharingLink = isSharingLink
+                isSharingLink = isSharingLink,
+                canReadLabel = puedeModificarRevision && !isEspectador && todasLasPartidas.isNotEmpty(),
+                captureDraftCount = labelCaptureDrafts.size,
+                onReadLabel = {
+                    if (labelCaptureDrafts.isNotEmpty()) showCaptureDrafts = true
+                    else {
+                        partidaParaEtiqueta = null
+                        capturandoEtiqueta = true
+                    }
+                }
             )
             }
         },
@@ -1269,7 +1290,8 @@ fun DetalleRevisionScreen(
                     labelCaptureViewModel.analizar(
                         path = path,
                         codigosEnVivo = codigosEnVivo,
-                        catalogoPaises = paisesList
+                        catalogoPaises = paisesList,
+                        initialPartidaId = partidaParaEtiqueta?.IdRevdet
                     )
                 },
                 onCerrar = { capturandoEtiqueta = false }
@@ -1280,52 +1302,56 @@ fun DetalleRevisionScreen(
             LabelCaptureSheet(
                 estado = labelCaptureEstado,
                 onAlternar = labelCaptureViewModel::alternar,
-                onUsar = {
-                    // Los campos de la partida y los del rombo van por caminos
-                    // distintos: la partida es por renglon y traf3 es por
-                    // referencia completa.
-                    partidaParaEtiqueta?.let { destino ->
-                        labelCaptureEstado.aceptados
-                            .filter { it.destino == LabelCaptureViewModel.Destino.PARTIDA }
-                            .forEach { propuesto ->
-                                LabelCaptureViewModel.CAMPOS_ESCRIBIBLES[propuesto.leido.campo]
-                                    ?.let { campoApi ->
-                                        viewModel.actualizarDatoPartida(
-                                            destino,
-                                            campoApi,
-                                            propuesto.valorAEscribir
-                                        )
-                                    }
-                            }
-                    }
-                    val delRombo = labelCaptureEstado.aceptados
-                        .filter { it.destino == LabelCaptureViewModel.Destino.HAZMAT }
-                    if (delRombo.isNotEmpty()) {
-                        labelCaptureViewModel.guardarHazmat(
-                            crefAgrupada = viewModel.crefAgrupada,
-                            campos = delRombo
-                        ) { ok ->
-                            scope.launch {
-                                snackbarHostState.showSnackbar(
-                                    context.getString(
-                                        if (ok) R.string.revision_hazmat_saved
-                                        else R.string.revision_hazmat_failed
-                                    ),
-                                    duration = SnackbarDuration.Short
-                                )
-                            }
-                        }
-                    }
-                    labelCaptureViewModel.limpiar()
-                    partidaParaEtiqueta = null
-                },
+                onEdit = labelCaptureViewModel::editField,
+                onSelectPartida = labelCaptureViewModel::selectPartida,
+                onIdentityAccepted = labelCaptureViewModel::acceptIdentity,
+                onPhysicalReviewConfirmed = labelCaptureViewModel::confirmPhysicalReview,
+                onSave = labelCaptureViewModel::save,
+                onImprove = labelCaptureViewModel::improveReading,
+                onRetry = labelCaptureViewModel::retry,
+                onReloadContext = labelCaptureViewModel::reloadContext,
+                onDiscard = { labelCaptureViewModel.discardDraft() },
                 onRepetir = {
-                    labelCaptureViewModel.limpiar()
-                    capturandoEtiqueta = true
+                    labelCaptureViewModel.discardDraft { capturandoEtiqueta = true }
                 },
                 onCerrar = {
                     labelCaptureViewModel.limpiar()
                     partidaParaEtiqueta = null
+                }
+            )
+        }
+
+        if (showCaptureDrafts) {
+            AlertDialog(
+                onDismissRequest = { showCaptureDrafts = false },
+                title = { Text(stringResource(R.string.label_capture_saved_drafts)) },
+                text = {
+                    LazyColumn {
+                        items(labelCaptureDrafts, key = { it.captureId }) { draft ->
+                            TextButton(onClick = {
+                                showCaptureDrafts = false
+                                labelCaptureViewModel.restoreDraft(draft.captureId)
+                            }) {
+                                val status = when (draft.status) {
+                                    "CONFIRMED" -> R.string.label_capture_draft_confirmed
+                                    "PENDING" -> R.string.label_capture_draft_pending
+                                    "BLOCKED" -> R.string.label_capture_draft_blocked
+                                    else -> R.string.label_capture_draft_saved
+                                }
+                                Text("${stringResource(status)} · ${draft.captureId.take(8)}")
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showCaptureDrafts = false
+                        partidaParaEtiqueta = null
+                        capturandoEtiqueta = true
+                    }) { Text(stringResource(R.string.label_capture_new)) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showCaptureDrafts = false }) { Text(stringResource(R.string.common_cancel)) }
                 }
             )
         }
@@ -1354,7 +1380,10 @@ private fun RevisionTopBar(
     onGallery: () -> Unit,
     onPdf: () -> Unit,
     onCompartir: () -> Unit,
-    isSharingLink: Boolean
+    isSharingLink: Boolean,
+    canReadLabel: Boolean,
+    captureDraftCount: Int,
+    onReadLabel: () -> Unit
 ) {
     Surface(
         color = PmmBlueDeep,
@@ -1477,6 +1506,16 @@ private fun RevisionTopBar(
                             }
                         }
                         Spacer(Modifier.width(4.dp))
+                    }
+
+                    IconButton(onClick = onReadLabel, enabled = canReadLabel || captureDraftCount > 0) {
+                        BadgedBox(badge = {
+                            if (captureDraftCount > 0) Badge { Text(captureDraftCount.toString()) }
+                        }) {
+                            Icon(Icons.Default.DocumentScanner,
+                                contentDescription = stringResource(R.string.revision_read_label_title),
+                                tint = if (canReadLabel || captureDraftCount > 0) PmmYellow else PmmTextMuted)
+                        }
                     }
 
                     // Fotos de la revisión normal (ntipodocto=107). En celular angosto

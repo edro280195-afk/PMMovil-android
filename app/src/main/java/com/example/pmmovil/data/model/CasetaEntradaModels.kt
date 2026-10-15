@@ -125,6 +125,10 @@ data class CasetaEntradaGuardarRequest(
     // Dato de procedencia (vino de un QR de pre-registro escaneado en garita).
     // Ya NO decide que campos son obligatorios -- eso lo hace tipoRegistro.
     val origenPreRegistro: Boolean = false,
+    // Identidad explicita del QR. El API la usa para cerrar el folio de forma
+    // idempotente aun cuando el intento de cierre del cliente falle.
+    val preregistroFolio: String = "",
+    val placasNoCoinciden: Boolean = false,
     // "CAJA" (default) o "TRACTOCAMION". El backend exime Cliente, Tipo de Caja,
     // Linea de Caja y Numero de Caja cuando es "TRACTOCAMION" -- ver TipoRegistro.CAJA.
     val tipoRegistro: String = TipoRegistro.CAJA

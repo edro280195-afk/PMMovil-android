@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="label_capture_saved_drafts">Capturas guardadas</string>
+    <string name="label_capture_draft_confirmed">Confirmada</string>
+    <string name="label_capture_draft_pending">Pendiente de sincronizar</string>
+    <string name="label_capture_draft_blocked">Requiere atención</string>
+    <string name="label_capture_draft_saved">Borrador</string>
+    <string name="label_capture_new">Nueva captura</string>
+    <string name="label_capture_finish_pending">Hay capturas pendientes. Confírmalas o descarta sus borradores antes de terminar la revisión.</string>
+</resources>

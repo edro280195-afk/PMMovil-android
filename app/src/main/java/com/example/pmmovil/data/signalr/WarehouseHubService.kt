@@ -57,6 +57,15 @@ class WarehouseHubService @Inject constructor(
     private val _revisionCompletadaFlow = MutableSharedFlow<CompletadaMessage>(extraBufferCapacity = EVENT_BUFFER_CAPACITY)
     val revisionCompletadaFlow = _revisionCompletadaFlow.asSharedFlow()
 
+    private val _revisionEstadoFlow = MutableSharedFlow<RevisionEstadoMessage>(extraBufferCapacity = EVENT_BUFFER_CAPACITY)
+    val revisionEstadoFlow = _revisionEstadoFlow.asSharedFlow()
+
+    private val _revisionActualizadaFlow = MutableSharedFlow<RevisionActualizadaMessage>(extraBufferCapacity = EVENT_BUFFER_CAPACITY)
+    val revisionActualizadaFlow = _revisionActualizadaFlow.asSharedFlow()
+
+    private val _connectionReadyFlow = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val connectionReadyFlow = _connectionReadyFlow.asSharedFlow()
+
     private val _supervisorObservandoFlow = MutableSharedFlow<SupervisorObservandoMessage>(extraBufferCapacity = EVENT_BUFFER_CAPACITY)
     val supervisorObservandoFlow = _supervisorObservandoFlow.asSharedFlow()
 
@@ -65,6 +74,15 @@ class WarehouseHubService @Inject constructor(
 
     private val _preregistroCreadoFlow = MutableSharedFlow<PreregistroCreadoMessage>(extraBufferCapacity = EVENT_BUFFER_CAPACITY)
     val preregistroCreadoFlow = _preregistroCreadoFlow.asSharedFlow()
+
+    private val _preregistroArriboFlow = MutableSharedFlow<PreregistroArriboMessage>(extraBufferCapacity = EVENT_BUFFER_CAPACITY)
+    val preregistroArriboFlow = _preregistroArriboFlow.asSharedFlow()
+
+    private val _preregistroUbicacionFlow = MutableSharedFlow<PreregistroUbicacionMessage>(extraBufferCapacity = EVENT_BUFFER_CAPACITY)
+    val preregistroUbicacionFlow = _preregistroUbicacionFlow.asSharedFlow()
+
+    private val _preregistroAlertaFlow = MutableSharedFlow<PreregistroAlertaMessage>(extraBufferCapacity = EVENT_BUFFER_CAPACITY)
+    val preregistroAlertaFlow = _preregistroAlertaFlow.asSharedFlow()
 
     fun isConnected(): Boolean {
         return hubConnection?.connectionState == HubConnectionState.CONNECTED
@@ -116,8 +134,46 @@ class WarehouseHubService @Inject constructor(
                     }
                     Log.d("SignalR", "Connected to WarehouseHub")
                     authRepository.getUsername()?.takeIf { it.isNotBlank() }?.let { user ->
-                        sendNow(connectionToStart, "UnirseASesion", user)
+                        runCatching {
+                            // Van los DOS argumentos a proposito. El hub declara
+                            // UnirseASesion(usuario, recibeBloqueos = false), y SignalR
+                            // enlaza por posicion y cantidad: el valor por omision de C#
+                            // no cubre un argumento que el cliente nunca mando, asi que
+                            // mandar solo el usuario hacia fallar la invocacion.
+                            //
+                            // false porque el grupo de bloqueos es para el panel de
+                            // supervisores; el movil no lo escucha.
+                            sendNow(connectionToStart, "UnirseASesion", user, false)
+                        }.onFailure {
+                            // Igual que las otras dos suscripciones: no poder unirse a
+                            // un grupo NO es un fallo de conexion. Sin este runCatching
+                            // la excepcion caia al catch de abajo, que llamaba a
+                            // scheduleReconnect(): conectaba bien, volvia a fallar el
+                            // join, reconectaba... 8,780 negotiate medidos en un rato,
+                            // ~8 por segundo. Se registra como advertencia, no como
+                            // dato de depuracion, porque aqui si significa que el
+                            // usuario no recibira sus eventos dirigidos.
+                            Log.w("SignalR", "No se pudo unir a la sesion del usuario", it)
+                        }
                     }
+                    runCatching {
+                        sendNow(connectionToStart, "UnirseARevision")
+                    }.onFailure {
+                        Log.d("SignalR", "La cuenta no se suscribió a revisión")
+                    }
+                    runCatching {
+                        sendNow(connectionToStart, "UnirseAPreregistro")
+                    }.onFailure {
+                        // El hub es compartido por todos los modulos. Solo
+                        // caseta y trafico deben recibir estos eventos; una
+                        // cuenta sin ese permiso no convierte esto en un
+                        // fallo de conexion.
+                        Log.d("SignalR", "La cuenta no se suscribio a pre-registros")
+                    }
+                    // Se refresca también en la primera conexión: la carga
+                    // inicial puede haber terminado antes de que el grupo
+                    // de revisión quedara unido.
+                    _connectionReadyFlow.tryEmit(Unit)
                     reconnectJob?.cancel()
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -162,6 +218,14 @@ class WarehouseHubService @Inject constructor(
                 _revisionCompletadaFlow.tryEmit(msg)
             }, CompletadaMessage::class.java)
 
+            on("onRevisionEstadoCambiado", { msg: RevisionEstadoMessage ->
+                _revisionEstadoFlow.tryEmit(msg)
+            }, RevisionEstadoMessage::class.java)
+
+            on("onRevisionActualizada", { msg: RevisionActualizadaMessage ->
+                _revisionActualizadaFlow.tryEmit(msg)
+            }, RevisionActualizadaMessage::class.java)
+
             on("onSupervisorObservando", { msg: SupervisorObservandoMessage ->
                 _supervisorObservandoFlow.tryEmit(msg)
             }, SupervisorObservandoMessage::class.java)
@@ -182,6 +246,18 @@ class WarehouseHubService @Inject constructor(
             on("onPreregistroCreado", { msg: PreregistroCreadoMessage ->
                 _preregistroCreadoFlow.tryEmit(msg)
             }, PreregistroCreadoMessage::class.java)
+
+            on("onPreregistroArribo", { msg: PreregistroArriboMessage ->
+                _preregistroArriboFlow.tryEmit(msg)
+            }, PreregistroArriboMessage::class.java)
+
+            on("onPreregistroUbicacion", { msg: PreregistroUbicacionMessage ->
+                _preregistroUbicacionFlow.tryEmit(msg)
+            }, PreregistroUbicacionMessage::class.java)
+
+            on("onPreregistroAlerta", { msg: PreregistroAlertaMessage ->
+                _preregistroAlertaFlow.tryEmit(msg)
+            }, PreregistroAlertaMessage::class.java)
         }
     }
 

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="label_capture_saved_drafts">Saved captures</string>
+    <string name="label_capture_draft_confirmed">Confirmed</string>
+    <string name="label_capture_draft_pending">Pending sync</string>
+    <string name="label_capture_draft_blocked">Needs attention</string>
+    <string name="label_capture_draft_saved">Draft</string>
+    <string name="label_capture_new">New capture</string>
+    <string name="label_capture_finish_pending">There are pending captures. Confirm them or discard their drafts before completing the review.</string>
+</resources>

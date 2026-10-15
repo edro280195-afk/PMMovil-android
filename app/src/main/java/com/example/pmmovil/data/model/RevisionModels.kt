@@ -27,7 +27,7 @@ data class FacturaRevisionDto(
     @SerializedName("fModi") val fModi: String?,
     @SerializedName("relacionCompleta") val RelacionCompleta: Boolean,
     @SerializedName("obsrev2") val Obsrev2: String?,
-    @SerializedName("usuEdit") val UsuEdit: String?
+    @SerializedName(value = "usuedit", alternate = ["usuEdit", "UsuEdit"]) val UsuEdit: String?
 )
 
 data class FacturaResponse(
@@ -67,7 +67,8 @@ data class PartidaRevisionDto(
     @SerializedName("factorEquivalencia") val FactorEquivalencia: Double? = null,
     // Solo para decidir si se muestra el campo especial de peso en libras
     // (clientes con la regla legacy GGD 14-08-17). No es editable desde Revisión.
-    @SerializedName("cclienteid") val Cclienteid: String?
+    @SerializedName("cclienteid") val Cclienteid: String?,
+    @SerializedName(value = "parteCte", alternate = ["ParteCte", "parte_cte", "Parte_cte"]) val ParteCte: String? = null
 )
 
 data class PartidaResponse(

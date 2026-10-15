@@ -3,6 +3,7 @@ package com.example.pmmovil.ui.printer
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.pmmovil.data.model.ZebraPrinterDto
+import com.example.pmmovil.data.printing.ZebraLabelLayoutPreferences
 import com.example.pmmovil.data.printing.ZebraLabelType
 import com.example.pmmovil.data.printing.ZebraPrinterPreferences
 import com.example.pmmovil.data.repository.ZebraPrinterRepository
@@ -30,7 +31,8 @@ data class PrinterCatalogState(
 @HiltViewModel
 class PrinterCatalogViewModel @Inject constructor(
     private val repository: ZebraPrinterRepository,
-    private val printerPreferences: ZebraPrinterPreferences
+    private val printerPreferences: ZebraPrinterPreferences,
+    private val layoutPreferences: ZebraLabelLayoutPreferences
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PrinterCatalogState())
@@ -38,6 +40,9 @@ class PrinterCatalogViewModel @Inject constructor(
 
     init {
         loadPrinters()
+        viewModelScope.launch {
+            layoutPreferences.syncWithServer()
+        }
     }
 
     fun loadPrinters() {

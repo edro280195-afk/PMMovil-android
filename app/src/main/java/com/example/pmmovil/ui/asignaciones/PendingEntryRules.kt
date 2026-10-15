@@ -28,7 +28,19 @@ data class EntryStatusInfo(
     val completedInvoices: Int,
     val totalInvoices: Int,
     val progressPercent: Int,
-)
+) {
+    /** Texto estable para reglas y pruebas que no tienen acceso a Compose. */
+    val label: String
+        get() = when (labelRes) {
+            R.string.assignments_status_process_finished -> "Proceso terminado"
+            R.string.assignments_status_review_finished -> "Revisión terminada"
+            R.string.assignments_status_session_paused -> "Sesión pausada"
+            R.string.assignments_status_relation_closed -> "Relación cerrada"
+            R.string.assignments_status_review_100 -> "Revisión al 100%"
+            R.string.assignments_status_in_progress_label -> "En revisión"
+            else -> "Pendiente"
+        }
+}
 
 /**
  * Replica las reglas de estado usadas por la pantalla web y el sistema legacy.

@@ -185,11 +185,11 @@ fun HomeScreen(
             list.add(ModuleItem(MobileModuleIds.GATE, R.string.home_module_gate_operation_title, R.string.home_module_gate_operation_subtitle, Icons.Default.LocalShipping, com.example.pmmovil.ui.theme.PmmAmberDark, Color(0xFFFEF3C7), enabled = true, routeKey = HomeModuleRouteKeys.GATE_HUB))
         }
 
-        // Las dos salidas de caseta tienen permisos propios. Así el usuario
-        // reconoce desde el inicio si va a liberar una relación autorizada o
-        // solamente una caja que sigue dentro del patio.
+        // Una sola pantalla de salida de caseta. Los permisos siguen separados
+        // (165 salida con relación, 166 salida manual): la tarjeta se ve con
+        // Lectura en cualquiera de los dos y la pantalla ofrece solo lo permitido.
         val relationExitPerm = hasFullAccess || permissions.any {
-            it.moduloId == MobileModuleIds.GATE_RELATION_EXIT && it.canRead
+            (it.moduloId == MobileModuleIds.GATE_RELATION_EXIT || it.moduloId == MobileModuleIds.GATE_PHYSICAL_EXIT) && it.canRead
         }
         if (relationExitPerm) {
             list.add(ModuleItem(MobileModuleIds.GATE_RELATION_EXIT, R.string.home_module_relation_exit_title, R.string.home_module_relation_exit_subtitle, Icons.Default.ArrowUpward, com.example.pmmovil.ui.theme.PmmBlueDeep, Color(0xFFE0E7FF), enabled = true, routeKey = HomeModuleRouteKeys.GATE_RELATION_EXIT))
