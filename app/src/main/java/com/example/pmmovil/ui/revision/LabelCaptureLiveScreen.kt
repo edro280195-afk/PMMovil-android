@@ -75,6 +75,7 @@ import com.example.pmmovil.data.ocr.CajaTexto
 import com.example.pmmovil.data.ocr.GeometriaEnVivo
 import com.example.pmmovil.data.ocr.LabelFieldExtractor
 import com.example.pmmovil.data.ocr.LiveTextOcrAnalyzer
+import com.example.pmmovil.ui.scanner.BarcodeFormatSets
 import com.example.pmmovil.ui.camera.CameraErrorView
 import com.example.pmmovil.ui.camera.CameraOwner
 import com.example.pmmovil.ui.camera.CameraWarmupCurtain
@@ -205,6 +206,10 @@ fun LabelCaptureLiveScreen(
             // texto es horizontal. Costaba rafagas de 93-121 ms en el hilo de UI
             // cada 3.6 s sin aportar nada aqui.
             analizarTextoVertical = false,
+            // Etiqueta de mercancia de CLIENTE: trae la simbologia que haya
+            // elegido el proveedor. La de allnex SETAL trae un DataMatrix, que
+            // con el set de nuestras etiquetas (QR + Code 128) ni se miraba.
+            formatosDeCodigo = BarcodeFormatSets.WAREHOUSE_PRODUCT_LABELS,
             onGeometria = { nueva -> if (!capturandoState.value) geometria = nueva }
         ) { resultado ->
             if (capturandoState.value) return@LiveTextOcrAnalyzer

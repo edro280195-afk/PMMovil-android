@@ -53,6 +53,20 @@ class LiveTextOcrAnalyzer(
      * Por eso se puede apagar. Queda encendido por omision para no cambiarle el
      * comportamiento a Entrada Caseta, que es quien lo necesita.
      */
+    /**
+     * Simbologias que se buscan por cuadro. Por omision las de **nuestras**
+     * etiquetas (QR + Code 128), que es lo que lee Entrada Caseta.
+     *
+     * Una etiqueta de mercancia de cliente es otra cosa: trae la simbologia que
+     * se le ocurrio al proveedor. La de allnex SETAL, por ejemplo, trae un
+     * **DataMatrix**, que con el set propio no se mira siquiera -- y leer el
+     * codigo impreso es exacto e instantaneo, muy superior a reconocer el texto.
+     * Para ese caso esta [BarcodeFormatSets.WAREHOUSE_PRODUCT_LABELS].
+     *
+     * No usar FORMAT_ALL_FORMATS: son trece detectores por cuadro y ahogan al
+     * HAL en la pantalla mas pesada de la app.
+     */
+    private val formatosDeCodigo: Int = BarcodeFormatSets.PMM_LABELS,
     private val analizarTextoVertical: Boolean = true,
     private val onGeometria: (GeometriaEnVivo) -> Unit = {},
     private val onResult: (LocalTextOcrResult) -> Unit
@@ -66,7 +80,7 @@ class LiveTextOcrAnalyzer(
     // pantalla mas pesada de la app, que es justo donde el HAL se ahogaba.
     private val barcodeScanner = BarcodeScanning.getClient(
         BarcodeScannerOptions.Builder()
-            .setBarcodeFormats(BarcodeFormatSets.PMM_LABELS)
+            .setBarcodeFormats(formatosDeCodigo)
             .build()
     )
 
