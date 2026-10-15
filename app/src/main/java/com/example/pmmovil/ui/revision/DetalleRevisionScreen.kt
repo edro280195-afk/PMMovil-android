@@ -74,7 +74,6 @@ import com.example.pmmovil.R
 import com.example.pmmovil.data.diagnostics.RevisionDiagnostics
 import com.example.pmmovil.data.model.FacturaRevisionDto
 import com.example.pmmovil.data.model.PartidaRevisionDto
-import com.example.pmmovil.ui.camera.LocalEvidenceCameraScreen
 import com.example.pmmovil.data.model.PaisDto
 import com.example.pmmovil.data.model.PaisFrecuenteDto
 import com.example.pmmovil.data.model.TipoMaterialDto
@@ -1258,19 +1257,22 @@ fun DetalleRevisionScreen(
 
         // ── Lectura de etiqueta por foto ────────────────────────────────────
         if (capturandoEtiqueta) {
-            LocalEvidenceCameraScreen(
-                title = stringResource(R.string.revision_read_label_title),
-                subtitle = stringResource(R.string.revision_read_label_hint),
-                photos = emptyList(),
-                maxPhotos = 1,
-                directoryName = "revision_label_capture",
-                filePrefix = "etiqueta",
-                onPhotoCaptured = { path ->
+            // Captura guiada en vivo, no la camara de evidencias: el revisador
+            // ve las marcas sobre la etiqueta antes de que salga la foto, y los
+            // codigos que el lector alcance a decodificar viajan con ella --
+            // un codigo le gana al texto porque es exacto.
+            LabelCaptureLiveScreen(
+                titulo = stringResource(R.string.revision_read_label_title),
+                subtitulo = stringResource(R.string.revision_read_label_hint),
+                onFotoTomada = { path, codigosEnVivo ->
                     capturandoEtiqueta = false
-                    labelCaptureViewModel.analizar(path, catalogoPaises = paisesList)
+                    labelCaptureViewModel.analizar(
+                        path = path,
+                        codigosEnVivo = codigosEnVivo,
+                        catalogoPaises = paisesList
+                    )
                 },
-                onDeletePhoto = {},
-                onClose = { capturandoEtiqueta = false }
+                onCerrar = { capturandoEtiqueta = false }
             )
         }
 

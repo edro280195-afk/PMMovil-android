@@ -7,6 +7,7 @@ import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
@@ -28,6 +29,16 @@ class LiveTextOcrAnalyzer(
      * de MediaTek de la Armor Pad Pro.
      */
     private val onFrameSeen: () -> Unit = {},
+    /**
+     * Donde quedo cada linea de texto y cada codigo dentro del cuadro, para
+     * poder marcarlo encima de la preview. Se emite en el MISMO cuadro que
+     * [onResult], asi que lo que se dibuja es exactamente lo que se leyo y no
+     * la lectura anterior.
+     *
+     * Es opcional a proposito: la captura de placa y caja de Entrada Caseta no
+     * dibuja nada, y asi no paga el costo de armar la lista en cada cuadro.
+     */
+    private val onGeometria: (GeometriaEnVivo) -> Unit = {},
     private val onResult: (LocalTextOcrResult) -> Unit
 ) : ImageAnalysis.Analyzer {
 
@@ -86,6 +97,14 @@ class LiveTextOcrAnalyzer(
 
         val rotation = imageProxy.imageInfo.rotationDegrees
 
+        // Se leen AQUI y no dentro del callback: cuando ML Kit contesta, la
+        // imagen pudo cerrarse ya. Y van enderezadas porque los boundingBox que
+        // devuelve ML Kit tambien vienen enderezados -- usar el ancho del sensor
+        // con rotacion de 90 grados es justo lo que corre las marcas de lugar.
+        val vertical = rotation == 90 || rotation == 270
+        val anchoUpright = if (vertical) media.height else media.width
+        val altoUpright = if (vertical) media.width else media.height
+
         // Analizar texto y barcode en paralelo (sin copias de bitmap)
         val input = InputImage.fromMediaImage(media, rotation)
         val textTask = recognizer.process(input)
@@ -109,6 +128,12 @@ class LiveTextOcrAnalyzer(
 
                     val combinedResult = normalResult.copy(barcodes = barcodeValues)
                     Log.d("OCR_LIVE", "candidates=${normalResult.candidates.size} barcodes=${barcodeValues.size}")
+
+                    runCatching {
+                        onGeometria(
+                            construirGeometria(textResult, barcodes, anchoUpright, altoUpright)
+                        )
+                    }
 
                     // Análisis vertical de texto rotado (stencil) — cada 6 frames
                     if (frameCount % 6 == 0 && barcodeValues.isEmpty()) {
@@ -161,6 +186,48 @@ class LiveTextOcrAnalyzer(
         closed = true
         runCatching { recognizer.close() }
         runCatching { barcodeScanner.close() }
+    }
+
+    /**
+     * Una caja por **linea** de texto, no por bloque ni por palabra: el bloque
+     * se come varios renglones y marca de mas (el nombre del producto junto con
+     * el lote), y la palabra parte `LOT 2504298-135` en dos marcas sueltas. La
+     * linea es la unidad con la que ademas trabajan las anclas de
+     * [LabelFieldExtractor], asi que lo que se pinta coincide con lo que se
+     * extrae.
+     */
+    private fun construirGeometria(
+        texto: Text?,
+        codigos: List<Barcode>?,
+        ancho: Int,
+        alto: Int
+    ): GeometriaEnVivo {
+        val cajas = ArrayList<CajaTexto>()
+        texto?.textBlocks?.forEach { bloque ->
+            bloque.lines.forEach { linea ->
+                val r = linea.boundingBox ?: return@forEach
+                cajas += CajaTexto(
+                    texto = linea.text,
+                    izquierda = r.left.toFloat(),
+                    arriba = r.top.toFloat(),
+                    derecha = r.right.toFloat(),
+                    abajo = r.bottom.toFloat()
+                )
+            }
+        }
+        codigos?.forEach { codigo ->
+            val r = codigo.boundingBox ?: return@forEach
+            val valor = codigo.rawValue ?: codigo.displayValue ?: return@forEach
+            cajas += CajaTexto(
+                texto = valor,
+                izquierda = r.left.toFloat(),
+                arriba = r.top.toFloat(),
+                derecha = r.right.toFloat(),
+                abajo = r.bottom.toFloat(),
+                esCodigo = true
+            )
+        }
+        return GeometriaEnVivo(ancho, alto, cajas)
     }
 
     private fun yuvToGrayscaleBitmap(image: android.media.Image): Bitmap? {
