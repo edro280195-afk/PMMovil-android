@@ -10,9 +10,13 @@ import com.example.pmmovil.data.ocr.LabelFieldExtractor
 import com.example.pmmovil.data.ocr.LocalTextOcr
 import com.example.pmmovil.data.ocr.LocalTextOcrResult
 import com.example.pmmovil.data.ocr.PaddleOcrEngine
+import com.example.pmmovil.data.ocr.PhotoBarcodeScanner
 import com.example.pmmovil.data.repository.RevisionRepository
+import com.example.pmmovil.ui.scanner.BarcodeFormatSets
 import com.example.pmmovil.data.ocr.mergeLocalResults
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,6 +37,7 @@ import javax.inject.Inject
 class LabelCaptureViewModel @Inject constructor(
     private val paddleOcrEngine: PaddleOcrEngine,
     private val localTextOcr: LocalTextOcr,
+    private val photoBarcodeScanner: PhotoBarcodeScanner,
     private val repository: RevisionRepository
 ) : ViewModel() {
 
@@ -100,29 +105,49 @@ class LabelCaptureViewModel @Inject constructor(
         viewModelScope.launch {
             val arranque = SystemClock.elapsedRealtime()
 
-            // ── Camino instantaneo ───────────────────────────────────────────
-            // Si el lector ya decodifico un codigo que trae los campos, se
-            // muestran YA. Un codigo es exacto: no hay texto reconocido que lo
-            // mejore. El OCR sigue corriendo debajo por si la etiqueta trae
-            // ademas datos que solo estan impresos en texto (el pais, casi
-            // siempre), pero el revisador no se queda mirando una ruedita
-            // mientras tanto.
-            val porCodigo = LabelFieldExtractor.extraer("", codigosEnVivo)
-            if (porCodigo.isNotEmpty()) {
-                _estado.value = Estado(
-                    fotoPath = path,
-                    campos = porCodigo.map { leido -> aPropuesto(leido, catalogoPaises) },
-                    refinando = true
-                )
-                Log.d(
-                    "LABEL_CAPTURE",
-                    "codigo resolvio ${porCodigo.size} campos en " +
-                        "${SystemClock.elapsedRealtime() - arranque}ms; refinando con OCR"
-                )
+            // ── 1. Codigo y texto, A LA VEZ ─────────────────────────────────
+            // Son motores distintos y no compiten por lo mismo; el analizador
+            // en vivo ya los corre en paralelo sobre cada cuadro. En serie se
+            // sumaban: 495 ms de codigo + 604 ms de texto = 1,102 ms medidos,
+            // cuando el codigo casi siempre vuelve con las manos vacias. En
+            // paralelo el total es el del mas lento, no la suma.
+            //
+            // El codigo se busca en la FOTO y no solo en lo que vio el video: el
+            // cuadro en vivo va a 640x480 y ahi un DataMatrix de etiqueta no
+            // tiene pixeles para decodificarse; la foto son 4080x3072.
+            val tEtapa1 = SystemClock.elapsedRealtime()
+            val (deLaFoto, mlKit) = coroutineScope {
+                val tareaCodigos = async {
+                    photoBarcodeScanner
+                        .leer(path, BarcodeFormatSets.WAREHOUSE_PRODUCT_LABELS)
+                        .getOrDefault(emptyList())
+                }
+                val tareaTexto = async { localTextOcr.readFromFile(path).getOrNull() }
+                tareaCodigos.await() to tareaTexto.await()
             }
+            val codigosTotales = (codigosEnVivo + deLaFoto).distinct()
+            Log.d(
+                "LABEL_CAPTURE",
+                "etapa1 ${SystemClock.elapsedRealtime() - tEtapa1}ms | " +
+                    "codigos vivo=${codigosEnVivo.size} foto=${deLaFoto.size} " +
+                    // El contenido importa tanto como la cantidad: si el codigo
+                    // no viene en formato GS1 (identificadores (10), (21), (30))
+                    // el extractor no puede mapearlo a un campo.
+                    "valores=${codigosTotales.joinToString(" | ") { it.take(60) }} | " +
+                    "texto=${mlKit?.rawText?.length ?: 0} chars"
+            )
 
-            val lectura = leerConPaddleYFallback(path)
-            val resultado = lectura.getOrNull()
+            // ── 2. ¿Con esto alcanza? ───────────────────────────────────────
+            val porCodigo = LabelFieldExtractor.extraer("", codigosTotales)
+            val camposDeTexto = mlKit?.let { LabelFieldExtractor.extraer(it.rawText) }.orEmpty()
+
+            val resultado = if (porCodigo.isNotEmpty() || camposDeTexto.isNotEmpty()) {
+                mlKit
+            } else {
+                // Ni el codigo ni el texto rapido sacaron nada: ahora si vale la
+                // pena pagar Paddle.
+                conPaddleDeRespaldo(path, mlKit)
+            }
             if (resultado == null) {
                 // Si el codigo ya habia dado campos, se conservan: que el OCR no
                 // encuentre texto no invalida lo que el codigo dijo.
@@ -137,7 +162,7 @@ class LabelCaptureViewModel @Inject constructor(
                 return@launch
             }
 
-            val codigos = (codigosEnVivo + resultado.barcodes).distinct()
+            val codigos = (codigosTotales + resultado.barcodes).distinct()
             val campos = LabelFieldExtractor.extraer(resultado.rawText, codigos)
             Log.d(
                 "LABEL_CAPTURE",
@@ -250,41 +275,54 @@ class LabelCaptureViewModel @Inject constructor(
     }
 
     /**
-     * Paddle primero y ML Kit **solo si hace falta**. Secuencial a proposito:
-     * correr los dos motores a la vez duplica el pico de CPU y deja al HAL de la
-     * camara sin buffers.
+     * Reconocimiento de texto en cascada: **el motor barato primero**.
      *
-     * Hasta ahora corrian los dos SIEMPRE, pese al nombre de la funcion. Medido
-     * en el Pixel con la etiqueta de allnex: Paddle 1,664 ms (det 533 + rec
-     * 1,113) y encima ML Kit ~600 ms, aunque Paddle ya hubiera resuelto la
-     * etiqueta. Del disparo al resultado salian 3.3 s, inaceptable en operacion.
+     * Medido en el Pixel con la etiqueta de allnex SETAL impresa en papel:
      *
-     * El criterio ahora es: si de lo que leyo Paddle ya salen campos, se entrega
-     * eso. ML Kit entra solo cuando Paddle no dejo nada que extraer, que es
-     * justo cuando puede cambiar el resultado.
+     * ```
+     * OCR_PADDLE: lineas=45 det=511ms rec=4677ms total=5220ms
+     * LABEL_CAPTURE: campos=2 total=6034ms
+     * ```
      *
-     * **La concesion, dicha en voz alta:** si Paddle saca el lote pero ML Kit
-     * hubiera sacado ademas el pais, ese pais se pierde. Se eligio asi porque
-     * 600 ms en cada lectura se pagan siempre y el campo extra es ocasional. Si
-     * al medir en bodega resulta que se escapan campos seguido, la vuelta atras
-     * es quitar este `if`.
+     * El costo no esta en la deteccion sino en el **reconocimiento renglon por
+     * renglon**: 45 renglones, y casi todos son el parrafo de advertencias de
+     * riesgo, que no aporta ningun campo. En pantalla eran 23 renglones y 1,113
+     * ms; impresa y bien enfocada la etiqueta entrega el doble de renglones y
+     * el tiempo se cuadruplica. Mejor foto, mas lento: al reves de lo deseable.
+     *
+     * ML Kit sobre la misma foto a resolucion completa tarda ~600 ms y en las
+     * pruebas entrego 111 candidatos. Para una etiqueta **impresa, enfocada y
+     * bien iluminada** alcanza de sobra, asi que va primero y Paddle queda de
+     * red de seguridad.
+     *
+     * **Esto invierte la regla general del proyecto** ("Paddle es el motor
+     * primario para fotos estaticas"), y a proposito: esa regla se fijo para
+     * placas y numeros de caja -- texto industrial golpeado, con estarcido y
+     * poco contraste -- donde Paddle gana claro. Una etiqueta de producto
+     * recien impresa es el caso facil. Si en bodega aparecen etiquetas sucias o
+     * desgastadas donde ML Kit falle, la vuelta atras es cambiar el orden de
+     * estas dos llamadas.
+     *
+     * Secuencial a proposito: correr los dos motores a la vez duplica el pico
+     * de CPU y deja al HAL de la camara sin buffers.
      */
-    private suspend fun leerConPaddleYFallback(path: String): Result<LocalTextOcrResult> {
+    private suspend fun conPaddleDeRespaldo(
+        path: String,
+        mlKit: LocalTextOcrResult?
+    ): LocalTextOcrResult? {
+        val tPaddle = SystemClock.elapsedRealtime()
         val paddle = paddleOcrEngine.readFromFile(path).getOrNull()
-        if (paddle != null && LabelFieldExtractor.extraer(paddle.rawText).isNotEmpty()) {
-            return Result.success(paddle)
-        }
+        Log.d(
+            "LABEL_CAPTURE",
+            "paddle (red de seguridad): texto=${paddle?.rawText?.length ?: 0} chars " +
+                "en ${SystemClock.elapsedRealtime() - tPaddle}ms"
+        )
 
-        val mlKit = localTextOcr.readFromFile(path).getOrNull()
         val fusionado = mergeLocalResults(
             paddle ?: LocalTextOcrResult("", emptyList()),
             mlKit ?: LocalTextOcrResult("", emptyList())
         )
-        return if (fusionado.rawText.isNotBlank() || fusionado.candidates.isNotEmpty()) {
-            Result.success(fusionado)
-        } else {
-            Result.failure(IllegalStateException("No se detecto texto en la imagen."))
-        }
+        return fusionado.takeIf { it.rawText.isNotBlank() || it.candidates.isNotEmpty() }
     }
 
     companion object {

@@ -90,6 +90,7 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.concurrent.Executors
 import kotlin.math.abs
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -184,7 +185,7 @@ fun LabelCaptureLiveScreen(
 
     val capturandoState = rememberUpdatedState(capturando)
     val executor = remember { Executors.newSingleThreadExecutor() }
-    val estabilidad = remember { EstabilidadDeCampos() }
+    val juez = remember { JuezDeDisparo() }
 
     LaunchedEffect(warmupListo, reintento.attempt, reintento.failed) {
         while (!warmupListo && !reintento.failed) {
@@ -222,7 +223,11 @@ fun LabelCaptureLiveScreen(
             }
             val campos = LabelFieldExtractor.extraer(resultado.rawText, codigosVistos)
             camposEnVivo = campos
-            listoParaDisparar = estabilidad.ofrecer(campos)
+            val listo = juez.evaluar(campos, geometria)
+            if (listo && !listoParaDisparar) {
+                Log.d(TAG_CAMARA_ETIQUETA, "disparo automatico por ${juez.motivo}")
+            }
+            listoParaDisparar = listo
         }
     }
 
@@ -406,7 +411,7 @@ fun LabelCaptureLiveScreen(
                 camara?.cameraControl?.setZoomRatio(objetivo)
                 zoomActual = objetivo
                 // Cambiar de lente reencuadra: lo leído ya no corresponde.
-                estabilidad.reiniciar()
+                juez.reiniciar()
                 listoParaDisparar = false
             },
             lamparaEncendida = lamparaEncendida,
@@ -534,35 +539,128 @@ private fun mapeoDe(geometria: GeometriaEnVivo, vista: IntSize): Mapeo? {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * No dispara con la primera lectura. El OCR en vivo titubea -- un cuadro lee
- * `2504298-135` y el siguiente `25O4298-135` -- así que se exige que la lectura
- * completa se repita [vecesRequeridas] veces seguidas antes de dar por buena la
- * foto. Es el mismo criterio del candado de placas en Entrada Caseta.
+ * Decide cuando tomar la foto.
+ *
+ * ## El error que corrige
+ * La primera version solo disparaba cuando [LabelFieldExtractor] sacaba campos
+ * **del texto en vivo**. Medido en el Pixel: una sesion de 34 segundos con la
+ * camara abierta viendo la etiqueta (`candidates=137, 142, 133` por cuadro) que
+ * **nunca disparo**, mientras que la foto, cuando por fin se toma, resuelve en
+ * 853 ms.
+ *
+ * El error es de concepto: el analisis en vivo corre a 640x480 **precisamente
+ * porque no puede leer** el texto chico -- esa es la razon de que exista la
+ * foto a resolucion completa (ver docs/ia-revision-fisica.md seccion 8, "video
+ * para guiar, foto para leer"). Atar el obturador a que el video leyera era
+ * pedirle a la capa de guia el trabajo que la arquitectura le asigna a la otra.
+ *
+ * ## El criterio correcto
+ * Se dispara cuando la etiqueta esta **encuadrada y el pulso quieto**, que es lo
+ * unico que el video si puede juzgar:
+ *
+ *  - **Camino rapido:** si el video ya saco campos, con que se repitan una vez
+ *    basta. Es informacion de mas, no el requisito.
+ *  - **Camino normal:** hay suficientes renglones, el texto es lo bastante
+ *    grande para que la foto lo resuelva, y el encuadre no se movio en varios
+ *    cuadros seguidos.
+ *
+ * Tomar una foto de mas cuesta 853 ms. Dejar al revisador parado medio minuto
+ * cuesta la jornada.
  */
-private class EstabilidadDeCampos(private val vecesRequeridas: Int = 3) {
-    private var ultimaFirma: String? = null
-    private var repeticiones = 0
+private class JuezDeDisparo {
+    private var firmaCampos: String? = null
+    private var repeticionesCampos = 0
+    private var ultimoCentroX = 0f
+    private var ultimoCentroY = 0f
+    private var ultimasLineas = 0
+    private var cuadrosQuieto = 0
 
-    fun ofrecer(campos: List<LabelFieldExtractor.CampoLeido>): Boolean {
+    /** Por que se disparo, para poder medirlo en el log. */
+    var motivo: String = ""
+        private set
+
+    fun evaluar(
+        campos: List<LabelFieldExtractor.CampoLeido>,
+        geometria: GeometriaEnVivo
+    ): Boolean {
+        // ── Camino rapido: el video ya entendio algo ─────────────────────────
         val firma = campos
             .sortedBy { it.campo.name }
             .joinToString("|") { "${it.campo.name}=${it.valor}" }
-        if (firma.isBlank()) {
-            reiniciar()
+        if (firma.isNotBlank()) {
+            if (firma == firmaCampos) repeticionesCampos++ else {
+                firmaCampos = firma
+                repeticionesCampos = 1
+            }
+            if (repeticionesCampos >= REPETICIONES_CON_CAMPOS) {
+                motivo = "campos en vivo (${campos.size})"
+                return true
+            }
+        } else {
+            firmaCampos = null
+            repeticionesCampos = 0
+        }
+
+        // ── Camino normal: encuadre bueno y pulso quieto ─────────────────────
+        if (!geometria.valida) {
+            cuadrosQuieto = 0
             return false
         }
-        if (firma == ultimaFirma) {
-            repeticiones++
-        } else {
-            ultimaFirma = firma
-            repeticiones = 1
+        val lineas = geometria.cajas.count { !it.esCodigo }
+        if (lineas < MINIMO_RENGLONES) {
+            cuadrosQuieto = 0
+            ultimasLineas = 0
+            return false
         }
-        return repeticiones >= vecesRequeridas
+        val altoRelativo = geometria.cajas.maxOf { it.alto } / geometria.altoImagen
+        if (altoRelativo < ALTO_MINIMO_RELATIVO) {
+            cuadrosQuieto = 0
+            ultimasLineas = 0
+            return false
+        }
+
+        // Quietud POR TOLERANCIA, no por igualdad exacta.
+        //
+        // La primera version exigia que la caja que abarca todo el texto cayera
+        // en la misma celda de una rejilla del 5% en cuadros seguidos. Medido:
+        // una sesion de 13.6 s sosteniendo el telefono antes de disparar. El
+        // problema no era el pulso: el detector encuentra 32 renglones en un
+        // cuadro y 29 en el siguiente, y esa caja union salta sola aunque la
+        // camara no se mueva. Se estaba midiendo el ruido del detector.
+        //
+        // Ahora se compara el CENTRO del texto con una tolerancia, y el conteo
+        // de renglones con otra: el centro apenas se mueve cuando aparece o
+        // desaparece un renglon suelto, pero si se mueve de verdad cuando la
+        // mano se va.
+        val centroX = geometria.cajas.map { it.izquierda + it.ancho / 2f }.average().toFloat() /
+            geometria.anchoImagen
+        val centroY = geometria.cajas.map { it.arriba + it.alto / 2f }.average().toFloat() /
+            geometria.altoImagen
+
+        val sePrimerCuadro = ultimasLineas <= 0
+        val seMovio = !sePrimerCuadro &&
+            (abs(centroX - ultimoCentroX) > TOLERANCIA_MOVIMIENTO ||
+                abs(centroY - ultimoCentroY) > TOLERANCIA_MOVIMIENTO)
+        val cambioMucho = !sePrimerCuadro &&
+            abs(lineas - ultimasLineas) > ultimasLineas * TOLERANCIA_CONTEO
+
+        if (!sePrimerCuadro && !seMovio && !cambioMucho) cuadrosQuieto++ else cuadrosQuieto = 1
+        ultimoCentroX = centroX
+        ultimoCentroY = centroY
+        ultimasLineas = lineas
+        if (cuadrosQuieto >= CUADROS_QUIETO) {
+            motivo = "encuadre estable ($lineas renglones, alto ${"%.3f".format(altoRelativo)})"
+            return true
+        }
+        return false
     }
 
     fun reiniciar() {
-        ultimaFirma = null
-        repeticiones = 0
+        firmaCampos = null
+        repeticionesCampos = 0
+        ultimasLineas = 0
+        cuadrosQuieto = 0
+        motivo = ""
     }
 }
 
@@ -579,6 +677,10 @@ private fun pistaDeEncuadre(
         return "Código decodificado. El dato sale del código: es exacto."
     }
     if (campos.isNotEmpty()) return "Ya reconocí el dato. Mantén el pulso."
+    if (codigos.isEmpty() && geometria.valida && geometria.cajas.size >= MINIMO_RENGLONES) {
+        val alto = geometria.cajas.maxOf { it.alto } / geometria.altoImagen
+        if (alto >= ALTO_MINIMO_RELATIVO) return "Etiqueta encuadrada. Mantén el pulso y disparo."
+    }
     if (codigos.isNotEmpty()) return "Veo un código pero no trae los campos. Encuadra el texto."
 
     val cajas = geometria.cajas
@@ -594,7 +696,9 @@ private fun pistaDeEncuadre(
     if (altoRelativo < ALTO_MINIMO_RELATIVO) {
         return "Veo texto pero muy chico. Acércate, o usa Macro si ya estás pegado."
     }
-    return "Buscando las anclas (LOT, PART, Qty, COO, UN)…"
+    // La foto se toma por encuadre, no por haber leido: el video a 640x480 no
+    // es quien debe leer el texto chico.
+    return "Encuadra la etiqueta completa y detén el pulso."
 }
 
 private fun normalizarParaComparar(valor: String): String =
@@ -875,6 +979,25 @@ private val COLOR_TEXTO_SUELTO = Color(0x66FFFFFF)
 private const val RADIO_MARCA = 6f
 private const val ALTURA_ETIQUETA_PX = 34f
 private const val ALTO_MINIMO_RELATIVO = 0.035f
+
+/** Renglones minimos para dar por hecho que lo encuadrado es una etiqueta. */
+private const val MINIMO_RENGLONES = 6
+
+/**
+ * Cuadros seguidos con el encuadre quieto antes de disparar. A ~2 cuadros por
+ * segundo es cosa de un segundo. El enfoque de la captura es cosa de la camara,
+ * no de que el revisador se quede inmovil.
+ */
+private const val CUADROS_QUIETO = 2
+
+/** Cuanto puede moverse el centro del texto, en fraccion del cuadro. */
+private const val TOLERANCIA_MOVIMIENTO = 0.06f
+
+/** Cuanto puede variar el conteo de renglones entre cuadros. */
+private const val TOLERANCIA_CONTEO = 0.35f
+
+/** Con campos ya reconocidos basta con que se repitan una vez. */
+private const val REPETICIONES_CON_CAMPOS = 2
 private const val UMBRAL_MACRO = 0.95f
 private const val TOLERANCIA_ZOOM = 0.05f
 private const val MAX_CAMPOS_VISIBLES = 4
