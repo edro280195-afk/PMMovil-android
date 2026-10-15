@@ -571,6 +571,39 @@ interface PMMovilApi {
         @Path("warehouseId") warehouseId: String
     ): Response<WarehouseOccupancyResponse>
 
+    // ── Censo de racks (api/Inventario/rack-census) ─────────────────────
+    @POST("Inventario/rack-census/sessions")
+    suspend fun openRackCensusSession(
+        @Body request: RackCensusOpenRequest,
+        @Header("Authorization") authorization: String
+    ): Response<RackCensusOpenResponse>
+
+    @GET("Inventario/rack-census/sessions/{sessionId}")
+    suspend fun getRackCensusSession(
+        @Path("sessionId") sessionId: String,
+        @Header("Authorization") authorization: String
+    ): Response<RackCensusOpenResponse>
+
+    @POST("Inventario/rack-census/sessions/{sessionId}/observations")
+    suspend fun sendRackCensusObservations(
+        @Path("sessionId") sessionId: String,
+        @Body request: RackCensusObserveRequest,
+        @Header("Authorization") authorization: String
+    ): Response<RackCensusObserveResponse>
+
+    @GET("Inventario/rack-census/sessions/{sessionId}/movements")
+    suspend fun getRackCensusMovements(
+        @Path("sessionId") sessionId: String,
+        @Header("Authorization") authorization: String
+    ): Response<RackCensusMovementsResponse>
+
+    @POST("Inventario/rack-census/sessions/{sessionId}/reconcile")
+    suspend fun reconcileRackCensus(
+        @Path("sessionId") sessionId: String,
+        @Body request: RackCensusReconcileRequest,
+        @Header("Authorization") authorization: String
+    ): Response<RackCensusReconcileResponse>
+
     @GET("ClaseModelos")
     suspend fun getClaseModelos(): Response<ClaseModelosResponse>
 

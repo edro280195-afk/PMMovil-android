@@ -437,6 +437,12 @@ class MainActivity : AppCompatActivity() {
                             )
                         }
 
+                        composable("censo_racks") {
+                            com.example.pmmovil.ui.inventory.RackCensusScreen(
+                                onNavigateBack = { navController.popBackStack() }
+                            )
+                        }
+
                         composable("salida") {
                             com.example.pmmovil.ui.salida.SalidaScreen(
                                 onNavigateBack = { navController.popBackStack() }

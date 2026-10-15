@@ -12,6 +12,7 @@ import com.example.pmmovil.data.db.PdfAnnotationDraftDao
 import com.example.pmmovil.data.db.EntradaPhotoSyncDao
 import com.example.pmmovil.data.db.FotoDao
 import com.example.pmmovil.data.db.LabelCaptureDao
+import com.example.pmmovil.data.db.RackCensusDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -230,7 +231,8 @@ object DatabaseModule {
             migration10To11,
             migration11To12,
             migration12To13,
-            migration13To14
+            migration13To14,
+            migration14To15
         )
         .build()
     }
@@ -273,6 +275,73 @@ object DatabaseModule {
 
     @Provides
     fun provideLabelCaptureDao(database: AppDatabase): LabelCaptureDao = database.labelCaptureDao()
+
+    @Provides
+    fun provideRackCensusDao(database: AppDatabase): RackCensusDao = database.rackCensusDao()
+
+    // Sin esta migracion, actualizar la app borraria los borradores de captura
+    // de etiqueta y las fotos aun no sincronizadas. Agrega el censo de racks:
+    // la sesion guarda el snapshot del inventario esperado y las lecturas se
+    // acumulan localmente, para que el recorrido sobreviva al cierre de la app
+    // y a la perdida de red.
+    private val migration14To15 = object : Migration(14, 15) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS rack_census_sessions (
+                    sessionId TEXT NOT NULL PRIMARY KEY,
+                    owner TEXT NOT NULL,
+                    warehouseId TEXT NOT NULL,
+                    scopeJson TEXT NOT NULL,
+                    snapshotJson TEXT NOT NULL,
+                    snapshotVersion INTEGER NOT NULL,
+                    capturedAtMillis INTEGER NOT NULL,
+                    foreignCatalogTruncated INTEGER NOT NULL DEFAULT 0,
+                    dataWarningsJson TEXT NOT NULL DEFAULT '[]',
+                    decisionsJson TEXT NOT NULL DEFAULT '{}',
+                    acknowledgedJson TEXT NOT NULL DEFAULT '[]',
+                    status TEXT NOT NULL,
+                    errorMessage TEXT,
+                    reconcileRequestJson TEXT,
+                    reconcileResponseJson TEXT,
+                    createdAt INTEGER NOT NULL,
+                    updatedAt INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS rack_census_observations (
+                    observationId TEXT NOT NULL PRIMARY KEY,
+                    sessionId TEXT NOT NULL,
+                    owner TEXT NOT NULL,
+                    rawCode TEXT NOT NULL,
+                    normalizedCode TEXT NOT NULL,
+                    observedLocationId TEXT NOT NULL,
+                    observedAtMillis INTEGER NOT NULL,
+                    resolution TEXT NOT NULL,
+                    packageId TEXT,
+                    labelId INTEGER,
+                    printedOrdinal INTEGER,
+                    declaredTotal INTEGER,
+                    syncStatus TEXT NOT NULL,
+                    errorMessage TEXT,
+                    createdAt INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+            // Los nombres son los que genera Room para @Index; con otro nombre
+            // la validacion de esquema al abrir la base fallaria.
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_rack_census_observations_sessionId_syncStatus " +
+                    "ON rack_census_observations (sessionId, syncStatus)"
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_rack_census_observations_sessionId_packageId " +
+                    "ON rack_census_observations (sessionId, packageId)"
+            )
+        }
+    }
 
     private val migration13To14 = object : Migration(13, 14) {
         override fun migrate(database: SupportSQLiteDatabase) {

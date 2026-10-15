@@ -9,6 +9,7 @@ object HomeModuleRouteKeys {
     const val GATE_RELATION_EXIT = "Salida de relación Caseta"
     const val GATE_PHYSICAL_EXIT = "Salida física de caja"
     const val WAREHOUSE_MAP = "Mapa Bodega"
+    const val RACK_CENSUS = "Censo de racks"
     const val GATE_ENTRY = "Entrada Caseta"
     const val GATE_EXIT = "Salida Caseta"
     const val SYSTEMS_ADMIN = "SistemasAdmin"
@@ -26,6 +27,7 @@ object HomeDestinations {
     const val GATE_RELATION_EXIT = "salida_caseta"
     const val GATE_PHYSICAL_EXIT = "salida_caseta"
     const val WAREHOUSE_MAP = "mapa_bodega"
+    const val RACK_CENSUS = "censo_racks"
     const val GATE_ENTRY = "caseta_entrada"
     const val GATE_EXIT = "salida_caseta"
     // "Impresora Zebra" se retiró por el hub Etiquetas/Impresoras (ver PrintingHubScreen).
@@ -42,6 +44,7 @@ fun resolveHomeModuleDestination(routeKey: String): String? = when (routeKey) {
     HomeModuleRouteKeys.GATE_RELATION_EXIT -> HomeDestinations.GATE_RELATION_EXIT
     HomeModuleRouteKeys.GATE_PHYSICAL_EXIT -> HomeDestinations.GATE_PHYSICAL_EXIT
     HomeModuleRouteKeys.WAREHOUSE_MAP -> HomeDestinations.WAREHOUSE_MAP
+    HomeModuleRouteKeys.RACK_CENSUS -> HomeDestinations.RACK_CENSUS
     HomeModuleRouteKeys.GATE_ENTRY -> HomeDestinations.GATE_ENTRY
     HomeModuleRouteKeys.GATE_EXIT -> HomeDestinations.GATE_EXIT
     HomeModuleRouteKeys.SYSTEMS_ADMIN -> HomeDestinations.SYSTEMS_ADMIN
