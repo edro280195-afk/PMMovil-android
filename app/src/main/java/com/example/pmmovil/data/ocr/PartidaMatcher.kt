@@ -47,15 +47,21 @@ object PartidaMatcher {
             .map { canonicalKey(it.valor) }
             .filter(String::isNotEmpty)
             .distinct()
-        val hasConflictingNumbers = partNumbers.size > 1
+        // Los proveedores rellenan con ceros a la izquierda («0049263333») y el catálogo guarda la clave sin
+        // ellos («49263333»). Se quitan solo los de la etiqueta y solo en claves puramente numéricas; el
+        // catálogo nunca se toca, así que «12» de la etiqueta sigue sin igualar a «00012» del catálogo.
+        val withoutPadding = partNumbers.mapNotNull(::withoutLeadingZeros)
+        val hasConflictingNumbers = partNumbers.map { withoutLeadingZeros(it) ?: it }.distinct().size > 1
         val duplicateIds = partidas.groupingBy { it.IdRevdet }.eachCount().any { it.value > 1 }
         val rawWords = descriptionWords(rawText)
 
         val suggestions = partidas.mapNotNull { partida ->
             val catalogNumber = canonicalKey(partida.CnoParte.orEmpty())
             val customerAlias = canonicalKey(partida.ParteCte.orEmpty())
-            val ownExact = catalogNumber.isNotEmpty() && catalogNumber in partNumbers
-            val aliasExact = customerAlias.isNotEmpty() && customerAlias in partNumbers
+            val ownPadded = catalogNumber.isNotEmpty() && catalogNumber !in partNumbers && catalogNumber in withoutPadding
+            val aliasPadded = customerAlias.isNotEmpty() && customerAlias !in partNumbers && customerAlias in withoutPadding
+            val ownExact = catalogNumber.isNotEmpty() && (catalogNumber in partNumbers || catalogNumber in withoutPadding)
+            val aliasExact = customerAlias.isNotEmpty() && (customerAlias in partNumbers || customerAlias in withoutPadding)
             val relaxed = partNumbers.any { number ->
                 listOf(catalogNumber, customerAlias).any { key ->
                     key.isNotEmpty() && relaxedKey(key) == relaxedKey(number)
@@ -76,8 +82,12 @@ object PartidaMatcher {
             }
             val reasons = buildList {
                 add(when (kind) {
-                    MatchKind.EXACT_PART_NUMBER -> "Número de parte igual a la clave de catálogo."
-                    MatchKind.EXACT_CUSTOMER_ALIAS -> "Número de parte igual al alias explícito del cliente."
+                    MatchKind.EXACT_PART_NUMBER ->
+                        if (ownPadded) "Número de parte igual a la clave de catálogo, sin los ceros a la izquierda de la etiqueta."
+                        else "Número de parte igual a la clave de catálogo."
+                    MatchKind.EXACT_CUSTOMER_ALIAS ->
+                        if (aliasPadded) "Número de parte igual al alias del cliente, sin los ceros a la izquierda de la etiqueta."
+                        else "Número de parte igual al alias explícito del cliente."
                     MatchKind.NORMALIZED_NUMBER_SUGGESTION -> "La clave solo coincide al quitar separadores; verifica los signos."
                     MatchKind.DESCRIPTION_SUPPORT -> "El texto aporta una pista; no verifica la identidad de la partida."
                     MatchKind.SINGLE_PARTIDA_SUGGESTION -> "Es la única partida disponible; su identidad no está verificada."
@@ -114,6 +124,10 @@ object PartidaMatcher {
         value.trim().uppercase(Locale.ROOT).replace(Regex("\\s+"), " ")
 
     private fun relaxedKey(value: String): String = value.replace(Regex("[\\s./_-]"), "")
+
+    /** La clave sin ceros a la izquierda, o null si no los tiene o no es puramente numérica. */
+    private fun withoutLeadingZeros(key: String): String? =
+        if (key.length > 1 && key[0] == '0' && key.all { it in '0'..'9' }) key.trimStart('0').ifEmpty { "0" } else null
 
     private fun descriptionWords(value: String): Set<String> =
         Regex("[\\p{L}]{4,}").findAll(value.uppercase(Locale.ROOT)).map { it.value }.toSet()

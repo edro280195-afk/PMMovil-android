@@ -30,10 +30,23 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 
+/** Una esquina del rectángulo de un renglón de texto, en píxeles de la foto. */
+data class EsquinaDeTexto(val x: Float, val y: Float)
+
+/**
+ * Un renglón que el OCR leyó, con las cuatro esquinas de su rectángulo **en el orden del propio texto**
+ * (arriba-izquierda, arriba-derecha, abajo-derecha, abajo-izquierda). Aunque la etiqueta esté girada, la
+ * esquina «arriba-izquierda» sigue siendo la de arriba-izquierda de las letras; de ahí salen el sentido en
+ * que corre el renglón y hacia dónde queda «arriba» para él.
+ */
+data class LineaDeTexto(val texto: String, val esquinas: List<EsquinaDeTexto>)
+
 data class LocalTextOcrResult(
     val rawText: String,
     val candidates: List<String>,
-    val barcodes: List<String> = emptyList()
+    val barcodes: List<String> = emptyList(),
+    /** Solo la lectura directa de la foto la trae: sus coordenadas son las de la imagen original. */
+    val lineas: List<LineaDeTexto> = emptyList()
 )
 
 @Singleton
@@ -153,7 +166,8 @@ internal fun addOcrCandidate(values: MutableSet<String>, value: String) {
 internal fun finalizeLocalResult(
     rawText: String,
     values: Set<String>,
-    barcodes: List<String> = emptyList()
+    barcodes: List<String> = emptyList(),
+    lineas: List<LineaDeTexto> = emptyList()
 ): LocalTextOcrResult = LocalTextOcrResult(
     rawText = rawText,
     candidates = values
@@ -162,7 +176,8 @@ internal fun finalizeLocalResult(
         .filter { it.length in 3..28 }
         .distinct()
         .toList(),
-    barcodes = barcodes
+    barcodes = barcodes,
+    lineas = lineas
 )
 
 // Para motores que ya entregan renglones enderezados (ej. PaddleOCR), sin cajas por elemento.
@@ -188,7 +203,13 @@ internal fun Text.toLocalResult(): LocalTextOcrResult {
     }
     addVerticalElementCandidates(values)
 
-    return finalizeLocalResult(text, values)
+    val lineas = textBlocks.flatMap { block ->
+        block.lines.mapNotNull { line ->
+            val esquinas = line.cornerPoints?.takeIf { it.size == 4 }?.map { EsquinaDeTexto(it.x.toFloat(), it.y.toFloat()) }
+            esquinas?.let { LineaDeTexto(line.text, it) }
+        }
+    }
+    return finalizeLocalResult(text, values, lineas = lineas)
 }
 
 private fun Text.addVerticalElementCandidates(values: MutableSet<String>) {
@@ -270,7 +291,9 @@ internal fun mergeLocalResults(vararg results: LocalTextOcrResult): LocalTextOcr
         .map(String::trim)
         .filter(String::isNotBlank)
         .distinct()
-    return LocalTextOcrResult(rawText = rawText, candidates = candidates, barcodes = barcodes)
+    // Las coordenadas de dos lecturas distintas (la foto y sus variantes reescaladas) no se mezclan.
+    val lineas = results.firstOrNull { it.lineas.isNotEmpty() }?.lineas.orEmpty()
+    return LocalTextOcrResult(rawText = rawText, candidates = candidates, barcodes = barcodes, lineas = lineas)
 }
 
 internal fun decodeSampledBitmap(path: String, maxSize: Int): Bitmap? {

@@ -19,7 +19,10 @@ object LabelFieldExtractor {
 
     enum class Origen {
         ANCLA_MISMA_LINEA, ANCLA_LINEA_SIGUIENTE, GS1, ROMBO_HAZMAT,
-        STRUCTURED_BARCODE, KNOWN_BRAND
+        STRUCTURED_BARCODE, KNOWN_BRAND,
+
+        /** Un código de barras simple, sin nombre de campo, que el [LabelBarcodeInterpreter] supo ubicar. */
+        CODIGO_PLANO
     }
 
     /** Un ordinal identifica un empaque; no representa cantidad de factura. */
@@ -102,20 +105,33 @@ object LabelFieldExtractor {
     fun extraer(textoOcr: String, codigos: List<String> = emptyList()): List<CampoLeido> =
         extractDetailed(textoOcr, codigos).fields
 
-    /** Conserva observaciones y conflictos para que la pantalla permita resolverlos. */
-    fun extractDetailed(text: String, codes: List<String> = emptyList()): ExtractionResult {
+    /**
+     * Conserva observaciones y conflictos para que la pantalla permita resolverlos.
+     *
+     * [barcodeObservations] son campos que otro lector (el [LabelBarcodeInterpreter]) ya ubicó con certeza a
+     * partir de códigos de barras; [ignoreOcrFor] son los campos en los que el texto no debe opinar porque,
+     * en esa etiqueta, el orden en que el OCR entrega los renglones no dice qué valor va con qué rótulo.
+     */
+    fun extractDetailed(
+        text: String,
+        codes: List<String> = emptyList(),
+        barcodeObservations: List<CampoLeido> = emptyList(),
+        ignoreOcrFor: Set<Campo> = emptySet()
+    ): ExtractionResult {
         val observations = mutableListOf<CampoLeido>()
         codes.distinct().forEach { rawCode ->
             val code = BarcodeValueNormalizer.normalizeLabel(rawCode)
             observations += readGs1(code, rawCode)
             observations += readStructuredCode(code, rawCode)
         }
+        observations += barcodeObservations
 
         val lines = text.lineSequence().map(String::trim).filter(String::isNotEmpty).toList()
         lines.forEachIndexed { index, line ->
             val lineAnchors = findAnchors(line)
             lineAnchors.forEachIndexed anchorLoop@{ anchorIndex, anchor ->
                 val field = anchor.field ?: return@anchorLoop
+                if (field in ignoreOcrFor) return@anchorLoop
                 val end = lineAnchors.getOrNull(anchorIndex + 1)?.start ?: line.length
                 val sameLine = cleanValue(line.substring(anchor.end, end))
                 val nextLine = lines.getOrNull(index + 1)
@@ -239,8 +255,13 @@ object LabelFieldExtractor {
         return CampoLeido(field, value, Origen.ANCLA_MISMA_LINEA, "", 90, rawValue = raw, quantityScope = scope, packageTotal = packageTotal)
     }
 
+    /** «0049263333» y «49263333» son la misma clave: los ceros a la izquierda son relleno del proveedor. */
+    private fun sinCerosSiNumerico(valor: String): String =
+        if (valor.length > 1 && valor.all { it in '0'..'9' }) valor.trimStart('0').ifEmpty { "0" } else valor
+
     private fun comparisonKey(observation: CampoLeido): String {
         val value = when (observation.campo) {
+            Campo.NUMERO_PARTE -> sinCerosSiNumerico(observation.valor)
             Campo.MARCA, Campo.PAIS_ORIGEN, Campo.GRUPO_EMBALAJE -> observation.valor.uppercase(Locale.ROOT)
             Campo.CANTIDAD, Campo.PIEZAS_POR_EMPAQUE -> observation.valor.toBigDecimalOrNull()?.stripTrailingZeros()?.toPlainString() ?: observation.valor
             else -> observation.valor
@@ -253,8 +274,16 @@ object LabelFieldExtractor {
         return listOfNotNull(
             parsed.articulo?.let { CampoLeido(Campo.NUMERO_PARTE, it, Origen.STRUCTURED_BARCODE, "+30S", 99, rawCode = rawCode) },
             parsed.lote?.let { CampoLeido(Campo.LOTE, it, Origen.STRUCTURED_BARCODE, "+H", 99, rawCode = rawCode) },
-            parsed.rawQuantity?.let { CampoLeido(Campo.CANTIDAD, it, Origen.STRUCTURED_BARCODE, "+Q", 99, rawCode = rawCode) }
+            parsed.rawQuantity?.let { CampoLeido(Campo.CANTIDAD, it, Origen.STRUCTURED_BARCODE, "+Q", 99, rawCode = rawCode) },
+            parsed.fecha?.let { CampoLeido(Campo.CADUCIDAD, fechaImpresa(it), Origen.STRUCTURED_BARCODE, "+2D", 99, rawValue = it, rawCode = rawCode) }
         )
+    }
+
+    /** `092036` es septiembre de 2036; `16102026` es el 16 de octubre de 2026. Otra forma se deja tal cual. */
+    private fun fechaImpresa(valor: String): String = when {
+        valor.length == 6 && valor.all { it in '0'..'9' } -> "${valor.substring(0, 2)}/${valor.substring(2)}"
+        valor.length == 8 && valor.all { it in '0'..'9' } -> "${valor.substring(0, 2)}/${valor.substring(2, 4)}/${valor.substring(4)}"
+        else -> valor
     }
 
     private data class Gs1Spec(val field: Campo? = null, val fixedLength: Int? = null, val maxLength: Int, val numeric: Boolean = false)

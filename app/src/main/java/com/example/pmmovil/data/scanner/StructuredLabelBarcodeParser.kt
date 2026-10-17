@@ -18,7 +18,7 @@ package com.example.pmmovil.data.scanner
  */
 object StructuredLabelBarcodeParser {
 
-    enum class FieldType { ARTICULO, CANTIDAD, LOTE, FECHA, CONTRATO, DESCONOCIDO }
+    enum class FieldType { ARTICULO, CANTIDAD, LOTE, FECHA, CONTRATO, PARTE_CLIENTE, DESCONOCIDO }
 
     /** Del prefijo más largo al más corto -- evita que "2D"/"2X" se lean como "2" + resto. */
     private val KNOWN_PREFIXES: List<Pair<String, FieldType>> = listOf(
@@ -27,7 +27,7 @@ object StructuredLabelBarcodeParser {
         "2X" to FieldType.CONTRATO,
         "H" to FieldType.LOTE,
         "Q" to FieldType.CANTIDAD,
-        "P" to FieldType.DESCONOCIDO
+        "P" to FieldType.PARTE_CLIENTE
     ).sortedByDescending { (prefijo, _) -> prefijo.length }
 
     data class ParsedLabel(
@@ -35,7 +35,13 @@ object StructuredLabelBarcodeParser {
         val cantidad: Double? = null,
         val lote: String? = null,
         /** Representación impresa, sin perder ceros ni decimales. */
-        val rawQuantity: String? = null
+        val rawQuantity: String? = null,
+        /** `2D`: «092036» (mes y año) o «16102026» (día, mes y año), tal como viene impreso. */
+        val fecha: String? = null,
+        /** `2X`: número de contrato. */
+        val contrato: String? = null,
+        /** `P`: parte del cliente. Puede venir vacía o rellena de ceros. */
+        val parteCliente: String? = null
     )
 
     /**
@@ -56,6 +62,9 @@ object StructuredLabelBarcodeParser {
         var cantidad: Double? = null
         var lote: String? = null
         var rawQuantity: String? = null
+        var fecha: String? = null
+        var contrato: String? = null
+        var parteCliente: String? = null
 
         for (segment in segments) {
             val (prefijo, tipo) = KNOWN_PREFIXES.firstOrNull { (prefijo, _) ->
@@ -79,11 +88,23 @@ object StructuredLabelBarcodeParser {
                     if (lote != null && lote != valor) return null
                     lote = valor
                 }
-                FieldType.FECHA, FieldType.CONTRATO, FieldType.DESCONOCIDO -> {}
+                FieldType.FECHA -> {
+                    if (fecha != null && fecha != valor) return null
+                    fecha = valor
+                }
+                FieldType.CONTRATO -> {
+                    if (contrato != null && contrato != valor) return null
+                    contrato = valor
+                }
+                FieldType.PARTE_CLIENTE -> {
+                    if (parteCliente != null && parteCliente != valor) return null
+                    parteCliente = valor
+                }
+                FieldType.DESCONOCIDO -> {}
             }
         }
 
         if (articulo == null) return null
-        return ParsedLabel(articulo, cantidad, lote, rawQuantity)
+        return ParsedLabel(articulo, cantidad, lote, rawQuantity, fecha, contrato, parteCliente)
     }
 }

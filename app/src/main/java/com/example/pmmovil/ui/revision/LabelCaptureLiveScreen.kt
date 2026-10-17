@@ -133,11 +133,21 @@ fun LabelCaptureLiveScreen(
     titulo: String,
     subtitulo: String,
     onFotoTomada: (path: String, codigosEnVivo: List<String>) -> Unit,
-    onCerrar: () -> Unit
+    onCerrar: () -> Unit,
+    /** Mensaje de «listo» de la etiqueta anterior; se retira solo a los pocos segundos. */
+    aviso: String? = null
 ) {
     // Sin esto el botón atrás sale de todo el módulo de revisión y se pierde la
     // partida en edición (misma lección que en la cámara de Entrada Caseta).
     BackHandler(onBack = onCerrar)
+
+    var avisoVisible by remember(aviso) { mutableStateOf(aviso != null) }
+    LaunchedEffect(aviso) {
+        if (aviso != null) {
+            delay(AVISO_MILLIS)
+            avisoVisible = false
+        }
+    }
 
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -389,6 +399,7 @@ fun LabelCaptureLiveScreen(
         EncabezadoCaptura(
             titulo = titulo,
             subtitulo = subtitulo,
+            aviso = aviso.takeIf { avisoVisible },
             onCerrar = onCerrar,
             modifier = Modifier.align(Alignment.TopCenter)
         )
@@ -731,33 +742,52 @@ private fun nombreCortoDeCampo(campo: LabelFieldExtractor.Campo): String = when 
 private fun EncabezadoCaptura(
     titulo: String,
     subtitulo: String,
+    aviso: String?,
     onCerrar: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(Color.Black.copy(alpha = 0.55f))
-            .statusBarsPadding()
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(titulo, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-            Text(subtitulo, color = Color.White.copy(alpha = 0.7f), fontSize = 11.5.sp)
-        }
-        Box(
+    Column(modifier = modifier.fillMaxWidth()) {
+        Row(
             modifier = Modifier
-                .size(36.dp)
-                .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.15f))
-                .clickable(onClick = onCerrar),
-            contentAlignment = Alignment.Center
+                .fillMaxWidth()
+                .background(Color.Black.copy(alpha = 0.55f))
+                .statusBarsPadding()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("✕", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(titulo, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Text(subtitulo, color = Color.White.copy(alpha = 0.7f), fontSize = 11.5.sp)
+            }
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.15f))
+                    .clickable(onClick = onCerrar),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("✕", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        if (aviso != null) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF15803D))
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("✓", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text(aviso, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            }
         }
     }
 }
+
+/** Cuánto tiempo se queda el «listo» de la etiqueta anterior sobre la cámara. */
+private const val AVISO_MILLIS = 4000L
 
 @Composable
 private fun PanelInferior(

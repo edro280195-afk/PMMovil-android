@@ -31,6 +31,51 @@ class StructuredLabelBarcodeParserTest {
     }
 
     @Test
+    fun `parses the real Freudenberg carton label with all six identifiers`() {
+        // Caja de COVER GASKETS: PDF417 de la foto del 16-oct (600 piezas, fabricada en México).
+        val raw = "+30S0049263333+Q00000600+H0031704192+2D092036+2X497608092026+P049879/003"
+
+        val parsed = StructuredLabelBarcodeParser.parse(raw)
+
+        assertEquals("0049263333", parsed?.articulo)
+        assertEquals(600.0, parsed?.cantidad ?: -1.0, 0.0001)
+        assertEquals("00000600", parsed?.rawQuantity)
+        assertEquals("0031704192", parsed?.lote)
+        assertEquals("092036", parsed?.fecha)
+        assertEquals("497608092026", parsed?.contrato)
+        assertEquals("049879/003", parsed?.parteCliente)
+    }
+
+    @Test
+    fun `parses the real Freudenberg O-ring bag label even when the photo cuts the customer part`() {
+        // Bolsa de O-rings (partida línea 33): el borde de la bolsa cortó la parte del cliente.
+        val raw = "+30S0075875114+Q000210+H0426090326+2D082036+2X566405082026+P0000000000075875"
+
+        val parsed = StructuredLabelBarcodeParser.parse(raw)
+
+        assertEquals("0075875114", parsed?.articulo)
+        assertEquals(210.0, parsed?.cantidad ?: -1.0, 0.0001)
+        assertEquals("0426090326", parsed?.lote)
+        assertEquals("082036", parsed?.fecha)
+        assertEquals("566405082026", parsed?.contrato)
+    }
+
+    @Test
+    fun `an empty customer part leaves it unset`() {
+        val parsed = StructuredLabelBarcodeParser.parse("+30S0049106577+Q0049.200+H2613004019+2D16102026+2X565321082026+P")
+
+        assertEquals(null, parsed?.parteCliente)
+        assertEquals("16102026", parsed?.fecha)
+    }
+
+    @Test
+    fun `conflicting dates contracts or customer parts reject the label`() {
+        assertNull(StructuredLabelBarcodeParser.parse("+30S123+2D092036+2D102036"))
+        assertNull(StructuredLabelBarcodeParser.parse("+30S123+2X111+2X222"))
+        assertNull(StructuredLabelBarcodeParser.parse("+30S123+PA1+PB2"))
+    }
+
+    @Test
     fun `plain simple barcodes are left alone (no leading plus, or a single segment)`() {
         assertNull(StructuredLabelBarcodeParser.parse("7501234567890"))
         assertNull(StructuredLabelBarcodeParser.parse("0049106577DESCRIPCION LIBRE"))

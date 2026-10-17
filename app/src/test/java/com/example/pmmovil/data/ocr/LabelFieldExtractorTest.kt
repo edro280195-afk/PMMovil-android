@@ -290,6 +290,67 @@ class LabelFieldExtractorTest {
     }
 
     @Test
+    fun `la clave leida con y sin ceros no es un conflicto y gana el codigo`() {
+        // El código trae el artículo con relleno y el renglón impreso, sin él.
+        val code = "+30S0075875114+Q000210+H0426090326"
+        val result = LabelFieldExtractor.extractDetailed("Part Number 75875114", listOf(code))
+
+        assertTrue(result.conflicts.none { it.field == Campo.NUMERO_PARTE })
+        val parte = result.fields.single { it.campo == Campo.NUMERO_PARTE }
+        assertEquals("0075875114", parte.valor)
+        assertEquals(Origen.STRUCTURED_BARCODE, parte.origen)
+    }
+
+    @Test
+    fun `dos claves realmente distintas siguen siendo conflicto`() {
+        val result = LabelFieldExtractor.extractDetailed("Part Number 12345678", listOf("+30S0075875114+Q000210+H0426090326"))
+
+        assertEquals(Campo.NUMERO_PARTE, result.conflicts.single().field)
+    }
+
+    @Test
+    fun `la caja de Freudenberg entrega parte lote cantidad y caducidad del PDF417`() {
+        val code = "+30S0049263333+Q00000600+H0031704192+2D092036+2X497608092026+P049879/003"
+        val fields = LabelFieldExtractor.extraer("", listOf(code))
+
+        assertEquals("0049263333", fields.first { it.campo == Campo.NUMERO_PARTE }.valor)
+        assertEquals("0031704192", fields.first { it.campo == Campo.LOTE }.valor)
+        assertEquals("00000600", fields.first { it.campo == Campo.CANTIDAD }.valor)
+        assertEquals("09/2036", fields.first { it.campo == Campo.CADUCIDAD }.valor)
+        assertEquals("092036", fields.first { it.campo == Campo.CADUCIDAD }.rawValue)
+    }
+
+    @Test
+    fun `una fecha de ocho digitos se imprime con dia mes y anio`() {
+        val fields = LabelFieldExtractor.extraer("", listOf("+30S0049106577+Q0049.200+H2613004019+2D16102026+P"))
+
+        assertEquals("16/10/2026", fields.first { it.campo == Campo.CADUCIDAD }.valor)
+    }
+
+    @Test
+    fun `lo que otro lector ubico con certeza entra como observacion`() {
+        val delCodigo = LabelFieldExtractor.CampoLeido(Campo.NUMERO_PARTE, "75183644", Origen.CODIGO_PLANO, "código de barras", 99)
+        val result = LabelFieldExtractor.extractDetailed("", barcodeObservations = listOf(delCodigo))
+
+        assertEquals("75183644", result.fields.single().valor)
+        assertEquals(Origen.CODIGO_PLANO, result.fields.single().origen)
+    }
+
+    @Test
+    fun `en una etiqueta de codigos por campo el texto no decide lote ni cantidad`() {
+        // Así salió de la bolsa real: el rótulo «QTY» queda seguido del PO y «Batch» seguido de la cantidad.
+        val text = "QTY\n4505747759\nBatch\n200\nPart Number\n75183644"
+
+        val conTexto = LabelFieldExtractor.extractDetailed(text)
+        assertEquals("4505747759", conTexto.fields.single { it.campo == Campo.CANTIDAD }.valor)
+        assertEquals("200", conTexto.fields.single { it.campo == Campo.LOTE }.valor)
+
+        val sinTexto = LabelFieldExtractor.extractDetailed(text, ignoreOcrFor = setOf(Campo.LOTE, Campo.CANTIDAD))
+        assertTrue(sinTexto.fields.none { it.campo == Campo.LOTE || it.campo == Campo.CANTIDAD })
+        assertEquals("75183644", sinTexto.fields.single { it.campo == Campo.NUMERO_PARTE }.valor)
+    }
+
+    @Test
     fun `siguiente ancla en el mismo renglon delimita el dato`() {
         val text = "LOT: ABC123 SERIAL: S999 PART #: P123 ORDER #: PO99"
         assertEquals("ABC123", valor(text, Campo.LOTE))

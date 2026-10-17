@@ -239,6 +239,10 @@ fun DetalleRevisionScreen(
     val labelCaptureDrafts by labelCaptureViewModel.drafts.collectAsState()
     var capturandoEtiqueta by remember { mutableStateOf(false) }
     var partidaParaEtiqueta by remember { mutableStateOf<PartidaRevisionDto?>(null) }
+    // Mensaje de «listo» que acompaña a la cámara cuando se vuelve a ella tras guardar una etiqueta.
+    var avisoEtiqueta by remember { mutableStateOf<String?>(null) }
+    val avisoSiguienteRevisada = stringResource(R.string.label_capture_next_banner_reviewed)
+    val avisoSiguienteAvance = stringResource(R.string.label_capture_next_banner_saved)
     var showCaptureDrafts by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -878,9 +882,18 @@ fun DetalleRevisionScreen(
                 onCompartir = viewModel::compartirEntrada,
                 isSharingLink = isSharingLink,
                 canReadLabel = puedeModificarRevision && !isEspectador && todasLasPartidas.isNotEmpty(),
-                captureDraftCount = labelCaptureDrafts.size,
+                // Las confirmadas ya no son un pendiente del revisador: no cuentan en la insignia.
+                captureDraftCount = labelCaptureDrafts.count {
+                    it.status != com.example.pmmovil.data.model.LabelCaptureStatus.CONFIRMED
+                },
                 onReadLabel = {
-                    if (labelCaptureDrafts.isNotEmpty()) showCaptureDrafts = true
+                    // Un envío en curso o ya confirmado no le pide nada al revisador: solo un borrador sin
+                    // terminar o uno bloqueado justifica interrumpirlo antes de abrir la cámara.
+                    val requiereAtencion = labelCaptureDrafts.any {
+                        it.status == com.example.pmmovil.data.model.LabelCaptureStatus.DRAFT ||
+                            it.status == com.example.pmmovil.data.model.LabelCaptureStatus.BLOCKED
+                    }
+                    if (requiereAtencion) showCaptureDrafts = true
                     else {
                         partidaParaEtiqueta = null
                         capturandoEtiqueta = true
@@ -1285,8 +1298,10 @@ fun DetalleRevisionScreen(
             LabelCaptureLiveScreen(
                 titulo = stringResource(R.string.revision_read_label_title),
                 subtitulo = stringResource(R.string.revision_read_label_hint),
+                aviso = avisoEtiqueta,
                 onFotoTomada = { path, codigosEnVivo ->
                     capturandoEtiqueta = false
+                    avisoEtiqueta = null
                     labelCaptureViewModel.analizar(
                         path = path,
                         codigosEnVivo = codigosEnVivo,
@@ -1294,29 +1309,39 @@ fun DetalleRevisionScreen(
                         initialPartidaId = partidaParaEtiqueta?.IdRevdet
                     )
                 },
-                onCerrar = { capturandoEtiqueta = false }
+                onCerrar = {
+                    capturandoEtiqueta = false
+                    avisoEtiqueta = null
+                }
             )
         }
 
         if (labelCaptureEstado.fotoPath != null) {
-            LabelCaptureSheet(
+            LabelCaptureCard(
                 estado = labelCaptureEstado,
-                onAlternar = labelCaptureViewModel::alternar,
-                onEdit = labelCaptureViewModel::editField,
                 onSelectPartida = labelCaptureViewModel::selectPartida,
-                onIdentityAccepted = labelCaptureViewModel::acceptIdentity,
-                onPhysicalReviewConfirmed = labelCaptureViewModel::confirmPhysicalReview,
+                onRejectPartida = labelCaptureViewModel::rejectPartida,
+                onAcceptIdentity = { labelCaptureViewModel.acceptIdentity(true) },
+                onDecide = labelCaptureViewModel::decidir,
+                onEdit = labelCaptureViewModel::editField,
                 onSave = labelCaptureViewModel::save,
                 onImprove = labelCaptureViewModel::improveReading,
+                onRetake = {
+                    labelCaptureViewModel.discardDraft { capturandoEtiqueta = true }
+                },
+                onClose = {
+                    labelCaptureViewModel.limpiar()
+                    partidaParaEtiqueta = null
+                },
                 onRetry = labelCaptureViewModel::retry,
                 onReloadContext = labelCaptureViewModel::reloadContext,
                 onDiscard = { labelCaptureViewModel.discardDraft() },
-                onRepetir = {
-                    labelCaptureViewModel.discardDraft { capturandoEtiqueta = true }
-                },
-                onCerrar = {
+                // Ya guardada: se vuelve a la cámara para la siguiente etiqueta, sin pasos de por medio.
+                onNext = {
+                    avisoEtiqueta = if (labelCaptureEstado.marcadaRevisada) avisoSiguienteRevisada else avisoSiguienteAvance
                     labelCaptureViewModel.limpiar()
                     partidaParaEtiqueta = null
+                    capturandoEtiqueta = true
                 }
             )
         }

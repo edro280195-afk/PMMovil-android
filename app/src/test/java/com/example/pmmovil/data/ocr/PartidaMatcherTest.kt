@@ -116,6 +116,54 @@ class PartidaMatcherTest {
         assertTrue(result.requiresSelection)
     }
 
+    @Test
+    fun `label padded with zeros matches the catalog key that was stored without them`() {
+        // Freudenberg imprime el artículo con diez dígitos («0049263333»); el catálogo guarda «49263333».
+        val result = PartidaMatcher.match(listOf(partida(1, "49263333"), partida(2, "49205490")), listOf(part("0049263333")))
+
+        assertEquals(1, result.suggestedPartidaId)
+        assertTrue(result.candidates.first().exactKeyMatch)
+        assertEquals(PartidaMatcher.MatchKind.EXACT_PART_NUMBER, result.candidates.first().matchKind)
+        assertTrue(result.candidates.first().reasons.first().contains("ceros"))
+        assertFalse(result.requiresSelection)
+    }
+
+    @Test
+    fun `the same key read with and without padding is not a conflict`() {
+        val result = PartidaMatcher.match(listOf(partida(1, "75875114")), listOf(part("0075875114"), part("75875114")))
+
+        assertTrue(result.candidates.single().exactKeyMatch)
+        assertEquals(1, result.suggestedPartidaId)
+    }
+
+    @Test
+    fun `padding is only removed from the label and only for purely numeric keys`() {
+        // El catálogo con ceros no se toca, una clave con letras no se recorta y «0» no se vuelve vacío.
+        val catalogoConCeros = PartidaMatcher.match(listOf(partida(1, "00012"), partida(2, "99999")), listOf(part("0000012")))
+        val conLetras = PartidaMatcher.match(listOf(partida(1, "A123"), partida(2, "99999")), listOf(part("0A123")))
+
+        assertTrue(catalogoConCeros.candidates.isEmpty())
+        assertTrue(conLetras.candidates.isEmpty())
+    }
+
+    @Test
+    fun `customer alias also matches without the label padding`() {
+        val result = PartidaMatcher.match(listOf(partida(1, "INTERNA-10", alias = "75875114")), listOf(part("0075875114")))
+
+        assertTrue(result.candidates.single().exactKeyMatch)
+        assertEquals(PartidaMatcher.MatchKind.EXACT_CUSTOMER_ALIAS, result.candidates.single().matchKind)
+        assertTrue(result.candidates.single().reasons.first().contains("ceros"))
+    }
+
+    @Test
+    fun `two rows that collapse to the same key still require a choice`() {
+        // Dos partidas con la clave «49263333» y una etiqueta que trae «0049263333»: no hay ganador único.
+        val result = PartidaMatcher.match(listOf(partida(1, "49263333"), partida(2, "49263333")), listOf(part("0049263333")))
+
+        assertTrue(result.requiresSelection)
+        assertNull(result.suggestedPartidaId)
+    }
+
     private fun part(value: String) = LabelFieldExtractor.CampoLeido(
         LabelFieldExtractor.Campo.NUMERO_PARTE, value, LabelFieldExtractor.Origen.ANCLA_MISMA_LINEA, "PART #", 90
     )
