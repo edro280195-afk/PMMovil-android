@@ -44,6 +44,36 @@
     @com.google.gson.annotations.SerializedName <fields>;
 }
 
+# Estado de pantalla que se guarda como JSON fuera de data.model. La regla de
+# arriba solo cubre esa carpeta; estas clases viven en otras y también pasan por
+# Gson: LabelCaptureViewModel.Estado se guarda como borrador en Room
+# (gson.toJson / gson.fromJson) y arrastra las clases que contiene. Sin esto R8
+# renombra sus campos a a, b, c… y el JSON queda escrito con esas letras: al
+# actualizar la app las letras cambian y un borrador pendiente se lee mal
+# (campos corridos o en null). Los enums que contiene ya los cubre la regla de
+# enums. Si a ese estado se le agrega una clase nueva, va aquí también.
+-keepclassmembers class com.example.pmmovil.ui.revision.LabelCaptureViewModel$Estado {
+    <init>(...);
+    <fields>;
+}
+-keepclassmembers class com.example.pmmovil.ui.revision.LabelCaptureViewModel$CampoPropuesto {
+    <init>(...);
+    <fields>;
+}
+-keepclassmembers class com.example.pmmovil.data.ocr.LabelFieldExtractor$CampoLeido {
+    <init>(...);
+    <fields>;
+}
+-keepclassmembers class com.example.pmmovil.data.ocr.LabelFieldExtractor$FieldConflict {
+    <init>(...);
+    <fields>;
+}
+# Hoy se guarda siempre vacía (candidates = emptyList()), pero el tipo viaja en el estado.
+-keepclassmembers class com.example.pmmovil.data.ocr.PartidaMatcher$Candidate {
+    <init>(...);
+    <fields>;
+}
+
 
 # ── Retrofit ────────────────────────────────────────────────────────────────
 # La interfaz del API se implementa en ejecución con un Proxy dinámico, y el
