@@ -2,6 +2,7 @@ package com.example.pmmovil.data.signalr
 
 import android.util.Log
 import com.example.pmmovil.data.repository.AuthRepository
+import com.example.pmmovil.data.security.JwtExpiry
 import com.microsoft.signalr.HubConnection
 import com.microsoft.signalr.HubConnectionBuilder
 import com.microsoft.signalr.HubConnectionState
@@ -16,6 +17,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.sync.Mutex
@@ -96,6 +98,18 @@ class WarehouseHubService @Inject constructor(
             if (startJob?.isActive == true) return
 
             val token = authRepository.getToken() ?: run {
+                shouldBeConnected = false
+                return
+            }
+            // Con un JWT que ya pasó su `exp` el negotiate responde 401 seguro:
+            // se ahorra el viaje y el camino de error del cliente de SignalR que
+            // mató la app el 2026-10-16 (ver RxJavaErrorHandler). Aquí no se
+            // cierra la sesión: eso sigue siendo del 401 de las llamadas REST
+            // (NetworkModule), que ya manda al login. Tampoco se deja
+            // shouldBeConnected encendido, o cada send() y cada ciclo de
+            // reconexión volvería a entrar aquí a intentarlo.
+            if (JwtExpiry.isExpired(token)) {
+                Log.w("SignalR", "El JWT guardado ya venció; no se abre WarehouseHub")
                 shouldBeConnected = false
                 return
             }
@@ -293,8 +307,18 @@ class WarehouseHubService @Inject constructor(
         }
         connectionToStop?.let { connection ->
             scope.launch {
-                runCatching { awaitCompletion(connection.stop()) }
-                    .onFailure { Log.w("SignalR", "Error cerrando WarehouseHub", it) }
+                runCatching {
+                    // Si el cliente de SignalR revienta por dentro (ver
+                    // RxJavaErrorHandler), el Completable de stop() no termina
+                    // nunca: sin un límite esta corrutina se quedaría esperando
+                    // para siempre.
+                    val closed = withTimeoutOrNull(STOP_TIMEOUT_MILLIS) {
+                        awaitCompletion(connection.stop())
+                    }
+                    if (closed == null) {
+                        Log.w("SignalR", "WarehouseHub no confirmó el cierre en $STOP_TIMEOUT_MILLIS ms")
+                    }
+                }.onFailure { Log.w("SignalR", "Error cerrando WarehouseHub", it) }
             }
         }
     }
@@ -383,6 +407,7 @@ class WarehouseHubService @Inject constructor(
         const val SEND_RETRY_DELAY_MILLIS = 500L
         const val CONNECTION_POLL_DELAY_MILLIS = 250L
         const val CONNECT_WAIT_TIMEOUT_MILLIS = 8_000L
+        const val STOP_TIMEOUT_MILLIS = 10_000L
         const val INITIAL_RECONNECT_DELAY_MILLIS = 1_000L
         const val MAX_RECONNECT_DELAY_MILLIS = 30_000L
     }

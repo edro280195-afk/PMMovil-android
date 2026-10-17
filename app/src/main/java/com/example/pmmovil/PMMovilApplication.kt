@@ -5,6 +5,7 @@ import androidx.camera.core.CameraXConfig
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import com.example.pmmovil.data.diagnostics.PmmCrashReporter
+import com.example.pmmovil.data.diagnostics.RxJavaErrorHandler
 import com.example.pmmovil.data.notifications.PmmFirebaseMessagingService
 import com.example.pmmovil.data.security.SecurePreferencesFactory
 import com.example.pmmovil.ui.camera.CameraOwner
@@ -18,6 +19,10 @@ class PMMovilApplication : Application(), ImageLoaderFactory, CameraXConfig.Prov
 
     override fun onCreate() {
         super.onCreate()
+        // Primero de todo: un error de RxJava que nadie pueda recibir (el cliente
+        // de SignalR tiene uno conocido al detener una conexión que no llegó a
+        // negociar) mata el proceso si no hay quien lo registre.
+        RxJavaErrorHandler.install()
         PDFBoxResourceLoader.init(this)
         PmmCrashReporter.install(this)
         PmmFirebaseMessagingService.ensureChannel(this)
