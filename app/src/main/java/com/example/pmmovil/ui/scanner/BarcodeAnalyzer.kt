@@ -149,7 +149,7 @@ class BarcodeAnalyzer(
                                 MAX_CANDIDATE_CENTER_DISTANCE
                     }
                     .mapNotNull { barcode ->
-                        val value = BarcodeValueNormalizer.normalize(
+                        val value = BarcodeValueNormalizer.normalizeScan(
                             barcode.rawValue ?: barcode.displayValue
                         )?.takeIf(String::isNotBlank)
                         barcode.toVisualCandidate(

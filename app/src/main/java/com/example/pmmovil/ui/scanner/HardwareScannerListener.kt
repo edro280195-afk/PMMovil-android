@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.rememberUpdatedState
@@ -16,6 +17,8 @@ import com.example.pmmovil.data.scanner.DataWedgeProfileManager
 import com.example.pmmovil.data.scanner.DataWedgeProfileStatus
 import com.example.pmmovil.data.scanner.HardwareScanEvent
 import com.example.pmmovil.data.scanner.HardwareScannerIntents
+
+private const val HARDWARE_SCANNER_LOG_TAG = "PMM-HARDWARE-SCAN"
 
 /**
  * Receptor compartido para lectores fisicos Zebra, Honeywell y lectores HID
@@ -52,8 +55,19 @@ fun HardwareScannerListenerWithDiagnostics(
 
                 val scanEvent = HardwareScannerIntents.parseScanEvent(intent)
                 if (scanEvent != null) {
+                    Log.i(
+                        HARDWARE_SCANNER_LOG_TAG,
+                        "Lectura recibida source=${scanEvent.source} action=${scanEvent.intentAction} " +
+                            "extra=${scanEvent.dataExtraKey} length=${scanEvent.value.length}"
+                    )
                     currentOnScanEvent.value?.invoke(scanEvent)
                         ?: currentOnScanned.value(scanEvent.value)
+                } else if (intent?.action in HardwareScannerIntents.scannerActions) {
+                    val extraNames = intent?.extras?.keySet()?.joinToString().orEmpty()
+                    Log.w(
+                        HARDWARE_SCANNER_LOG_TAG,
+                        "Evento de lector sin dato reconocido action=${intent?.action} extras=$extraNames"
+                    )
                 }
             }
         }

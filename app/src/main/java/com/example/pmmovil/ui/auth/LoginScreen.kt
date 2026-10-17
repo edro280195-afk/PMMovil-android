@@ -92,6 +92,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.pmmovil.data.nfc.NfcBadgeManager
+import com.example.pmmovil.data.scanner.BarcodeValueNormalizer
 import com.example.pmmovil.data.biometria.FaceEngine
 import com.example.pmmovil.ui.rostro.CamaraRostroSinPreview
 import com.example.pmmovil.ui.rostro.EstadoGlifo
@@ -309,7 +310,7 @@ fun LoginScreen(
             if (arbitro.tomarTurno(LoginCanal.LECTOR)) {
                 rostroViewModel.pausar()
                 viewModel.limpiarError()
-                viewModel.login(codigo.trim(), isQR = true)
+                viewModel.login(BarcodeValueNormalizer.normalizeScan(codigo), isQR = true)
             }
         }
     }
@@ -455,7 +456,7 @@ fun LoginScreen(
             onCodigo = { codigo ->
                 if (arbitro.tomarTurno(LoginCanal.QR_CAMARA)) {
                     viewModel.limpiarError()
-                    viewModel.login(codigo, isQR = true)
+                    viewModel.login(BarcodeValueNormalizer.normalizeScan(codigo), isQR = true)
                 }
             },
             // Salir es inmediato: el dueño de la cámara ya serializa el

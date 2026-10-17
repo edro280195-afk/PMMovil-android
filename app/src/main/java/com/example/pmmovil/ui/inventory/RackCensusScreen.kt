@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.pmmovil.data.repository.RackCensusScanOutcome
 import com.example.pmmovil.ui.components.rememberPmmHaptics
+import com.example.pmmovil.ui.scanner.HardwareScannerListener
 import com.example.pmmovil.ui.scanner.ScanProfile
 import com.example.pmmovil.ui.scanner.SmartBarcodeCameraView
 import com.example.pmmovil.ui.theme.PmmAmber
@@ -171,6 +172,10 @@ private fun LocationStep(
 
     if (scanning) {
         BackHandler { scanning = false }
+        HardwareScannerListener { value ->
+            scanning = false
+            viewModel.onLocationScanned(value)
+        }
         SmartBarcodeCameraView(
             onBarcodeScanned = { value ->
                 scanning = false
@@ -330,6 +335,7 @@ private fun SweepStep(
     modifier: Modifier = Modifier
 ) {
     val haptics = rememberPmmHaptics()
+    HardwareScannerListener(onBarcodeScanned = viewModel::onLabelScanned)
     // La clave lleva el contador: sin él, dos lecturas iguales seguidas no
     // vuelven a disparar el aviso (el mismo bug que se corrigió en escaneo).
     LaunchedEffect(state.feedbackToken) {

@@ -1,6 +1,9 @@
 package com.example.pmmovil.data.scanner
 
 object BarcodeValueNormalizer {
+    /** Entrada común para todos los lectores: cámara, lector integrado y HID. */
+    fun normalizeScan(value: String?): String = normalize(value)
+
     /** Normalización histórica para búsquedas simples, placas y códigos internos. */
     fun normalize(value: String?): String {
         if (value.isNullOrBlank()) return ""

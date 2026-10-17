@@ -14,11 +14,13 @@ data class HardwareScanEvent(
     val source: HardwareScanSource,
     val sourceLabel: String,
     val labelType: String? = null,
-    val intentAction: String? = null
+    val intentAction: String? = null,
+    val dataExtraKey: String? = null
 )
 
 object HardwareScannerIntents {
     const val ACTION_PMMOVIL_SCAN = "com.pmmovil.SCAN"
+    const val ACTION_HONEYWELL_SCAN_RESULT = "com.honeywell.intent.action.SCAN_RESULT"
     const val EXTRA_PMMOVIL_SOURCE = "source"
     const val EXTRA_PMMOVIL_LABEL_TYPE = "label_type"
 
@@ -31,25 +33,11 @@ object HardwareScannerIntents {
         "com.symbol.datawedge.data_string",
         "com.symbol.datawedge.ACTION",
         "com.symbol.datawedge.SCANNER_RESULT",
+        ACTION_HONEYWELL_SCAN_RESULT,
         "com.honeywell.decode.intent.action.EDIT_DATA",
         "com.honeywell.aidc.action.ACTION_BARCODE_READ_EVENT",
         "android.intent.action.SCANRESULT",
         "scan.rcv.message"
-    )
-
-    private val barcodeExtraKeys = listOf(
-        EXTRA_DATAWEDGE_VALUE,
-        "data",
-        "barcode",
-        "barocode",
-        "value",
-        "code",
-        "scannerdata",
-        "scan_result",
-        "SCAN_BARCODE1",
-        "com.motorolasolutions.emdk.datawedge.data_string",
-        "com.honeywell.decode.intent.extra.BARCODE_DATA",
-        Intent.EXTRA_TEXT
     )
 
     fun parseScanEvent(intent: Intent?): HardwareScanEvent? {
@@ -57,41 +45,21 @@ object HardwareScannerIntents {
             return null
         }
 
-        val value = extractBarcode(intent).takeIf(String::isNotBlank) ?: return null
+        val extras = intent.extras?.let { bundle ->
+            bundle.keySet().associateWith { key -> bundle.get(key) }
+        }.orEmpty()
+        val extracted = HardwareBarcodePayloadExtractor.extract(extras) ?: return null
         val source = detectSource(intent)
         val labelType = intent.getStringExtra(EXTRA_DATAWEDGE_LABEL_TYPE)
             ?: intent.getStringExtra(EXTRA_PMMOVIL_LABEL_TYPE)
         return HardwareScanEvent(
-            value = value,
+            value = extracted.value,
             source = source,
             sourceLabel = source.displayName(labelType),
             labelType = labelType,
-            intentAction = intent.action
+            intentAction = intent.action,
+            dataExtraKey = extracted.extraKey
         )
-    }
-
-    private fun extractBarcode(intent: Intent): String {
-        barcodeExtraKeys.forEach { key ->
-            val value = intent.extras?.get(key)?.toString()
-            val clean = BarcodeValueNormalizer.normalize(value)
-            if (clean.isNotBlank()) return clean
-        }
-
-        val fallback = intent.extras
-            ?.keySet()
-            ?.asSequence()
-            ?.filterNot { key ->
-                key == "RESULT_INFO" ||
-                    key == "RESULT" ||
-                    key == "COMMAND_IDENTIFIER"
-            }
-            ?.mapNotNull { key -> intent.extras?.get(key)?.toString() }
-            ?.firstOrNull { value ->
-                val clean = BarcodeValueNormalizer.normalize(value)
-                clean.length >= 3 && clean.any(Char::isLetterOrDigit)
-            }
-
-        return fallback.orEmpty()
     }
 
     private fun detectSource(intent: Intent): HardwareScanSource {

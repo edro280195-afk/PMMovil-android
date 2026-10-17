@@ -29,7 +29,7 @@ class HardwareBarcodeDecoder(
     }
 
     fun complete(): String? {
-        val code = BarcodeValueNormalizer.normalize(buffer.toString()).takeIf(String::isNotEmpty)
+        val code = BarcodeValueNormalizer.normalizeScan(buffer.toString()).takeIf(String::isNotEmpty)
         reset()
         return code
     }
@@ -46,7 +46,7 @@ class HardwareBarcodeDecoder(
         maxDurationMillis: Long = 1_200L,
         maxAverageIntervalMillis: Long = 60L
     ): String? {
-        val code = BarcodeValueNormalizer.normalize(buffer.toString())
+        val code = BarcodeValueNormalizer.normalizeScan(buffer.toString())
         val first = firstCharacterAt
         val last = lastCharacterAt
         val duration = if (first != null && last != null) last - first else Long.MAX_VALUE
