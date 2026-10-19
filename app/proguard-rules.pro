@@ -107,6 +107,18 @@
 -keep class com.microsoft.signalr.** { *; }
 -dontwarn com.microsoft.signalr.**
 
+# Los mensajes que el hub entrega a cada on(...) (SignalRModels.kt) los crea el
+# cliente de SignalR con Gson, por reflexión: ningún código de la app hace `new`
+# de ellos ni escribe sus campos. Sin esta regla R8 concluye que nunca tienen
+# instancias, borra sus campos y constructores y deja cada manejador lanzando
+# ClassCastException (el cliente no la atrapa y cierra la conexión). Solo pasa
+# en release: debug no usa R8. Todos terminan en «Message», así que una clase de
+# mensaje nueva queda cubierta sin tocar esto.
+-keepclassmembers class com.example.pmmovil.data.signalr.*Message {
+    <init>(...);
+    <fields>;
+}
+
 
 # ── Código nativo (JNI) ─────────────────────────────────────────────────────
 # Todas éstas llaman de Java a C++ y de vuelta. Un renombre las rompe con un
