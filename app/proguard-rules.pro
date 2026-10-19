@@ -74,6 +74,16 @@
     <fields>;
 }
 
+# Borrador de anotaciones del PDF. AnnotationDto (privada de ui.pdf, ver
+# PdfAnnotationCodec) se guarda como JSON en Room (PdfAnnotationDraftEntity.
+# annotationsJson) y ninguna regla de arriba la cubre. Mismo riesgo que el estado
+# de la tarjeta de etiqueta: sin esto sus campos quedan como a…f, y un borrador
+# de anotaciones pendiente se descarta o se lee mal después de actualizar la app.
+-keepclassmembers class com.example.pmmovil.ui.pdf.AnnotationDto {
+    <init>(...);
+    <fields>;
+}
+
 
 # ── Retrofit ────────────────────────────────────────────────────────────────
 # La interfaz del API se implementa en ejecución con un Proxy dinámico, y el
