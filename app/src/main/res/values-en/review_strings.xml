@@ -370,6 +370,8 @@
     <string name="message_tally_not_in_entry">Key %1$s is not in this entry. Is the label from another one?</string>
     <string name="message_tally_several_partidas">There are %1$d line items with that key: pick one before counting.</string>
     <string name="message_tally_unsupported_unit">This line item is in %1$s: it is not counted by pieces.</string>
+    <string name="message_tally_quantity_out_of_range">The label says %1$s pieces and the whole line item declares %2$s. Not counted: check the reading.</string>
+    <string name="message_tally_quantity_not_corroborated">The barcode says %1$s pieces, but that number is not printed on the label. Not counted: enter it yourself.</string>
     <string name="message_tally_several_labels">More than one label in frame. Focus on a single one.</string>
     <string name="message_server_review_api">check the API</string>
     <string name="revision_read_label_photo">Read label with camera</string>

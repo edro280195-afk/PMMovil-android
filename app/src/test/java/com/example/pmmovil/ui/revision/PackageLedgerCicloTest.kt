@@ -94,6 +94,28 @@ class PackageLedgerCicloTest {
     }
 
     @Test
+    fun `una cantidad mal decodificada no se cuenta`() {
+        // Medido en el Pixel el 20-oct: la FOTO decodificó Q20000000 donde la etiqueta dice Q20000.
+        // Son veinte millones de piezas en una partida que declara 600 000. Contarlo habría escrito
+        // esa cifra en la cantidad recibida.
+        val mala = PackageTally.Label("75370203", 20000000.0, "S279544448", "f", weightKg = 8.0)
+        val r = PackageTally.process(listOf(partida), PackageTally.Ledger(), mala)
+        assertTrue("se esperaba rechazo, salió $r", r is PackageTally.Result.QuantityOutOfRange)
+        val fuera = r as PackageTally.Result.QuantityOutOfRange
+        assertEquals(20000000.0, fuera.perPackage, 0.0001)
+        assertEquals(600000.0, fuera.expected, 0.0001)
+    }
+
+    @Test
+    fun `un empaque que completa la partida justo si se cuenta`() {
+        // El límite no debe estorbar al caso bueno: 600 000 de 600 000 es válido.
+        val completo = PackageTally.Label("75370203", 600000.0, "S279544448", "f", weightKg = 240.0)
+        val r = PackageTally.process(listOf(partida), PackageTally.Ledger(), completo)
+        assertTrue(r is PackageTally.Result.Added)
+        assertEquals(PackageTally.State.COMPLETE, (r as PackageTally.Result.Added).state)
+    }
+
+    @Test
     fun `releer una etiqueta ya contada no cambia nada`() {
         val r = PackageTally.process(listOf(partida), PackageTally.Ledger(), etiqueta(0)) as PackageTally.Result.Added
         val ledger = PackageTally.Ledger().plus(r.counted)

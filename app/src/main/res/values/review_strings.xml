@@ -375,6 +375,8 @@
     <string name="message_tally_not_in_entry">La clave %1$s no está en esta entrada. ¿La etiqueta es de otra?</string>
     <string name="message_tally_several_partidas">Hay %1$d partidas con esa clave: elige cuál antes de contar.</string>
     <string name="message_tally_unsupported_unit">Esta partida va en %1$s: no se cuenta por piezas.</string>
+    <string name="message_tally_quantity_out_of_range">La etiqueta dice %1$s piezas y la partida entera declara %2$s. No se contó: revisa la lectura.</string>
+    <string name="message_tally_quantity_not_corroborated">El código dice %1$s piezas, pero ese número no aparece impreso en la etiqueta. No se contó: captúralo tú.</string>
     <string name="message_tally_several_labels">Hay más de una etiqueta en el cuadro. Enfoca una sola.</string>
     <string name="message_server_review_api">revisa el API</string>
     <string name="revision_read_label_photo">Leer etiqueta con la cámara</string>

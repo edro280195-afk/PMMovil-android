@@ -5,6 +5,7 @@ import com.example.pmmovil.data.ocr.LabelFieldExtractor.Campo
 import com.example.pmmovil.data.ocr.LabelFieldExtractor.CampoLeido
 import com.example.pmmovil.data.ocr.LabelFieldExtractor.Origen
 import com.example.pmmovil.data.ocr.LabelFieldExtractor.QuantityScope
+import com.example.pmmovil.data.ocr.CorroboracionDeLectura
 import com.example.pmmovil.data.ocr.PackageId
 import com.example.pmmovil.data.ocr.PartidaMatcher
 
@@ -74,6 +75,13 @@ object PackageTally {
 
         /** Hay más de una etiqueta en el cuadro; no se sabe de cuál es cada dato. */
         data class SeveralLabels(val ids: List<String>) : Reading
+
+        /**
+         * La cantidad salió de un código pero **no aparece impresa** en la etiqueta. El decodificador
+         * se equivoca sin avisar (medido: `Q2000000` donde la hoja dice 20000), así que un dato que
+         * nadie corrobora no se cuenta solo: lo confirma el revisador.
+         */
+        data class QuantityNotCorroborated(val fromBarcode: String) : Reading
     }
 
     /** Un empaque ya contado, ligado a la partida a la que se sumó. */
@@ -154,6 +162,23 @@ object PackageTally {
 
         /** La factura de esta partida va en kilos, litros… y esta cuenta es por piezas. */
         data class UnsupportedUnit(val partida: PartidaRevisionDto, val unit: String) : Result
+
+        /**
+         * Un solo empaque trae más piezas que toda la partida: casi seguro el decodificador se
+         * equivocó, no que llegara mercancía de más.
+         *
+         * Medido en el Pixel el 20-oct-2026: leyendo la etiqueta de envío VDA, la **foto** decodificó
+         * `Q20000000` donde el valor impreso es `Q20000` — mil veces más, en una partida que declara
+         * 600 000 piezas. No es un tropiezo del video: salió del mismo código de la foto, que se creía
+         * confiable. Contarlo habría escrito veinte millones en la cantidad recibida.
+         *
+         * Un sobrante real lo captura el revisador a mano; una lectura así no se cuenta sola.
+         */
+        data class QuantityOutOfRange(
+            val partida: PartidaRevisionDto,
+            val perPackage: Double,
+            val expected: Double
+        ) : Result
     }
 
     /** Cuántas partidas hay en cada situación. [reviewed] ya no entra en las demás. */
@@ -173,7 +198,12 @@ object PackageTally {
      * Reduce lo que salió de una etiqueta a lo que el conteo necesita. [fields] son los datos ya extraídos (sin
      * contradicciones) y [codes] todos los códigos decodificados, para buscar el identificador del empaque.
      */
-    fun read(fields: List<CampoLeido>, codes: List<String>): Reading {
+    /**
+     * @param textoImpreso lo que el lector de texto sacó de la etiqueta. Sirve para **corroborar** que
+     *   la cantidad del código esté también escrita en la hoja. Si llega vacío no se corrobora nada y
+     *   la cantidad no se da por buena: con cero margen de error, no saber es igual que no coincidir.
+     */
+    fun read(fields: List<CampoLeido>, codes: List<String>, textoImpreso: String = ""): Reading {
         val packageId = when (val reading = PackageId.read(codes)) {
             is PackageId.Reading.Multiple -> return Reading.SeveralLabels(reading.values)
             is PackageId.Reading.Single -> reading.value
@@ -182,9 +212,15 @@ object PackageTally {
         val fromBarcode = fields.filter { it.origen in BARCODE_ORIGINS }
         val key = fromBarcode.firstOrNull { it.campo == Campo.NUMERO_PARTE }?.valor?.trim()
             ?.takeIf(String::isNotEmpty) ?: return Reading.NoKey
-        val pieces = (fromBarcode.firstOrNull { it.campo == Campo.CANTIDAD && it.quantityScope != QuantityScope.PACKAGE_ORDINAL }
+        val cantidadLeida = (fromBarcode.firstOrNull { it.campo == Campo.CANTIDAD && it.quantityScope != QuantityScope.PACKAGE_ORDINAL }
             ?: fromBarcode.firstOrNull { it.campo == Campo.PIEZAS_POR_EMPAQUE && it.quantityScope != QuantityScope.PACKAGE_ORDINAL })
-            ?.valor?.trim()?.replace(',', '.')?.toDoubleOrNull()?.takeIf { it.isFinite() && it > 0.0 }
+            ?.valor?.trim()
+        // La cantidad es el único dato que se escribe sin que nadie lo mire, así que es el que más
+        // exige: tiene que estar además impresa en la etiqueta.
+        if (cantidadLeida != null && !CorroboracionDeLectura.cantidadApareceImpresa(cantidadLeida, textoImpreso)) {
+            return Reading.QuantityNotCorroborated(cantidadLeida)
+        }
+        val pieces = cantidadLeida?.replace(',', '.')?.toDoubleOrNull()?.takeIf { it.isFinite() && it > 0.0 }
         val batch = fromBarcode.firstOrNull { it.campo == Campo.LOTE }?.valor?.trim().orEmpty()
         val expiry = fromBarcode.firstOrNull { it.campo == Campo.CADUCIDAD }?.valor?.trim().orEmpty()
         val fingerprint = listOf(withoutLeadingZeros(key), pieces?.let(LabelCaptureCotejo::numero).orEmpty(), batch, expiry)
@@ -256,6 +292,10 @@ object PackageTally {
         if (partida.Revisada) return Result.AlreadyReviewed(partida)
         val expected = expectedPieces(partida) ?: return Result.UnsupportedUnit(partida, partida.UnidadFactura.orEmpty())
         val perPackage = label.pieces ?: return Result.MissingQuantity(partida)
+        // Un empaque que por sí solo trae más que toda la partida es una lectura mala, no un sobrante.
+        if (expected > 0.0 && perPackage * multiple > expected) {
+            return Result.QuantityOutOfRange(partida, perPackage * multiple, expected)
+        }
 
         val counted = CountedPackage(
             partida.IdRevdet, label.packageId, perPackage * multiple, label.fingerprint,

@@ -1340,7 +1340,11 @@ fun DetalleRevisionScreen(
         // no al leer la foto porque una etiqueta descartada no debe contar.
         LaunchedEffect(labelCaptureEstado.captureId, labelCaptureEstado.envio) {
             if (labelCaptureEstado.envio == LabelCaptureViewModel.Envio.GUARDADO) {
-                viewModel.contarEmpaque(labelCaptureEstado.observations, labelCaptureEstado.rawCodes)
+                viewModel.contarEmpaque(
+                    labelCaptureEstado.observations,
+                    labelCaptureEstado.rawCodes,
+                    labelCaptureEstado.textoCrudo
+                )
             }
         }
 

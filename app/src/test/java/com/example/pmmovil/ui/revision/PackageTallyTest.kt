@@ -31,11 +31,25 @@ class PackageTallyTest {
     private val pdf417Caja = "+30S0049263333+Q00000600+H0031704192+2D092036+2X497608092026+P049879/003"
     private val pdf417Orings = "+30S0075875114+Q000210+H0426090326+2D082036+2X566405082026+P0000000000075875"
 
+    /**
+     * Lo que estas etiquetas traen impreso, para que la cantidad del código quede corroborada.
+     * En la etiqueta real el número está junto a su código; aquí basta con que aparezca.
+     */
+    private val impreso =
+        "QTY 200 PC · QTY 210 · QTY 20000 PC · QTY 600 · Q 73.500 KG · " +
+            "Batch 5003814158 · Batch 5004029781 · Lot 0031704192 · Lot 2612012010 · " +
+            "Part 75183644 · 75875114 · 75370203 · 49263333 · 49379668 · " +
+            "1Y-00000050337428 · S279239665 · S279544448 · NET WT KG 8 · GROSS WT KG 9"
+
     /** La misma cadena que sigue la captura: códigos → intérprete de códigos planos → extractor → conteo. */
-    private fun leer(codigos: List<String>, lineas: List<LineaDeTexto> = emptyList()): PackageTally.Reading {
+    private fun leer(
+        codigos: List<String>,
+        lineas: List<LineaDeTexto> = emptyList(),
+        textoImpreso: String = impreso
+    ): PackageTally.Reading {
         val interpretacion = LabelBarcodeInterpreter.interpretar(codigos, claves, { it.uppercase() in paises }, lineas)
         val extraccion = LabelFieldExtractor.extractDetailed("", codigos, interpretacion.campos, interpretacion.camposSinOcr)
-        return PackageTally.read(extraccion.fields, codigos)
+        return PackageTally.read(extraccion.fields, codigos, textoImpreso)
     }
 
     private fun etiqueta(codigos: List<String>, lineas: List<LineaDeTexto> = emptyList()): PackageTally.Label =
@@ -96,7 +110,7 @@ class PackageTallyTest {
 
         // La clave sí salió de un código, pero la cantidad solo del texto: se reconoce, sin piezas.
         val mixto = listOf(porTexto[0].copy(origen = Origen.CODIGO_PLANO), porTexto[1])
-        val label = (PackageTally.read(mixto, emptyList()) as PackageTally.Reading.Ready).label
+        val label = (PackageTally.read(mixto, emptyList(), "QTY 200 PC  QTY 210  QTY 20000 PC  QTY 600  Q 73.500 KG  Batch 5003814158  Batch 5004029781  Lot 0031704192  Lot 2612012010  Part 75183644 75875114 75370203 49263333 49379668  1Y-00000050337428  S279239665  S279544448  NET WT KG 8  GROSS WT KG 9") as PackageTally.Reading.Ready).label
         assertNull(label.pieces)
     }
 
@@ -119,7 +133,7 @@ class PackageTallyTest {
             )
         )
 
-        val label = (PackageTally.read(ordinal, emptyList()) as PackageTally.Reading.Ready).label
+        val label = (PackageTally.read(ordinal, emptyList(), "QTY 200 PC  QTY 210  QTY 20000 PC  QTY 600  Q 73.500 KG  Batch 5003814158  Batch 5004029781  Lot 0031704192  Lot 2612012010  Part 75183644 75875114 75370203 49263333 49379668  1Y-00000050337428  S279239665  S279544448  NET WT KG 8  GROSS WT KG 9") as PackageTally.Reading.Ready).label
 
         assertNull(label.pieces)
     }
@@ -412,7 +426,7 @@ class PackageTallyTest {
                 CampoLeido(Campo.PESO_NETO, "8", Origen.ANCLA_MISMA_LINEA, "NET WT", 90, unidad = "KG")
             ),
             listOf("S279544448")
-        ) as PackageTally.Reading.Ready
+        , "QTY 200 PC  QTY 210  QTY 20000 PC  QTY 600  Q 73.500 KG  Batch 5003814158  Batch 5004029781  Lot 0031704192  Lot 2612012010  Part 75183644 75875114 75370203 49263333 49379668  1Y-00000050337428  S279239665  S279544448  NET WT KG 8  GROSS WT KG 9") as PackageTally.Reading.Ready
         assertEquals(8.0, reading.label.weightKg!!, 0.0001)
     }
 
@@ -425,7 +439,7 @@ class PackageTallyTest {
                 CampoLeido(Campo.PESO_NETO, "100", Origen.ANCLA_MISMA_LINEA, "NET WT", 90, unidad = "LB")
             ),
             emptyList()
-        ) as PackageTally.Reading.Ready
+        , "QTY 200 PC  QTY 210  QTY 20000 PC  QTY 600  Q 73.500 KG  Batch 5003814158  Batch 5004029781  Lot 0031704192  Lot 2612012010  Part 75183644 75875114 75370203 49263333 49379668  1Y-00000050337428  S279239665  S279544448  NET WT KG 8  GROSS WT KG 9") as PackageTally.Reading.Ready
         assertEquals(45.36, reading.label.weightKg!!, 0.0001)
     }
 

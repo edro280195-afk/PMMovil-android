@@ -58,7 +58,7 @@ class EtiquetaQuimicaConteoTest {
         assertNull(CountUnits.piecesPerUnit("KG"))
         assertNull(PackageTally.expectedPieces(partidaEnKilos))
 
-        val lectura = PackageTally.read(camposDe(quimica), listOf(quimica)) as PackageTally.Reading.Ready
+        val lectura = PackageTally.read(camposDe(quimica), listOf(quimica), "QTY 200 PC  QTY 210  QTY 20000 PC  QTY 600  Q 73.500 KG  Batch 5003814158  Batch 5004029781  Lot 0031704192  Lot 2612012010  Part 75183644 75875114 75370203 49263333 49379668  1Y-00000050337428  S279239665  S279544448  NET WT KG 8  GROSS WT KG 9") as PackageTally.Reading.Ready
         val resultado = PackageTally.process(listOf(partidaEnKilos), PackageTally.Ledger(), lectura.label)
         assertTrue(
             "se esperaba que el conteo no soportara los kilos, salió $resultado",

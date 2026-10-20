@@ -1408,17 +1408,22 @@ class DetalleRevisionViewModel @Inject constructor(
     fun contarEmpaque(
         campos: List<LabelFieldExtractor.CampoLeido>,
         codigos: List<String>,
+        textoImpreso: String,
         multiple: Int = 1
     ) {
         if (!canEdit()) {
             denyPermission(R.string.permission_modify_parts)
             return
         }
-        val lectura = PackageTally.read(campos, codigos)
+        val lectura = PackageTally.read(campos, codigos, textoImpreso)
         if (lectura !is PackageTally.Reading.Ready) {
             // Sin clave de un código de barras no se cuenta solo: el revisador sigue por la tarjeta.
-            if (lectura is PackageTally.Reading.SeveralLabels) {
-                _toast.value = resource(R.string.message_tally_several_labels)
+            when (lectura) {
+                is PackageTally.Reading.SeveralLabels ->
+                    _toast.value = resource(R.string.message_tally_several_labels)
+                is PackageTally.Reading.QuantityNotCorroborated ->
+                    _toast.value = resource(R.string.message_tally_quantity_not_corroborated, lectura.fromBarcode)
+                else -> Unit
             }
             return
         }
@@ -1437,6 +1442,12 @@ class DetalleRevisionViewModel @Inject constructor(
                 _toast.value = resource(R.string.message_tally_several_partidas, resultado.candidates.size)
             is PackageTally.Result.UnsupportedUnit ->
                 _toast.value = resource(R.string.message_tally_unsupported_unit, resultado.unit)
+            is PackageTally.Result.QuantityOutOfRange ->
+                _toast.value = resource(
+                    R.string.message_tally_quantity_out_of_range,
+                    quantityText(resultado.perPackage),
+                    quantityText(resultado.expected)
+                )
         }
     }
 
