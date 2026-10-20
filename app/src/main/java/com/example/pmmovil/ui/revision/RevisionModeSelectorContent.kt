@@ -14,12 +14,15 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Assignment
+import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -41,6 +44,7 @@ import com.example.pmmovil.R
 import com.example.pmmovil.data.preferences.ModePreferences
 import com.example.pmmovil.ui.theme.PmmAmberDark
 import com.example.pmmovil.ui.theme.PmmBlueDeep
+import com.example.pmmovil.ui.theme.PmmGreenDark
 import com.example.pmmovil.ui.theme.PmmNavyBorder
 import com.example.pmmovil.ui.theme.PmmNavyVariant
 import com.example.pmmovil.ui.theme.PmmTextMuted
@@ -48,7 +52,7 @@ import com.example.pmmovil.ui.theme.PmmTextPrimary
 import com.example.pmmovil.ui.theme.PmmTextSecondary
 
 /**
- * Selector único para abrir una entrada en modo normal o por códigos de barras.
+ * Selector único para abrir una entrada en modo normal, escaneo de etiquetas o por códigos de barras.
  *
  * Se usa tanto desde la lista de asignaciones como desde la bandeja de
  * notificaciones para que ambos flujos presenten exactamente la misma decisión.
@@ -63,12 +67,22 @@ fun RevisionModeSelectorContent(
     preferredMode: ModePreferences.Mode,
     isOpening: Boolean,
     onModeSelected: (ModePreferences.Mode) -> Unit,
-    onBack: (() -> Unit)? = null
+    onBack: (() -> Unit)? = null,
+    /**
+     * Nombre del grupo de etiquetas del cliente, o null si no tiene uno activo. Sin él la opción de
+     * escanear etiquetas **no se muestra**: ofrecerla a un cliente que no imprime códigos hace que el
+     * revisador abra la cámara para nada y acabe desconfiando del modo.
+     */
+    grupoDeEtiquetas: String? = null
 ) {
+    val ofreceEtiquetas = !grupoDeEtiquetas.isNullOrBlank()
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .navigationBarsPadding()
+            // Con tres modos el contenido ya no cabe en una pantalla de 640 dp de alto (el Honeywell CT60):
+            // sin desplazamiento el último modo quedaría cortado.
+            .verticalScroll(rememberScrollState())
             .padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -163,6 +177,18 @@ fun RevisionModeSelectorContent(
             enabled = !isOpening,
             onClick = { onModeSelected(ModePreferences.Mode.NORMAL) }
         )
+        if (ofreceEtiquetas) {
+            RevisionModeOption(
+                title = stringResource(R.string.revision_labels_mode),
+                // Decir de quién son las etiquetas quita la duda de si este modo sirve para esta caja.
+                description = stringResource(R.string.revision_labels_mode_for_group, grupoDeEtiquetas.orEmpty()),
+                icon = Icons.Default.DocumentScanner,
+                accent = PmmGreenDark,
+                recommended = preferredMode == ModePreferences.Mode.LABELS,
+                enabled = !isOpening,
+                onClick = { onModeSelected(ModePreferences.Mode.LABELS) }
+            )
+        }
         RevisionModeOption(
             title = stringResource(R.string.revision_barcode_mode),
             description = stringResource(R.string.revision_barcode_mode_description),

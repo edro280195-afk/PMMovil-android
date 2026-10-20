@@ -37,6 +37,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.example.pmmovil.ui.revision.MODO_ETIQUETAS
 import com.example.pmmovil.ui.scanner.ScanProfile
 import com.example.pmmovil.data.scanner.HardwareBarcodeDecoder
 import com.example.pmmovil.data.scanner.ScanEventBus
@@ -317,6 +318,7 @@ class MainActivity : AppCompatActivity() {
                                 onOpenRevisionFromNotification = { crefAgrupada, mode ->
                                     val destination = when (mode) {
                                         ModePreferences.Mode.BARCODE -> "barcode/$crefAgrupada"
+                                        ModePreferences.Mode.LABELS -> "detalle/$crefAgrupada?modo=$MODO_ETIQUETAS"
                                         ModePreferences.Mode.NORMAL -> "detalle/$crefAgrupada"
                                     }
                                     navController.navigate(destination)
@@ -771,6 +773,11 @@ class MainActivity : AppCompatActivity() {
                                 onNavigateToNormal = { crefAgrupada ->
                                     navController.navigate("detalle/$crefAgrupada")
                                 },
+                                onNavigateToLabels = { crefAgrupada ->
+                                    // Misma pantalla y mismo cierre que la revisión normal; el argumento solo
+                                    // le pide abrir la cámara de etiqueta al entrar.
+                                    navController.navigate("detalle/$crefAgrupada?modo=$MODO_ETIQUETAS")
+                                },
                                 onNavigateToBarcode = { crefAgrupada ->
                                     navController.navigate("barcode/$crefAgrupada")
                                 },
@@ -783,7 +790,15 @@ class MainActivity : AppCompatActivity() {
                             )
                         }
 
-                        composable("detalle/{crefAgrupada}") { backStackEntry ->
+                        composable(
+                            route = "detalle/{crefAgrupada}?modo={modo}",
+                            arguments = listOf(
+                                navArgument("modo") {
+                                    type = NavType.StringType
+                                    defaultValue = ""
+                                }
+                            )
+                        ) { backStackEntry ->
                             val cref = backStackEntry.arguments?.getString("crefAgrupada")
                             val barcodeResult by backStackEntry.savedStateHandle
                                 .getStateFlow<String?>("barcode", null)

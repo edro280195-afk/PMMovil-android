@@ -241,13 +241,6 @@ object LabelCaptureCotejo {
 
     private const val TOLERANCIA = 0.0005
 
-    /**
-     * Factor para pasar la unidad de la factura a piezas. En `unidades`, CNT es CIENTOS y MLL es MILLAR: una
-     * partida de «2.100 CNT» son 210 piezas, que es lo que dice la bolsa. Las demás unidades (kilos, litros,
-     * metros…) se comparan tal cual, sin factor.
-     */
-    private val FACTOR_A_PIEZAS = mapOf("PZA" to 1.0, "CNT" to 100.0, "MLL" to 1000.0)
-
     /** La unidad que la etiqueta imprime pegada al número («200 KG NET» → KG, «10 PCS PER BAG» → PZA). */
     private val UNIDADES_IMPRESAS = mapOf(
         "PC" to "PZA", "PCS" to "PZA", "PZ" to "PZA", "PZS" to "PZA", "PZA" to "PZA", "PIECES" to "PZA", "PIEZAS" to "PZA", "EA" to "PZA",
@@ -271,7 +264,8 @@ object LabelCaptureCotejo {
         val unidad = partida.UnidadFactura?.trim()?.uppercase(Locale.ROOT).orEmpty()
         if (unidad.isEmpty()) return null
         val impresa = unidadImpresa(lectura.rawValue)
-        val factor = FACTOR_A_PIEZAS[unidad]
+        // CNT y MLL se pasan a piezas (la bolsa dice 210 y la factura 2.1 CNT); kilos, litros y metros se comparan tal cual.
+        val factor = CountUnits.piecesPerUnit(unidad)
         val cantidad = if (factor != null) {
             Cantidad(etiqueta, partida.nCantFactura, unidad, "pzas", partida.nCantFactura * factor, impresa == null || impresa == "PZA")
         } else {

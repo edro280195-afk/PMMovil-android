@@ -246,8 +246,39 @@ fun DetalleRevisionScreen(
     var showCaptureDrafts by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
+    // Mismo camino para el botón «Leer etiqueta» y para la apertura directa del modo «Escaneo de etiquetas»:
+    // un envío en curso o ya confirmado no le pide nada al revisador, solo un borrador sin terminar o uno
+    // bloqueado justifica interrumpirlo antes de abrir la cámara.
+    val abrirLectorDeEtiquetas: () -> Unit = {
+        val requiereAtencion = labelCaptureDrafts.any {
+            it.status == com.example.pmmovil.data.model.LabelCaptureStatus.DRAFT ||
+                it.status == com.example.pmmovil.data.model.LabelCaptureStatus.BLOCKED
+        }
+        if (requiereAtencion) showCaptureDrafts = true
+        else {
+            partidaParaEtiqueta = null
+            capturandoEtiqueta = true
+        }
+    }
+    val puedeLeerEtiqueta = puedeModificarRevision && !isEspectador && todasLasPartidas.isNotEmpty()
+
     LaunchedEffect(viewModel.crefAgrupada, todasLasPartidas, paisesList) {
         labelCaptureViewModel.configure(viewModel.crefAgrupada, todasLasPartidas, paisesList)
+    }
+
+    // «Escaneo de etiquetas» es esta misma revisión con la cámara ya abierta. Se espera a que haya partidas contra
+    // las cuales leer y a que el revisador pueda escribir; si no, la pantalla se queda como la revisión normal.
+    LaunchedEffect(puedeLeerEtiqueta, entradaCerrada) {
+        if (puedeLeerEtiqueta && !entradaCerrada && viewModel.reclamarAperturaEtiquetas()) {
+            android.util.Log.i("MODO_ETIQUETAS", "abriendo la cámara de etiqueta al entrar · partidas=${todasLasPartidas.size}")
+            abrirLectorDeEtiquetas()
+        } else if (viewModel.aperturaEtiquetasPendiente) {
+            // Se entró por «Escaneo de etiquetas» pero todavía no hay con qué abrir la cámara: se deja constancia.
+            android.util.Log.i(
+                "MODO_ETIQUETAS",
+                "esperando para abrir la cámara · puedeLeer=$puedeLeerEtiqueta entradaCerrada=$entradaCerrada partidas=${todasLasPartidas.size}"
+            )
+        }
     }
     LaunchedEffect(labelCaptureDrafts.filter { it.status == com.example.pmmovil.data.model.LabelCaptureStatus.CONFIRMED }.map { it.captureId }) {
         if (labelCaptureDrafts.any { it.status == com.example.pmmovil.data.model.LabelCaptureStatus.CONFIRMED }) {
@@ -881,24 +912,12 @@ fun DetalleRevisionScreen(
                 },
                 onCompartir = viewModel::compartirEntrada,
                 isSharingLink = isSharingLink,
-                canReadLabel = puedeModificarRevision && !isEspectador && todasLasPartidas.isNotEmpty(),
+                canReadLabel = puedeLeerEtiqueta,
                 // Las confirmadas ya no son un pendiente del revisador: no cuentan en la insignia.
                 captureDraftCount = labelCaptureDrafts.count {
                     it.status != com.example.pmmovil.data.model.LabelCaptureStatus.CONFIRMED
                 },
-                onReadLabel = {
-                    // Un envío en curso o ya confirmado no le pide nada al revisador: solo un borrador sin
-                    // terminar o uno bloqueado justifica interrumpirlo antes de abrir la cámara.
-                    val requiereAtencion = labelCaptureDrafts.any {
-                        it.status == com.example.pmmovil.data.model.LabelCaptureStatus.DRAFT ||
-                            it.status == com.example.pmmovil.data.model.LabelCaptureStatus.BLOCKED
-                    }
-                    if (requiereAtencion) showCaptureDrafts = true
-                    else {
-                        partidaParaEtiqueta = null
-                        capturandoEtiqueta = true
-                    }
-                }
+                onReadLabel = abrirLectorDeEtiquetas
             )
             }
         },
@@ -1314,6 +1333,15 @@ fun DetalleRevisionScreen(
                     avisoEtiqueta = null
                 }
             )
+        }
+
+        // Al quedar guardada una etiqueta se cuenta su empaque: se suma a la partida (piezas y kilos),
+        // se escribe el total en la cantidad recibida y queda el «Deshacer» de siempre. Se hace aquí y
+        // no al leer la foto porque una etiqueta descartada no debe contar.
+        LaunchedEffect(labelCaptureEstado.captureId, labelCaptureEstado.envio) {
+            if (labelCaptureEstado.envio == LabelCaptureViewModel.Envio.GUARDADO) {
+                viewModel.contarEmpaque(labelCaptureEstado.observations, labelCaptureEstado.rawCodes)
+            }
         }
 
         if (labelCaptureEstado.fotoPath != null) {

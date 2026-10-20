@@ -4,6 +4,7 @@ import com.example.pmmovil.data.ocr.LabelFieldExtractor.Campo
 import com.example.pmmovil.data.ocr.LabelFieldExtractor.CampoLeido
 import com.example.pmmovil.data.ocr.LabelFieldExtractor.Origen
 import com.example.pmmovil.data.scanner.BarcodeValueNormalizer
+import com.example.pmmovil.data.scanner.LabelDataIdentifiers
 import java.util.Locale
 
 /**
@@ -45,10 +46,14 @@ object LabelBarcodeInterpreter {
         esPais: (String) -> Boolean = { false },
         lineas: List<LineaDeTexto> = emptyList()
     ): Interpretacion {
+        val catalogo = claves.map(::clave).filter(String::isNotEmpty).toSet()
+
+        // Si cada código trae su identificador de dato adentro, la etiqueta se explica sola y no hace
+        // falta adivinar nada por geometría ni por el texto. Se intenta antes que todo lo demás.
+        porIdentificadores(codigos, catalogo)?.let { return it }
+
         val simples = codigos.map(BarcodeValueNormalizer::normalizeLabel).distinct().filter(::esCodigoSimple)
         if (simples.isEmpty() || claves.isEmpty()) return Interpretacion.VACIA
-
-        val catalogo = claves.map(::clave).filter(String::isNotEmpty).toSet()
         val parte = simples.firstOrNull { valor ->
             val k = clave(valor)
             k in catalogo || sinCeros(k)?.let { it in catalogo } == true
@@ -81,6 +86,57 @@ object LabelBarcodeInterpreter {
             }
         } else emptySet()
         return Interpretacion(campos, sinOcr)
+    }
+
+    /**
+     * La etiqueta cuyos códigos traen el identificador de dato adentro: el PDF417 del compuesto químico
+     * (`+30S…+Q…+H…`) y el envío VDA de Freudenberg-NOK (un Code 39 por campo, `P…`, `Q…`, `H…`).
+     *
+     * Devuelve null si no es una de esas, para que siga el camino de siempre. Solo se acepta cuando la
+     * clave leída es la de una partida de la entrada: sin esa comprobación, un conjunto de códigos
+     * cualquiera que empezara con las letras correctas se leería como una etiqueta.
+     */
+    private fun porIdentificadores(codigos: List<String>, catalogo: Set<String>): Interpretacion? {
+        val leido = LabelDataIdentifiers.leer(codigos)
+        if (leido.vacia) return null
+
+        val parte = leido.clave ?: return null
+        val normalizada = clave(parte)
+        val enCatalogo = normalizada in catalogo ||
+            clave(LabelDataIdentifiers.sinCerosALaIzquierda(normalizada)) in catalogo
+        if (!enCatalogo) return null
+
+        val fuente = if (leido.forma == LabelDataIdentifiers.Forma.CONCATENADA) {
+            "código estructurado"
+        } else {
+            "código con nombre de campo"
+        }
+        val campos = mutableListOf(
+            CampoLeido(Campo.NUMERO_PARTE, parte, Origen.STRUCTURED_BARCODE, fuente, 99, rawCode = parte)
+        )
+        leido[LabelDataIdentifiers.Dato.CANTIDAD]?.let {
+            campos += CampoLeido(Campo.CANTIDAD, it, Origen.STRUCTURED_BARCODE, "$fuente · Q", 99, rawCode = it)
+        }
+        leido[LabelDataIdentifiers.Dato.LOTE]?.let {
+            campos += CampoLeido(Campo.LOTE, it, Origen.STRUCTURED_BARCODE, "$fuente · H", 99, rawCode = it)
+        }
+        leido[LabelDataIdentifiers.Dato.FECHA]?.let {
+            campos += CampoLeido(Campo.CADUCIDAD, fechaImpresa(it), Origen.STRUCTURED_BARCODE, "$fuente · 2D", 99, rawValue = it, rawCode = it)
+        }
+
+        // El texto no opina de lo que el código ya dijo: ahí es donde salían «LOTE = NO. (H) 5004029781»
+        // y la cantidad tomada del peso del renglón de abajo. El país sí, porque no viaja en el código.
+        return Interpretacion(
+            campos,
+            setOf(Campo.NUMERO_PARTE, Campo.CANTIDAD, Campo.LOTE, Campo.CADUCIDAD)
+        )
+    }
+
+    /** `092036` es septiembre de 2036; `10102027` es el 10 de octubre de 2027. */
+    private fun fechaImpresa(valor: String): String = when {
+        valor.length == 6 && valor.all { it in '0'..'9' } -> "${valor.substring(0, 2)}/${valor.substring(2)}"
+        valor.length == 8 && valor.all { it in '0'..'9' } -> "${valor.substring(0, 2)}/${valor.substring(2, 4)}/${valor.substring(4)}"
+        else -> valor
     }
 
     /** Un valor suelto, no uno estructurado (`+…`), GS1 con paréntesis ni con identificador AIM (`]C1`). */

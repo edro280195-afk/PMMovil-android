@@ -1,14 +1,16 @@
 package com.example.pmmovil.ui.revision
 
 import android.content.Context
+import android.util.Log
+import androidx.annotation.StringRes
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.annotation.StringRes
 import com.example.pmmovil.R
 import com.example.pmmovil.data.db.FotoDao
 import com.example.pmmovil.data.diagnostics.RevisionDiagnostics
 import com.example.pmmovil.data.model.*
+import com.example.pmmovil.data.ocr.LabelFieldExtractor
 import com.example.pmmovil.data.preferences.UnlockStore
 import com.example.pmmovil.data.repository.AuthRepository
 import com.example.pmmovil.data.repository.RevisionRepository
@@ -20,17 +22,17 @@ import com.example.pmmovil.di.ApplicationScope
 import com.example.pmmovil.ui.localization.UiText
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.text.SimpleDateFormat
+import java.util.Locale
+import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.awaitAll
-import java.text.SimpleDateFormat
-import java.util.Locale
-import javax.inject.Inject
 
 sealed class CompletaValidation {
     data class BultosDiferencia(val cnofact: String, val bultos: Int, val bultosDoc: Int) : CompletaValidation()
@@ -61,6 +63,9 @@ data class ResultadoBusquedaRevision(
 
 typealias CierreForzosoNotice = CierreForzosoMessage
 
+/** Valor del argumento `modo` de la ruta `detalle/{crefAgrupada}` cuando se entra por «Escaneo de etiquetas». */
+const val MODO_ETIQUETAS = "etiquetas"
+
 /**
  * Evento de "se acumuló cantidad por un escaneo de etiqueta segmentada,
  * todavía se puede deshacer". La Screen lo muestra como snackbar con botón
@@ -74,7 +79,13 @@ data class DeshacerAcumulacion(
     // escaneo, una edición manual) cambió el valor mientras tanto y no se
     // pisa a ciegas.
     val cantidadEsperadaActual: Double,
-    val mensaje: UiText
+    val mensaje: UiText,
+    /**
+     * El empaque que se agregó al libro, cuando la suma vino de contar una etiqueta. Deshacer tiene
+     * que quitarlo también: si solo se restituyera `nCantOut`, el empaque seguiría contado y el
+     * siguiente sumaría encima de un total que ya no existe.
+     */
+    val empaque: PackageTally.CountedPackage? = null
 )
 
 @HiltViewModel
@@ -85,12 +96,38 @@ class DetalleRevisionViewModel @Inject constructor(
     private val unlockStore: UnlockStore,
     private val fotoDao: FotoDao,
     private val labelCaptureDao: com.example.pmmovil.data.db.LabelCaptureDao,
+    private val ledgerPreferences: com.example.pmmovil.data.preferences.PackageLedgerPreferences,
     @ApplicationScope private val applicationScope: CoroutineScope,
     @ApplicationContext private val appContext: Context,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
     val crefAgrupada: String = checkNotNull(savedStateHandle["crefAgrupada"])
+
+    /**
+     * Verdadero cuando el revisador entró por el modo «Escaneo de etiquetas» (ruta `detalle/{cref}?modo=etiquetas`):
+     * es esta misma revisión, con la cámara de etiqueta abierta desde el primer momento.
+     */
+    val abrirEtiquetasAlEntrar: Boolean = savedStateHandle.get<String>("modo") == MODO_ETIQUETAS
+
+    private var aperturaEtiquetasReclamada = false
+
+    /** Se entró por «Escaneo de etiquetas» y la cámara todavía no se abrió. */
+    val aperturaEtiquetasPendiente: Boolean get() = abrirEtiquetasAlEntrar && !aperturaEtiquetasReclamada
+
+    /**
+     * Devuelve verdadero una sola vez por pantalla: la cámara se abre al entrar, no cada vez que se regresa de la
+     * galería o de la cámara de evidencia (la pantalla se recompone y sin esto se reabriría sola).
+     */
+    fun reclamarAperturaEtiquetas(): Boolean {
+        if (!abrirEtiquetasAlEntrar || aperturaEtiquetasReclamada) return false
+        aperturaEtiquetasReclamada = true
+        return true
+    }
+
+    init {
+        Log.i("MODO_ETIQUETAS", "revisión $crefAgrupada abierta · modo=${if (abrirEtiquetasAlEntrar) "etiquetas" else "normal"}")
+    }
 
     private val _facturas = MutableStateFlow<List<FacturaRevisionDto>>(emptyList())
     val facturas: StateFlow<List<FacturaRevisionDto>> = _facturas.asStateFlow()
@@ -131,6 +168,19 @@ class DetalleRevisionViewModel @Inject constructor(
     // que acumuló cantidad automáticamente (ver procesarCodigoEscaneado).
     private val _ultimaAcumulacion = MutableStateFlow<DeshacerAcumulacion?>(null)
     val ultimaAcumulacion: StateFlow<DeshacerAcumulacion?> = _ultimaAcumulacion.asStateFlow()
+
+    /**
+     * El libro de empaques contados de esta entrada. Sobrevive a que se cierre la app porque una
+     * entrada de Freudenberg lleva decenas de etiquetas y perder la cuenta a media revisión obligaría
+     * a empezar de nuevo.
+     */
+    private val _libroEmpaques = MutableStateFlow(ledgerPreferences.get(crefAgrupada))
+    val libroEmpaques: StateFlow<PackageTally.Ledger> = _libroEmpaques.asStateFlow()
+
+    private fun guardarLibro(ledger: PackageTally.Ledger) {
+        _libroEmpaques.value = ledger
+        ledgerPreferences.set(crefAgrupada, ledger)
+    }
 
     fun consumeUltimaAcumulacion() {
         _ultimaAcumulacion.value = null
@@ -1314,20 +1364,108 @@ class DetalleRevisionViewModel @Inject constructor(
             // suyo arriba) para que no se amontonen dos snackbars por el mismo
             // escaneo -- el de abajo, con "Deshacer", ya incluye a dónde saltó.
             _toast.value = null
+            // La etiqueta cuenta piezas y la factura puede ir en cientos o millares («2.1 CNT» son 210 piezas):
+            // el aviso compara en piezas, no un 210 contra un 2.1.
+            val enPiezas = CountUnits.toPieces(partida.nCantFactura, partida.UnidadFactura)
             _ultimaAcumulacion.value = DeshacerAcumulacion(
                 idRevdet = partida.IdRevdet,
                 cantidadPrevia = cantidadPrevia,
                 cantidadEsperadaActual = nuevoTotal,
-                mensaje = resource(
-                    R.string.message_scan_accumulated,
-                    posicion.takeIf { it > 0 } ?: "?",
-                    articulo,
-                    quantityText(cantidad),
-                    quantityText(nuevoTotal),
-                    quantityText(partida.nCantFactura)
-                )
+                mensaje = if (enPiezas != null) {
+                    resource(
+                        R.string.message_scan_accumulated_pieces,
+                        posicion.takeIf { it > 0 } ?: "?",
+                        articulo,
+                        quantityText(cantidad),
+                        quantityText(nuevoTotal),
+                        quantityText(enPiezas)
+                    )
+                } else {
+                    resource(
+                        R.string.message_scan_accumulated,
+                        posicion.takeIf { it > 0 } ?: "?",
+                        articulo,
+                        quantityText(cantidad),
+                        quantityText(nuevoTotal),
+                        quantityText(partida.nCantFactura)
+                    )
+                }
             )
         }
+    }
+
+    /**
+     * Cuenta el empaque de una etiqueta recién leída: lo suma a su partida, escribe el total en la
+     * cantidad recibida y deja listo el «Deshacer».
+     *
+     * La diferencia con el «escanear y sumar» de [procesarCodigoEscaneado] es el **libro**: las
+     * partidas llegan con la cantidad recibida precargada con la de la factura, así que sumar encima
+     * daría de más. Aquí el primer empaque de una partida **reemplaza** ese valor y los siguientes se
+     * suman; y un empaque con identificador no se cuenta dos veces aunque se relea su etiqueta.
+     *
+     * @param multiple cuántos empaques idénticos representa la lectura («son 50 cajas iguales»).
+     */
+    fun contarEmpaque(
+        campos: List<LabelFieldExtractor.CampoLeido>,
+        codigos: List<String>,
+        multiple: Int = 1
+    ) {
+        if (!canEdit()) {
+            denyPermission(R.string.permission_modify_parts)
+            return
+        }
+        val lectura = PackageTally.read(campos, codigos)
+        if (lectura !is PackageTally.Reading.Ready) {
+            // Sin clave de un código de barras no se cuenta solo: el revisador sigue por la tarjeta.
+            if (lectura is PackageTally.Reading.SeveralLabels) {
+                _toast.value = resource(R.string.message_tally_several_labels)
+            }
+            return
+        }
+
+        when (val resultado = PackageTally.process(_partidas.value, _libroEmpaques.value, lectura.label, multiple)) {
+            is PackageTally.Result.Added -> aplicarConteo(resultado)
+            is PackageTally.Result.AlreadyCounted ->
+                _toast.value = resource(R.string.message_tally_already_counted, resultado.where?.CnoParte.orEmpty())
+            is PackageTally.Result.AlreadyReviewed ->
+                _toast.value = resource(R.string.message_tally_already_reviewed, resultado.partida.CnoParte.orEmpty())
+            is PackageTally.Result.MissingQuantity ->
+                _toast.value = resource(R.string.message_tally_missing_quantity, resultado.partida.CnoParte.orEmpty())
+            is PackageTally.Result.NotInEntry ->
+                _toast.value = resource(R.string.message_tally_not_in_entry, resultado.key)
+            is PackageTally.Result.SeveralPartidas ->
+                _toast.value = resource(R.string.message_tally_several_partidas, resultado.candidates.size)
+            is PackageTally.Result.UnsupportedUnit ->
+                _toast.value = resource(R.string.message_tally_unsupported_unit, resultado.unit)
+        }
+    }
+
+    private fun aplicarConteo(resultado: PackageTally.Result.Added) {
+        guardarLibro(_libroEmpaques.value.plus(resultado.counted))
+        actualizarDatoPartida(resultado.partida, "nCantOut", resultado.totalAfter)
+        _toast.value = null
+
+        val pesoLeido = PesoDeEtiqueta.avisoAcumuladoRecurso(
+            empaquesPesados = _libroEmpaques.value.weighedCount(resultado.partida.IdRevdet),
+            empaquesContados = _libroEmpaques.value.ofPartida(resultado.partida.IdRevdet).size,
+            pesoAcumuladoKg = resultado.totalWeightKg,
+            pesoDeclaradoKg = resultado.expectedWeightKg
+        )?.let { (id, args) -> resource(id, *args) }
+        _ultimaAcumulacion.value = DeshacerAcumulacion(
+            idRevdet = resultado.partida.IdRevdet,
+            cantidadPrevia = resultado.previousReceived ?: 0.0,
+            cantidadEsperadaActual = resultado.totalAfter,
+            mensaje = resource(
+                R.string.message_tally_added,
+                resultado.partida.CnoParte.orEmpty(),
+                quantityText(resultado.counted.pieces),
+                quantityText(resultado.totalAfter),
+                quantityText(resultado.expected)
+            ),
+            empaque = resultado.counted
+        )
+        // El peso va en su propio aviso: es información de cotejo, no cambia nada de la partida.
+        pesoLeido?.let { _toast.value = it }
     }
 
     /**
@@ -1346,8 +1484,16 @@ class DetalleRevisionViewModel @Inject constructor(
             _toast.value = resource(R.string.message_undo_changed)
             return
         }
-        actualizarDatoPartida(partida, "nCantOut", evento.cantidadPrevia)
-        _toast.value = resource(R.string.message_undone, quantityText(evento.cantidadPrevia))
+        // Quitar el empaque del libro ANTES de decidir qué cantidad dejar: si era el único de la
+        // partida vuelve lo que traía, y si quedan otros vuelve lo que esos suman.
+        val cantidadQueVuelve = evento.empaque?.let { empaque ->
+            val sinEl = _libroEmpaques.value.minus(empaque)
+            guardarLibro(sinEl)
+            PackageTally.receivedAfterUndo(sinEl, empaque, evento.cantidadPrevia)
+        } ?: evento.cantidadPrevia
+
+        actualizarDatoPartida(partida, "nCantOut", cantidadQueVuelve)
+        _toast.value = resource(R.string.message_undone, quantityText(cantidadQueVuelve))
     }
 
     private fun scoreCoincidencia(valor: String, query: String): Int? {
@@ -1718,7 +1864,8 @@ class DetalleRevisionViewModel @Inject constructor(
     private fun resource(@StringRes id: Int, vararg args: Any): UiText =
         UiText.Resource(id, args.toList())
 
-    private fun quantityText(value: Double): String = value.toString()
+    // Sin ceros sobrantes: «210», no «210.0»; «2.1», no «2.100».
+    private fun quantityText(value: Double): String = LabelCaptureCotejo.numero(value)
 
     /**
      * Reglas de bloqueo de campos de una factura — alineadas con la web

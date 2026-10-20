@@ -72,6 +72,28 @@ object LabelCaptureStatus {
     const val CONFIRMED = "CONFIRMED"
 }
 
+/**
+ * Si al cliente de la entrada se le ofrece leer etiquetas con la cámara.
+ *
+ * Lo decide el catálogo de grupos que se administra en el panel, no la app: así se da de alta un
+ * cliente nuevo sin publicar una versión. El grupo existe porque una misma empresa llega con varios
+ * números de cliente — Freudenberg son cinco — y todos pegan el mismo papel a la caja.
+ *
+ * El API serializa en camelCase (`Program.cs`), por eso los nombres van así.
+ */
+data class EtiquetaPerfilCliente(
+    val aplica: Boolean = false,
+    /** Clave del grupo; es la que amarra con el perfil de lectura. Null cuando no aplica. */
+    val clave: String? = null,
+    /** Nombre del grupo, para poder decirlo en pantalla. */
+    val nombre: String? = null
+)
+
+data class EtiquetaPerfilClienteResponse(
+    val success: Boolean = false,
+    val perfil: EtiquetaPerfilCliente? = null
+)
+
 /** El borrador y la petición aceptada sobreviven al cierre del proceso. */
 @Entity(tableName = "label_capture_drafts")
 data class LabelCaptureDraftEntity(

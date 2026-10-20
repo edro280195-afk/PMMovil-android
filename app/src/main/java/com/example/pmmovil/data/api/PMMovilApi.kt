@@ -217,6 +217,15 @@ interface PMMovilApi {
         @Header("Authorization") authorization: String
     ): Response<LabelCaptureResponse>
 
+    /**
+     * ¿A este cliente se le ofrece leer las etiquetas con la cámara? Lo decide el catálogo de grupos
+     * que se administra en el panel; un cliente sin grupo activo se revisa a mano, como siempre.
+     */
+    @GET("Revision/etiqueta-grupos/perfil-entrada/{crefAgrupada}")
+    suspend fun getEtiquetaPerfilDeEntrada(
+        @Path("crefAgrupada") crefAgrupada: String
+    ): Response<EtiquetaPerfilClienteResponse>
+
     @POST("Revision/factura/limpiar-revisador")
     suspend fun limpiarRevisor(@Body request: CnofactRequest): Response<SimpleSuccessResponse>
 

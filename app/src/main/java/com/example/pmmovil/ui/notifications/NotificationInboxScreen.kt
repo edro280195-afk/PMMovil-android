@@ -40,6 +40,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -59,6 +60,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.pmmovil.data.model.NotificationInboxItem
 import com.example.pmmovil.data.preferences.ModePreferences
+import com.example.pmmovil.ui.revision.EtiquetaPerfilViewModel
 import com.example.pmmovil.ui.revision.RevisionModeSelectorContent
 import com.example.pmmovil.ui.theme.PmmAmber
 import com.example.pmmovil.ui.theme.PmmAmberDark
@@ -191,6 +193,12 @@ private fun NotificationRevisionSelectionPanel(
                 }
             }
 
+            val perfilEtiquetas: EtiquetaPerfilViewModel = hiltViewModel()
+            LaunchedEffect(selectedNotification.crefAgrupada) {
+                perfilEtiquetas.resolver(selectedNotification.crefAgrupada)
+            }
+            val grupoDeEtiquetas by perfilEtiquetas.grupo.collectAsState()
+
             RevisionModeSelectorContent(
                 crefAgrupada = selectedNotification.crefAgrupada.orEmpty(),
                 contextLabel = selectedNotification.title,
@@ -198,7 +206,8 @@ private fun NotificationRevisionSelectionPanel(
                 preferredMode = preferredMode,
                 isOpening = isOpeningRevision,
                 onModeSelected = onModeSelected,
-                onBack = null
+                onBack = null,
+                grupoDeEtiquetas = grupoDeEtiquetas
             )
         }
     }

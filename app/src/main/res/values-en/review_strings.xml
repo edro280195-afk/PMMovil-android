@@ -93,6 +93,9 @@
     <string name="revision_change_mode_hint">You can change the mode later if the process requires it.</string>
     <string name="revision_normal_mode">Normal inspection</string>
     <string name="revision_normal_mode_description">Invoice by invoice, with quantities, serials, and discrepancies.</string>
+    <string name="revision_labels_mode">Label scanning</string>
+    <string name="revision_labels_mode_description">Reads each label with the camera and checks it against the invoice line items.</string>
+    <string name="revision_labels_mode_for_group">Reads %1$s labels with the camera and fills in the line item from them.</string>
     <string name="revision_barcode_mode">By barcodes</string>
     <string name="revision_barcode_mode_description">Fast scanning with a scanner or camera for identified products.</string>
     <string name="revision_preferred">PREFERRED</string>
@@ -359,6 +362,15 @@
     <string name="message_search_part_selected">📍 Part %1$d of %2$d · Invoice %3$s</string>
     <string name="message_search_invoice_selected">📄 Invoice %1$s selected</string>
     <string name="message_scan_accumulated">📦 Part %1$s · item %2$s · +%3$s → accumulated %4$s of %5$s</string>
+    <string name="message_scan_accumulated_pieces">📦 Part %1$s · item %2$s · +%3$s → accumulated %4$s of %5$s pcs</string>
+    <string name="message_tally_added">📦 %1$s · +%2$s → counted %3$s of %4$s pcs</string>
+    <string name="message_tally_already_counted">That package was already counted in %1$s. It was not added again.</string>
+    <string name="message_tally_already_reviewed">Line item %1$s is already reviewed: nothing is counted on top.</string>
+    <string name="message_tally_missing_quantity">The label for %1$s has no quantity in a barcode. Enter it by hand.</string>
+    <string name="message_tally_not_in_entry">Key %1$s is not in this entry. Is the label from another one?</string>
+    <string name="message_tally_several_partidas">There are %1$d line items with that key: pick one before counting.</string>
+    <string name="message_tally_unsupported_unit">This line item is in %1$s: it is not counted by pieces.</string>
+    <string name="message_tally_several_labels">More than one label in frame. Focus on a single one.</string>
     <string name="message_server_review_api">check the API</string>
     <string name="revision_read_label_photo">Read label with camera</string>
     <string name="revision_read_label_title">Read label</string>

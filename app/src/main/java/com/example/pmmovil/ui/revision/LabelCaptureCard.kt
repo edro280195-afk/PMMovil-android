@@ -769,6 +769,8 @@ private fun nombreDeCampo(campo: Campo): String = stringResource(
         Campo.GRUPO_EMBALAJE -> R.string.label_capture_field_group
         Campo.MARCA -> R.string.label_capture_field_brand
         Campo.MODELO -> R.string.label_capture_field_model
+        Campo.PESO_NETO -> R.string.label_capture_field_weight
+        Campo.PESO_BRUTO -> R.string.label_capture_field_gross_weight
     }
 )
 

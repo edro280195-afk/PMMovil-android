@@ -1,8 +1,10 @@
 package com.example.pmmovil.ui.revision
 
 import android.os.SystemClock
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.pmmovil.BuildConfig
 import com.example.pmmovil.data.model.LabelCaptureDraftEntity
 import com.example.pmmovil.data.model.LabelCaptureResponse
 import com.example.pmmovil.data.model.LabelCaptureSnapshot
@@ -164,6 +166,7 @@ class LabelCaptureViewModel @Inject constructor(
         countries = catalogoPaises
         cancelReading()
         val token = generation
+        Log.i(TAG, "foto recibida · códigos del video=${codigosEnVivo.size}${codigosParaLog(codigosEnVivo)} · partidas=${partidas.size}")
         _estado.value = Estado(analizando = true, fotoPath = path, availablePartidas = partidas)
         analysisJob = viewModelScope.launch {
             try {
@@ -252,6 +255,12 @@ class LabelCaptureViewModel @Inject constructor(
             error = if (proposed.isEmpty()) "No se identificaron campos. Puedes elegir la partida y conservar la foto como avance." else null
         ))
         val selectedId = initialPartidaId ?: selectedBefore?.IdRevdet ?: matching.suggestedPartidaId
+        Log.i(
+            TAG,
+            "lectura lista en ${SystemClock.elapsedRealtime() - started} ms · códigos de la foto=${codes.size}${codigosParaLog(codes)} · " +
+                "campos=${proposed.joinToString(",") { it.leido.campo.name }} · conflictos=${extraction.conflicts.size} · " +
+                "candidatas=${matching.candidates.size} · sugerida=${matching.suggestedPartidaId} · mejorar=$improve"
+        )
         // Si el revisador abrió la cámara desde una partida, esa elección ya es suya.
         if (selectedId != null && selectedId != selectedBefore?.IdRevdet) {
             elegirPartida(selectedId, porUsuario = initialPartidaId != null)
@@ -299,9 +308,11 @@ class LabelCaptureViewModel @Inject constructor(
             val result = repository.getContext(selected.IdRevdet, reference)
             if (_estado.value.captureId != captureId || _estado.value.selectedPartida?.IdRevdet != selected.IdRevdet) return@launch
             result.onSuccess { response ->
+                Log.i(TAG, "contexto de la partida ${selected.IdRevdet}: canEdit=${response.canEdit} canMarkReviewed=${response.canMarkReviewed}${response.message?.let { " · $it" }.orEmpty()}")
                 update(_estado.value.copy(snapshot = response.snapshot, loadingContext = false, canEdit = response.canEdit,
                     canMarkReviewed = response.canMarkReviewed, error = if (response.canEdit) null else response.message))
             }.onFailure { error ->
+                Log.w(TAG, "contexto de la partida ${selected.IdRevdet} falló: ${error.message}")
                 update(_estado.value.copy(loadingContext = false, error = error.message))
             }
         }
@@ -345,6 +356,7 @@ class LabelCaptureViewModel @Inject constructor(
         val state = _estado.value
         val request = LabelCaptureCotejo.armarPeticion(state, reference, markReviewed) ?: return
         val captureId = request.captureId
+        Log.i(TAG, "guardar: partida=${request.idRevdet} marcarRevisada=$markReviewed captura=${captureId.toString().take(8)}")
         _estado.value = state.copy(syncStatus = LabelCaptureStatus.PENDING, syncMessage = "Preparando la evidencia…",
             envio = Envio.GUARDANDO, marcadaRevisada = markReviewed)
         viewModelScope.launch {
@@ -488,7 +500,12 @@ class LabelCaptureViewModel @Inject constructor(
         return CampoPropuesto(leido, writable, writable, if (writable) Destino.PARTIDA else Destino.NINGUNO)
     }
 
+    /** Los valores de los códigos solo se escriben en builds de depuración: son datos de la mercancía del cliente. */
+    private fun codigosParaLog(codes: List<String>): String =
+        if (BuildConfig.DEBUG && codes.isNotEmpty()) " [" + codes.joinToString(" | ") { it.take(40) }.take(420) + "]" else ""
+
     companion object {
+        private const val TAG = "LABEL_CAPTURE"
         private const val RETIRO_MILLIS = 3_000L
 
         val CAMPOS_ESCRIBIBLES = mapOf(

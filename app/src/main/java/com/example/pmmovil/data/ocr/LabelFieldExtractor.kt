@@ -14,7 +14,25 @@ object LabelFieldExtractor {
     enum class Campo {
         LOTE, NUMERO_PARTE, NUMERO_SERIE, CANTIDAD, PIEZAS_POR_EMPAQUE,
         PAIS_ORIGEN, CADUCIDAD, UN_HAZMAT, CLASE_HAZMAT, GRUPO_EMBALAJE,
-        MARCA, MODELO
+        MARCA, MODELO,
+
+        /**
+         * Lo que la etiqueta rotula como peso **neto** (`NET WT`). Se lee tal cual viene impreso.
+         *
+         * El peso es el único campo que el revisador llena siempre, en todos los clientes (medido en
+         * las partidas ya revisadas), así que leerlo de la etiqueta ahorra más que cualquier otro.
+         *
+         * **No se decide aquí a qué columna va.** La base no distingue neto de bruto: no hay ninguna
+         * columna que lo diga en `revdet` ni en `fact`, y la pantalla de revisión rotula sus campos
+         * «Peso lb» y «Peso kg» a secas, bajo «Captura lo encontrado en bodega». Medido además: el
+         * peso de la factura es mayor que el de su partida en el 57 % de los casos incluso en
+         * facturas de una sola partida, así que tampoco son el mismo número. Por eso se leen los dos
+         * pesos de la etiqueta y la correspondencia la decide quien conoce el negocio.
+         */
+        PESO_NETO,
+
+        /** Lo que la etiqueta rotula como peso **bruto** (`GROSS WT`). Ver la nota de [PESO_NETO]. */
+        PESO_BRUTO
     }
 
     enum class Origen {
@@ -37,7 +55,9 @@ object LabelFieldExtractor {
         val rawValue: String = valor,
         val rawCode: String? = null,
         val quantityScope: QuantityScope = QuantityScope.UNSPECIFIED,
-        val packageTotal: String? = null
+        val packageTotal: String? = null,
+        /** Unidad impresa junto al valor: «KG» o «LB» en el peso, «PC» o «PZ» en la cantidad. */
+        val unidad: String? = null
     )
 
     data class FieldConflict(val field: Campo, val observations: List<CampoLeido>)
@@ -75,13 +95,25 @@ object LabelFieldExtractor {
         Campo.CLASE_HAZMAT to listOf("HAZARD CLASS", "CLASE DE PELIGRO", "CLASE"),
         Campo.GRUPO_EMBALAJE to listOf("PACKING GROUP", "GRUPO DE EMBALAJE", "GRUPO EMBALAJE"),
         Campo.MARCA to listOf("BRAND", "MARCA", "MANUFACTURER", "FABRICANTE"),
-        Campo.MODELO to listOf("MODEL", "MODELO", "MOD", "TYPE")
+        Campo.MODELO to listOf("MODEL", "MODELO", "MOD", "TYPE"),
+        // Las variantes con unidad van primero: con «NET WT KG» el valor es solo el número y la unidad
+        // sale del propio rótulo, que es más confiable que adivinarla.
+        Campo.PESO_NETO to listOf(
+            "NET WT KG", "NET WEIGHT KG", "NET WT LB", "NET WEIGHT LB", "PESO NETO KG",
+            "NET WGT", "NET WEIGHT", "NET WT", "PESO NETO"
+        ),
+        // Se leen los dos pesos. Cuál corresponde a cada campo de la pantalla no lo decide el lector:
+        // ver la nota en Campo.PESO_NETO.
+        Campo.PESO_BRUTO to listOf(
+            "GROSS WT KG", "GROSS WEIGHT KG", "GROSS WT LB", "GROSS WEIGHT LB", "PESO BRUTO KG",
+            "GROSS WGT", "GROSS WEIGHT", "GROSS WT", "PESO BRUTO"
+        )
     )
 
     // También delimitan valores, aunque no sean campos que se vayan a capturar.
     private val boundaryAnchors = listOf(
         "ORDER #", "ORDER NO", "ORDER", "P/O", "PO", "DESCRIPTION", "CUSTOMER",
-        "NET WGT", "NET WT", "GROSS WT", "UNIT WT", "REV"
+        "UNIT WT", "REV", "NO OF BOXES"
     )
 
     // Se exige renglón completo: una marca mencionada en una dirección o una
@@ -142,10 +174,11 @@ object LabelFieldExtractor {
                     if (nextAnchors.firstOrNull()?.start == 0) return@anchorLoop
                     cleanValue(nextLine.substring(0, nextAnchors.firstOrNull()?.start ?: nextLine.length))
                 }
-                readAnchoredValue(field, rawValue)?.let { parsed ->
+                val anchorText = line.substring(anchor.start, anchor.end)
+                readAnchoredValue(field, rawValue, anchorText)?.let { parsed ->
                     observations += parsed.copy(
                         origen = if (sameLine.isNotEmpty()) Origen.ANCLA_MISMA_LINEA else Origen.ANCLA_LINEA_SIGUIENTE,
-                        ancla = line.substring(anchor.start, anchor.end),
+                        ancla = anchorText,
                         confianza = if (sameLine.isNotEmpty()) 90 else 70
                     )
                 }
@@ -219,7 +252,7 @@ object LabelFieldExtractor {
             .trimEnd(':', ',', ';', '.', ' ')
     }
 
-    private fun readAnchoredValue(field: Campo, raw: String): CampoLeido? {
+    private fun readAnchoredValue(field: Campo, raw: String, anchorText: String = ""): CampoLeido? {
         var value = raw
         printedAiPattern.find(value)?.let { marker ->
             if (gs1Specs[marker.groupValues[1]]?.field == field) value = value.substring(marker.range.last + 1).trim()
@@ -227,7 +260,17 @@ object LabelFieldExtractor {
         if (value.isBlank() || value.length > 60 || value.none(Char::isLetterOrDigit)) return null
         var scope = if (field == Campo.PIEZAS_POR_EMPAQUE) QuantityScope.PACKAGE_CONTENT else QuantityScope.UNSPECIFIED
         var packageTotal: String? = null
+        var unidad: String? = null
         when (field) {
+            Campo.PESO_NETO, Campo.PESO_BRUTO -> {
+                val peso = weightPattern.matchEntire(value) ?: return null
+                // La unidad puede venir antes del número («KG 8»), después («8 KG») o solo en el
+                // rótulo («NET WT KG» con el 8 en el renglón de abajo).
+                unidad = normalizarUnidadDePeso(peso.groupValues[1].ifBlank { peso.groupValues[3] })
+                    ?: normalizarUnidadDePeso(anchorText)
+                value = peso.groupValues[2].replace(',', '.')
+                if (value.toDoubleOrNull()?.let { it > 0 } != true) return null
+            }
             Campo.CANTIDAD, Campo.PIEZAS_POR_EMPAQUE -> {
                 val ordinal = ordinalPattern.matchEntire(value)
                 if (ordinal != null) {
@@ -252,7 +295,23 @@ object LabelFieldExtractor {
             Campo.MARCA, Campo.MODELO -> if (value.length > 40) return null
             else -> Unit
         }
-        return CampoLeido(field, value, Origen.ANCLA_MISMA_LINEA, "", 90, rawValue = raw, quantityScope = scope, packageTotal = packageTotal)
+        return CampoLeido(
+            field, value, Origen.ANCLA_MISMA_LINEA, "", 90,
+            rawValue = raw, quantityScope = scope, packageTotal = packageTotal, unidad = unidad
+        )
+    }
+
+    /** «8 KG», «KG 8», «73.500» (con la unidad en el rótulo) o «12,5 LBS». */
+    private val weightPattern =
+        Regex("""^(?:(KGS?|LBS?)\s*)?(\d{1,7}(?:[.,]\d{1,3})?)\s*(KGS?|LBS?)?$""", RegexOption.IGNORE_CASE)
+
+    private fun normalizarUnidadDePeso(texto: String): String? {
+        val t = texto.uppercase(Locale.ROOT)
+        return when {
+            Regex("""\bKGS?\b""").containsMatchIn(t) -> "KG"
+            Regex("""\bLBS?\b""").containsMatchIn(t) -> "LB"
+            else -> null
+        }
     }
 
     /** «0049263333» y «49263333» son la misma clave: los ceros a la izquierda son relleno del proveedor. */
@@ -263,10 +322,12 @@ object LabelFieldExtractor {
         val value = when (observation.campo) {
             Campo.NUMERO_PARTE -> sinCerosSiNumerico(observation.valor)
             Campo.MARCA, Campo.PAIS_ORIGEN, Campo.GRUPO_EMBALAJE -> observation.valor.uppercase(Locale.ROOT)
-            Campo.CANTIDAD, Campo.PIEZAS_POR_EMPAQUE -> observation.valor.toBigDecimalOrNull()?.stripTrailingZeros()?.toPlainString() ?: observation.valor
+            Campo.CANTIDAD, Campo.PIEZAS_POR_EMPAQUE, Campo.PESO_NETO, Campo.PESO_BRUTO -> observation.valor.toBigDecimalOrNull()?.stripTrailingZeros()?.toPlainString() ?: observation.valor
             else -> observation.valor
         }
-        return "${observation.quantityScope}|${observation.packageTotal}|$value"
+        // La unidad entra en la llave: 8 KG y 8 LB no son el mismo peso, y tomarlos por iguales
+        // escribiría una cifra que no es.
+        return "${observation.quantityScope}|${observation.packageTotal}|${observation.unidad}|$value"
     }
 
     private fun readStructuredCode(code: String, rawCode: String): List<CampoLeido> {

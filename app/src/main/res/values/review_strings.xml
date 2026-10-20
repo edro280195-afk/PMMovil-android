@@ -95,6 +95,9 @@
     <string name="revision_change_mode_hint">Puedes cambiar de modo más adelante si el proceso lo requiere.</string>
     <string name="revision_normal_mode">Revisión normal</string>
     <string name="revision_normal_mode_description">Factura por factura, con cantidades, series y discrepancias.</string>
+    <string name="revision_labels_mode">Escaneo de etiquetas</string>
+    <string name="revision_labels_mode_description">Lee cada etiqueta con la cámara y la coteja con las partidas de la factura.</string>
+    <string name="revision_labels_mode_for_group">Lee las etiquetas de %1$s con la cámara y llena la partida con lo que traigan.</string>
     <string name="revision_barcode_mode">Por códigos de barras</string>
     <string name="revision_barcode_mode_description">Escaneo rápido con pistola o cámara para productos identificados.</string>
     <string name="revision_preferred">PREFERIDO</string>
@@ -364,6 +367,15 @@
     <string name="message_search_part_selected">📍 Partida %1$d de %2$d · Factura %3$s</string>
     <string name="message_search_invoice_selected">📄 Factura %1$s seleccionada</string>
     <string name="message_scan_accumulated">📦 Partida %1$s · artículo %2$s · +%3$s → acumulado %4$s de %5$s</string>
+    <string name="message_scan_accumulated_pieces">📦 Partida %1$s · artículo %2$s · +%3$s → acumulado %4$s de %5$s pzas</string>
+    <string name="message_tally_added">📦 %1$s · +%2$s → contado %3$s de %4$s pzas</string>
+    <string name="message_tally_already_counted">Ese empaque ya estaba contado en %1$s. No se sumó otra vez.</string>
+    <string name="message_tally_already_reviewed">La partida %1$s ya está revisada: no se cuenta encima.</string>
+    <string name="message_tally_missing_quantity">La etiqueta de %1$s no trae la cantidad en un código. Captúrala a mano.</string>
+    <string name="message_tally_not_in_entry">La clave %1$s no está en esta entrada. ¿La etiqueta es de otra?</string>
+    <string name="message_tally_several_partidas">Hay %1$d partidas con esa clave: elige cuál antes de contar.</string>
+    <string name="message_tally_unsupported_unit">Esta partida va en %1$s: no se cuenta por piezas.</string>
+    <string name="message_tally_several_labels">Hay más de una etiqueta en el cuadro. Enfoca una sola.</string>
     <string name="message_server_review_api">revisa el API</string>
     <string name="revision_read_label_photo">Leer etiqueta con la cámara</string>
     <string name="revision_read_label_title">Leer etiqueta</string>

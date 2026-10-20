@@ -21,12 +21,12 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -95,9 +95,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -105,7 +106,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.pmmovil.R
 import com.example.pmmovil.data.model.EntradaPendienteDto
@@ -113,8 +113,11 @@ import com.example.pmmovil.data.preferences.ModePreferences
 import com.example.pmmovil.ui.components.PmmStatusBar
 import com.example.pmmovil.ui.components.SkeletonCircle
 import com.example.pmmovil.ui.components.SkeletonLine
-import com.example.pmmovil.ui.scanner.HardwareScannerListener
+import com.example.pmmovil.ui.components.rememberUnlockApprovedAlert
+import com.example.pmmovil.ui.localization.resolve
+import com.example.pmmovil.ui.revision.EtiquetaPerfilViewModel
 import com.example.pmmovil.ui.revision.RevisionModeSelectorContent
+import com.example.pmmovil.ui.scanner.HardwareScannerListener
 import com.example.pmmovil.ui.theme.PMMovilTheme
 import com.example.pmmovil.ui.theme.PmmAmber
 import com.example.pmmovil.ui.theme.PmmAmberDark
@@ -132,15 +135,14 @@ import com.example.pmmovil.ui.theme.PmmRedDark
 import com.example.pmmovil.ui.theme.PmmTextMuted
 import com.example.pmmovil.ui.theme.PmmTextPrimary
 import com.example.pmmovil.ui.theme.PmmTextSecondary
-import com.example.pmmovil.ui.components.rememberUnlockApprovedAlert
 import com.example.pmmovil.ui.theme.PmmYellow
-import com.example.pmmovil.ui.localization.resolve
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AsignacionesScreen(
     onNavigateToNormal: (String) -> Unit,
+    onNavigateToLabels: (String) -> Unit,
     onNavigateToBarcode: (String) -> Unit,
     onNavigateBack: (() -> Unit)? = null,
     onNavigateToScanner: () -> Unit = {},
@@ -170,6 +172,7 @@ fun AsignacionesScreen(
                 is AsignacionesEvent.NavigateToRevision -> {
                     when (event.mode) {
                         ModePreferences.Mode.NORMAL -> onNavigateToNormal(event.crefAgrupada)
+                        ModePreferences.Mode.LABELS -> onNavigateToLabels(event.crefAgrupada)
                         ModePreferences.Mode.BARCODE -> onNavigateToBarcode(event.crefAgrupada)
                     }
                 }
@@ -1388,6 +1391,10 @@ private fun ModeSelectorSheet(
             )
         }
     ) {
+        val perfilEtiquetas: EtiquetaPerfilViewModel = hiltViewModel()
+        LaunchedEffect(entry.crefAgrupada) { perfilEtiquetas.resolver(entry.crefAgrupada) }
+        val grupoDeEtiquetas by perfilEtiquetas.grupo.collectAsState()
+
         RevisionModeSelectorContent(
             crefAgrupada = entry.crefAgrupada,
             contextLabel = entry.nombreCliente?.takeIf { it.isNotBlank() }
@@ -1396,7 +1403,8 @@ private fun ModeSelectorSheet(
             partidas = "${entry.partidasRevisadas}/${entry.totalPartidas}",
             preferredMode = preferredMode,
             isOpening = isOpening,
-            onModeSelected = onModeSelected
+            onModeSelected = onModeSelected,
+            grupoDeEtiquetas = grupoDeEtiquetas
         )
     }
 }

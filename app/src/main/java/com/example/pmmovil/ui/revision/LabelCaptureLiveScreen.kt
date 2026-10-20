@@ -194,6 +194,8 @@ fun LabelCaptureLiveScreen(
     var lamparaEncendida by remember { mutableStateOf(false) }
 
     val capturandoState = rememberUpdatedState(capturando)
+    // Último conjunto de códigos que se escribió en el log (no es estado de pantalla: no debe recomponer).
+    val ultimosCodigosLog = remember { arrayOf<List<String>>(emptyList()) }
     val executor = remember { Executors.newSingleThreadExecutor() }
     val juez = remember { JuezDeDisparo() }
 
@@ -228,6 +230,12 @@ fun LabelCaptureLiveScreen(
             // Cada cuadro guía su propio encuadre. No conserva códigos de otra
             // etiqueta que se haya enfocado antes durante esta apertura.
             codigosVistos = resultado.barcodes.distinct()
+            // Solo depuración: deja constancia de qué códigos decodifica el VIDEO y cuándo cambia el conjunto,
+            // para medir cuántos de los ocho de una etiqueta salen sin tomar foto.
+            if (com.example.pmmovil.BuildConfig.DEBUG && codigosVistos != ultimosCodigosLog[0]) {
+                ultimosCodigosLog[0] = codigosVistos
+                Log.d(TAG_CAMARA_ETIQUETA, "video: ${codigosVistos.size} códigos [${codigosVistos.joinToString(" | ") { it.take(40) }.take(420)}]")
+            }
             val campos = LabelFieldExtractor.extraer(resultado.rawText, codigosVistos)
             camposEnVivo = campos
             val listo = juez.evaluar(campos, geometria)
@@ -732,6 +740,8 @@ private fun nombreCortoDeCampo(campo: LabelFieldExtractor.Campo): String = when 
     LabelFieldExtractor.Campo.GRUPO_EMBALAJE -> "GRUPO"
     LabelFieldExtractor.Campo.MARCA -> "MARCA"
     LabelFieldExtractor.Campo.MODELO -> "MODELO"
+    LabelFieldExtractor.Campo.PESO_NETO -> "PESO NETO"
+    LabelFieldExtractor.Campo.PESO_BRUTO -> "PESO BRUTO"
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

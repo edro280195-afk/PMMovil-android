@@ -65,6 +65,14 @@
     <string name="label_capture_field_group">Grupo de embalaje</string>
     <string name="label_capture_field_brand">Marca</string>
     <string name="label_capture_field_model">Modelo</string>
+    <string name="label_capture_field_weight">Peso neto</string>
+    <string name="label_capture_field_gross_weight">Peso bruto</string>
+    <string name="label_capture_weight_two_values">La etiqueta trae dos pesos: neto %1$s %2$s y bruto %3$s %4$s. Captura el que corresponda en Inspección física.</string>
+    <string name="label_capture_weight_kept">La etiqueta dice %1$s %2$s, pero la factura ya tiene %3$s capturado. No se tocó.</string>
+    <string name="label_capture_weight_compared">La etiqueta pesa %1$s kg y la partida declara %2$s kg en total. Revisa si falta mercancía o si son varios empaques.</string>
+    <string name="label_capture_weight_sum_compared">%3$d empaques pesan %1$s kg y la partida declara %2$s kg.</string>
+    <string name="label_capture_weight_sum_partial">%3$s de %4$s empaques traen peso: suman %1$s kg de los %2$s kg que declara la partida.</string>
+    <string name="label_capture_weight_sum_only">%2$d empaques pesan %1$s kg. La partida no declara peso.</string>
     <string name="label_capture_source_gs1">Código GS1 %1$s</string>
     <string name="label_capture_source_code">Código estructurado %1$s</string>
     <string name="label_capture_source_brand">Fabricante reconocido en el texto</string>

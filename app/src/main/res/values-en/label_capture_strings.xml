@@ -65,6 +65,14 @@
     <string name="label_capture_field_group">Packing group</string>
     <string name="label_capture_field_brand">Brand</string>
     <string name="label_capture_field_model">Model</string>
+    <string name="label_capture_field_weight">Net weight</string>
+    <string name="label_capture_field_gross_weight">Gross weight</string>
+    <string name="label_capture_weight_two_values">The label carries two weights: net %1$s %2$s and gross %3$s %4$s. Enter the right one under Physical inspection.</string>
+    <string name="label_capture_weight_kept">The label says %1$s %2$s, but the invoice already has %3$s. It was left alone.</string>
+    <string name="label_capture_weight_compared">The label weighs %1$s kg and the line item declares %2$s kg in total. Check for missing goods or multiple packages.</string>
+    <string name="label_capture_weight_sum_compared">%3$d packages weigh %1$s kg and the line item declares %2$s kg.</string>
+    <string name="label_capture_weight_sum_partial">%3$s of %4$s packages carry a weight: they add up to %1$s kg of the %2$s kg declared.</string>
+    <string name="label_capture_weight_sum_only">%2$d packages weigh %1$s kg. The line item declares no weight.</string>
     <string name="label_capture_source_gs1">GS1 code %1$s</string>
     <string name="label_capture_source_code">Structured code %1$s</string>
     <string name="label_capture_source_brand">Manufacturer recognized in the text</string>

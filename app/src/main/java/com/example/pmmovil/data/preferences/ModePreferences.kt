@@ -8,19 +8,24 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Modo de revisión preferido por entrada (Normal vs Barcode).
+ * Modo de revisión preferido por entrada (Normal, Barcode o Escaneo de etiquetas).
  *
  * Guarda la última elección del usuario para que la próxima vez que abra
  * esa misma entrada, la app sepa qué modo sugerir (sin modal).
  *
  * Storage:
- *   "pmm_last_mode_{crefAgrupada}" → "normal" | "barcode"
+ *   "pmm_last_mode_{crefAgrupada}" → "normal" | "barcode" | "labels"
  */
 @Singleton
 class ModePreferences @Inject constructor(
     @ApplicationContext context: Context
 ) {
-    enum class Mode { NORMAL, BARCODE }
+    /**
+     * [LABELS] no es una pantalla aparte: abre la misma revisión que [NORMAL] (mismas partidas, cronómetro,
+     * candados y cierre) con la cámara de etiqueta ya abierta. Por eso se puede cambiar de uno a otro dentro de la
+     * misma entrada, a diferencia de [BARCODE], que lleva su propia cuenta.
+     */
+    enum class Mode { NORMAL, BARCODE, LABELS }
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences("PMMovilModes", Context.MODE_PRIVATE)
