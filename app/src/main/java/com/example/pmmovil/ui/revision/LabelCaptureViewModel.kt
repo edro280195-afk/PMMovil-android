@@ -161,11 +161,15 @@ class LabelCaptureViewModel @Inject constructor(
     }
 
     /** Los códigos del preview solo guían. La evidencia se extrae de la foto actual. */
+    /** Los códigos que el video confirmó mientras se encuadraba; se suman a los de la foto. */
+    private var codigosDelVideo: List<String> = emptyList()
+
     fun analizar(path: String, codigosEnVivo: List<String> = emptyList(), catalogoPaises: List<PaisDto> = countries,
                  initialPartidaId: Int? = null) {
         countries = catalogoPaises
         cancelReading()
         val token = generation
+        codigosDelVideo = codigosEnVivo
         Log.i(TAG, "foto recibida · códigos del video=${codigosEnVivo.size}${codigosParaLog(codigosEnVivo)} · partidas=${partidas.size}")
         _estado.value = Estado(analizando = true, fotoPath = path, availablePartidas = partidas)
         analysisJob = viewModelScope.launch {
@@ -190,11 +194,17 @@ class LabelCaptureViewModel @Inject constructor(
     private suspend fun readPhoto(path: String, token: Long, improve: Boolean, initialPartidaId: Int? = null) {
         val previous = _estado.value
         val started = SystemClock.elapsedRealtime()
-        val (codes, mlKit) = coroutineScope {
+        val (codesFoto, mlKit) = coroutineScope {
             val barcodeTask = async { photoBarcodeScanner.leer(path, BarcodeFormatSets.WAREHOUSE_PRODUCT_LABELS).getOrDefault(emptyList()) }
             val textTask = async { localTextOcr.readFromFile(path).getOrNull() }
             barcodeTask.await() to textTask.await()
         }
+        // A la foto se le suman los códigos que el video confirmó en dos cuadros. Medido en el Pixel el
+        // 20-oct con la etiqueta de envío VDA: el video decodificó «Q20000» y la foto no lo trajo, así
+        // que la cantidad se perdía y el empaque no se podía contar. Los que ya trae la foto mandan;
+        // si el video contradice a la foto en un campo, el lector de identificadores descarta ese campo
+        // y nadie se queda con el valor equivocado.
+        val codes = (codesFoto + codigosDelVideo.filterNot { it in codesFoto }).distinct()
         kotlinx.coroutines.currentCoroutineContext().ensureActive()
         // Los códigos de barras mandan: son exactos. En una etiqueta de códigos por campo (la bolsa de
         // Freudenberg) el texto no decide ni parte, ni lote, ni cantidad, porque sus columnas giradas salen

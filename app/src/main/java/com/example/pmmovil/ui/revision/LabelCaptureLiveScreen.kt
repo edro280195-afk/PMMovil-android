@@ -181,6 +181,10 @@ fun LabelCaptureLiveScreen(
     var geometria by remember { mutableStateOf(GeometriaEnVivo.VACIA) }
     var camposEnVivo by remember { mutableStateOf<List<LabelFieldExtractor.CampoLeido>>(emptyList()) }
     var codigosVistos by remember { mutableStateOf<List<String>>(emptyList()) }
+    // Vive mientras la cámara está abierta; se vacía al cerrarla para no arrastrar códigos de una
+    // etiqueta a la siguiente.
+    val acumulador = remember { CodigosDelVideo() }
+    DisposableEffect(Unit) { onDispose { acumulador.limpiar() } }
     var capturando by remember { mutableStateOf(false) }
     var listoParaDisparar by remember { mutableStateOf(false) }
     var autoDisparo by remember { mutableStateOf(true) }
@@ -227,14 +231,19 @@ fun LabelCaptureLiveScreen(
         ) { resultado ->
             if (capturandoState.value) return@LiveTextOcrAnalyzer
 
-            // Cada cuadro guía su propio encuadre. No conserva códigos de otra
-            // etiqueta que se haya enfocado antes durante esta apertura.
-            codigosVistos = resultado.barcodes.distinct()
+            // Los códigos se acumulan entre cuadros y solo cuentan los vistos dos veces: el video ve
+            // códigos que luego la foto no trae (así se perdía la cantidad) pero también se equivoca
+            // en los caracteres repetidos del Code 39. Ver [CodigosDelVideo].
+            val cambio = acumulador.agregar(resultado.barcodes)
+            codigosVistos = acumulador.confirmados()
             // Solo depuración: deja constancia de qué códigos decodifica el VIDEO y cuándo cambia el conjunto,
             // para medir cuántos de los ocho de una etiqueta salen sin tomar foto.
-            if (com.example.pmmovil.BuildConfig.DEBUG && codigosVistos != ultimosCodigosLog[0]) {
-                ultimosCodigosLog[0] = codigosVistos
-                Log.d(TAG_CAMARA_ETIQUETA, "video: ${codigosVistos.size} códigos [${codigosVistos.joinToString(" | ") { it.take(40) }.take(420)}]")
+            if (com.example.pmmovil.BuildConfig.DEBUG && cambio) {
+                Log.d(
+                    TAG_CAMARA_ETIQUETA,
+                    "video: ${codigosVistos.size} confirmados de ${acumulador.todos().size} vistos " +
+                        "[${codigosVistos.joinToString(" | ") { it.take(40) }.take(420)}]"
+                )
             }
             val campos = LabelFieldExtractor.extraer(resultado.rawText, codigosVistos)
             camposEnVivo = campos
