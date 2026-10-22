@@ -11,7 +11,7 @@ malla». Arregla lo que él señaló —«la malla no se reconstruye correctamen
 celda se fijaba con los dos primeros cuadros que veían el lugar y ya no se movía. 94 pruebas JVM en verde; en el aparato el costo por
 cuadro no subió (`integra` mediana 63 ms) y no agrega retiro de cuadriláteros. Causa, arreglo y cifras:
 [`docs/mapeador-bodega.md` §8.6](../docs/mapeador-bodega.md); dos hilos abiertos que NO son de la malla (Ubicar y los mapas que
-desaparecen del teléfono) en §8.7. Todo este módulo sigue **sin commit**.
+desaparecen del teléfono) en §8.7. El módulo ya está **versionado** en la rama `idiomas` (commit del 22-oct), todavía **sin empujar**.
 
 ## Para qué es
 
