@@ -12,6 +12,7 @@ import com.example.pmmovil.data.model.PdfAnnotationDraftEntity
 import com.example.pmmovil.data.model.LabelCaptureDraftEntity
 import com.example.pmmovil.data.model.RackCensusObservationEntity
 import com.example.pmmovil.data.model.RackCensusSessionEntity
+import com.example.pmmovil.data.model.EntryArCacheEntity
 
 @Database(
     entities = [
@@ -23,9 +24,10 @@ import com.example.pmmovil.data.model.RackCensusSessionEntity
         PdfAnnotationDraftEntity::class,
         LabelCaptureDraftEntity::class,
         RackCensusSessionEntity::class,
-        RackCensusObservationEntity::class
+        RackCensusObservationEntity::class,
+        EntryArCacheEntity::class
     ],
-    version = 15,
+    version = 16,
     exportSchema = false
 )
 @TypeConverters(StringListConverter::class)
@@ -38,4 +40,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun pdfAnnotationDraftDao(): PdfAnnotationDraftDao
     abstract fun labelCaptureDao(): LabelCaptureDao
     abstract fun rackCensusDao(): RackCensusDao
+    abstract fun entryArCacheDao(): EntryArCacheDao
 }

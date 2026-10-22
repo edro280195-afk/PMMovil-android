@@ -160,6 +160,10 @@ interface PMMovilApi {
     @GET("Revision/mis-activas")
     suspend fun getMisActivas(): Response<EntradasPendientesResponse>
 
+    /** Consulta en una sola petición los resúmenes de hasta seis QR visibles en AR. */
+    @POST("Revision/ar-entradas")
+    suspend fun getEntryArCards(@Body request: EntryArBatchRequest): Response<EntryArBatchResponse>
+
     /**
      * Búsqueda directa por crefAgrupada (match exacto en BD).
      * Usada por el scanner para encontrar la entrada escaneada y abrir

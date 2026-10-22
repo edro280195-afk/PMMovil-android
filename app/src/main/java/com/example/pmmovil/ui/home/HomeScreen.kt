@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.QrCode
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material.icons.filled.ArrowUpward
@@ -154,6 +155,7 @@ fun HomeScreen(
         val reviewPerm = hasFullAccess || permissions.any { it.moduloId == MobileModuleIds.REVIEW && it.canRead }
         if (reviewPerm) {
             list.add(ModuleItem(MobileModuleIds.REVIEW, R.string.home_module_review_title, R.string.home_module_review_subtitle, Icons.Default.QrCode, com.example.pmmovil.ui.theme.PmmBlueDeep, Color(0xFFEEF3FF), enabled = true))
+            list.add(ModuleItem(MobileModuleIds.REVIEW, R.string.home_module_ar_title, R.string.home_module_ar_subtitle, Icons.Default.QrCodeScanner, com.example.pmmovil.ui.theme.PmmBlueMid, Color(0xFFE0EBFF), enabled = true, routeKey = HomeModuleRouteKeys.ENTRY_AR))
         }
 
         // 2. Entradas (Recepción)
@@ -224,9 +226,10 @@ fun HomeScreen(
 
     val onModuleClick: (ModuleItem) -> Unit = { item ->
         if (item.enabled) {
-            when (item.moduleId) {
-                MobileModuleIds.REVIEW -> onNavigateToAsignaciones()
-                else       -> onModuleTap(item.routeKey)
+            when {
+                item.routeKey == HomeModuleRouteKeys.ENTRY_AR -> onModuleTap(item.routeKey)
+                item.moduleId == MobileModuleIds.REVIEW -> onNavigateToAsignaciones()
+                else -> onModuleTap(item.routeKey)
             }
         } else {
             scope.launch {

@@ -13,6 +13,7 @@ import com.example.pmmovil.data.db.EntradaPhotoSyncDao
 import com.example.pmmovil.data.db.FotoDao
 import com.example.pmmovil.data.db.LabelCaptureDao
 import com.example.pmmovil.data.db.RackCensusDao
+import com.example.pmmovil.data.db.EntryArCacheDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -232,7 +233,8 @@ object DatabaseModule {
             migration11To12,
             migration12To13,
             migration13To14,
-            migration14To15
+            migration14To15,
+            migration15To16
         )
         .build()
     }
@@ -278,6 +280,9 @@ object DatabaseModule {
 
     @Provides
     fun provideRackCensusDao(database: AppDatabase): RackCensusDao = database.rackCensusDao()
+
+    @Provides
+    fun provideEntryArCacheDao(database: AppDatabase): EntryArCacheDao = database.entryArCacheDao()
 
     // Sin esta migracion, actualizar la app borraria los borradores de captura
     // de etiqueta y las fotos aun no sincronizadas. Agrega el censo de racks:
@@ -360,6 +365,20 @@ object DatabaseModule {
                     responseJson TEXT,
                     createdAt INTEGER NOT NULL,
                     updatedAt INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+        }
+    }
+
+    private val migration15To16 = object : Migration(15, 16) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS entry_ar_cache (
+                    reference TEXT NOT NULL PRIMARY KEY,
+                    payloadJson TEXT NOT NULL,
+                    fetchedAtMillis INTEGER NOT NULL
                 )
                 """.trimIndent()
             )

@@ -35,6 +35,8 @@
     <string name="home_coming_soon">%1$s — coming soon</string>
     <string name="home_module_review_title">Inspection</string>
     <string name="home_module_review_subtitle">Merchandise</string>
+    <string name="home_module_ar_title">Entry AR</string>
+    <string name="home_module_ar_subtitle">Spatial QR cards</string>
     <string name="home_module_entries_title">Receiving</string>
     <string name="home_module_entries_subtitle">Warehouse intake</string>
     <string name="home_module_load_title">Load merchandise</string>

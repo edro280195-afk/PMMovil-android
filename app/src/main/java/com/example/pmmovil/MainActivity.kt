@@ -49,6 +49,7 @@ import com.example.pmmovil.ui.auth.LoginScreen
 import com.example.pmmovil.ui.theme.PMMovilTheme
 import com.example.pmmovil.ui.home.HomeScreen
 import com.example.pmmovil.ui.home.resolveHomeModuleDestination
+import com.example.pmmovil.ui.ar.EntryArScreen
 import dagger.hilt.android.AndroidEntryPoint
 import android.view.KeyEvent
 import android.content.Intent
@@ -349,6 +350,18 @@ class MainActivity : AppCompatActivity() {
                                             Toast.LENGTH_SHORT
                                         ).show()
                                     }
+                                }
+                            )
+                        }
+
+                        composable("ar_entradas") {
+                            EntryArScreen(
+                                onNavigateBack = { navController.popBackStack() },
+                                onOpenEntry = { reference ->
+                                    navController.navigate("entrada_editar/${Uri.encode(reference)}")
+                                },
+                                onOpenReview = { reference ->
+                                    navController.navigate("detalle/${Uri.encode(reference)}")
                                 }
                             )
                         }

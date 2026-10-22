@@ -261,6 +261,10 @@ dependencies {
     // Descomentar el día que el mapa 3D exista de verdad.
     // implementation(libs.sceneview)
 
+    // ARCore es opcional: Pixel y otros equipos compatibles usan anclas espaciales;
+    // el CT60 o Armor conservan el lector CameraX con tarjetas 2D.
+    implementation("com.google.ar:core:1.56.0")
+
     // Baseline Profiles — instala el perfil AOT generado por el módulo :baselineprofile
     implementation(libs.androidx.profileinstaller)
     baselineProfile(project(":baselineprofile"))
