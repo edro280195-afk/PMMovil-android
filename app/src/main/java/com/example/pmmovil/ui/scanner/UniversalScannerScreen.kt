@@ -43,6 +43,7 @@ import com.example.pmmovil.ui.theme.PmmNavyDark
 import com.example.pmmovil.ui.theme.PmmYellow
 import com.example.pmmovil.ui.theme.SignageType
 import com.google.ar.core.ArCoreApk
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.delay
 
@@ -74,6 +75,14 @@ fun UniversalScannerScreen(
     val lastSeenAt = remember { AtomicLong(0L) }
     var goingToAr by remember { mutableStateOf(false) }
 
+    // La cámara y el lector de mano pueden leer a la vez: mientras la pantalla hace su animación de salida las dos
+    // fuentes siguen vivas. Quien entrega primero gana; la segunda lectura se descarta, porque entregarla haría un
+    // segundo `popBackStack()` y sacaría el inicio.
+    val delivered = remember { AtomicBoolean(false) }
+    val deliver: (String) -> Unit = { value ->
+        if (delivered.compareAndSet(false, true)) onBarcodeScanned(value)
+    }
+
     // El rótulo se quita solo cuando el visor deja de ver el código; se mide con un reloj que no recompone.
     LaunchedEffect(Unit) {
         while (true) {
@@ -92,7 +101,7 @@ fun UniversalScannerScreen(
     }
 
     // El gatillo del lector de mano también funciona con la cámara abierta.
-    if (!goingToAr) HardwareScannerListener(onBarcodeScanned)
+    if (!goingToAr) HardwareScannerListener(deliver)
 
     Box(
         Modifier
@@ -101,7 +110,7 @@ fun UniversalScannerScreen(
     ) {
         if (!goingToAr) {
             SmartBarcodeCameraView(
-                onBarcodeScanned = onBarcodeScanned,
+                onBarcodeScanned = deliver,
                 onPotentialBarcodes = { candidates ->
                     val code = lockedCodeOf(candidates.map { it.value })
                     if (code != null) {
@@ -127,7 +136,9 @@ fun UniversalScannerScreen(
             Column(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = 92.dp, start = 16.dp, end = 16.dp),
+                    // Debajo de la píldora de título y los botones de la cámara (terminan hacia los 138 dp en el
+                    // Pixel 9 Pro XL); a 92 dp el conmutador se encimaba sobre «Escanear».
+                    .padding(top = 150.dp, start = 16.dp, end = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
