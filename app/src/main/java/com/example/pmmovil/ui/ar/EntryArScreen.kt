@@ -345,7 +345,7 @@ fun EntryArScreen(
                 }
             }
 
-            if (uiState.isOffline) {
+            if (uiState.isOffline && !uiState.message.isNullOrBlank()) {
                 Text(
                     text = uiState.message.orEmpty(),
                     modifier = Modifier

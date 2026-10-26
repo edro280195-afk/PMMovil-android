@@ -130,9 +130,12 @@ class EntryArViewModel @Inject constructor(
                     } else item
                 }
             }
+        val offlineMessage = mutableState.value.takeIf { it.isOffline }?.message
         mutableState.value = mutableState.value.copy(
             items = markPrimary(updatedItems),
-            message = null
+            // Cada cuadro de la cámara pasa por aquí: si borrara el aviso de «Sin conexión», el banner quedaba encendido
+            // y vacío al instante. Ese aviso solo lo cambia el resultado de una consulta.
+            message = offlineMessage
         )
 
         if (existing == null) scheduleRefresh()
