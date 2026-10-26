@@ -140,3 +140,29 @@ object ScanActionResolver {
     internal fun encode(value: String): String =
         URLEncoder.encode(value, "UTF-8").replace("+", "%20")
 }
+
+/**
+ * La ruta de la pantalla de acciones. Quien reciba una lectura la manda siempre por [forScan] y no arma la ruta a
+ * mano: así el gafete, que lleva una credencial, nunca viaja en una ruta (el NavHost la guarda en su estado y en el
+ * estado de la actividad).
+ */
+object ScanActionsRoute {
+    const val ARG_CODE = "code"
+
+    /** Patrón que se registra en el NavHost. El código es opcional: sin él, la pantalla explica que era un gafete. */
+    const val PATTERN = "acciones?$ARG_CODE={$ARG_CODE}"
+
+    private const val WITHOUT_CODE = "acciones"
+
+    // Una lectura no tiene por qué pasar de aquí: más largo ya es [ScannedCode.Desconocido] y no cabe en una ruta.
+    private const val MAX_CODE_LENGTH = 200
+
+    fun forScan(raw: String?): String {
+        if (ScannedCodeClassifier.classify(raw) == ScannedCode.Gafete) return WITHOUT_CODE
+        return "$WITHOUT_CODE?$ARG_CODE=${ScanActionResolver.encode(raw.orEmpty().trim().take(MAX_CODE_LENGTH))}"
+    }
+
+    /** Qué se leyó, según el argumento de la ruta. Sin argumento es un gafete: así lo deja [forScan]. */
+    fun codeFromArgument(argument: String?): ScannedCode =
+        argument?.let(ScannedCodeClassifier::classify) ?: ScannedCode.Gafete
+}

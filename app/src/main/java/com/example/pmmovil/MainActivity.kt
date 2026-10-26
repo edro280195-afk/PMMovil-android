@@ -38,6 +38,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.pmmovil.ui.revision.MODO_ETIQUETAS
+import com.example.pmmovil.data.scanner.ScanActionsRoute
+import com.example.pmmovil.ui.scanactions.ScanActionsScreen
 import com.example.pmmovil.ui.scanner.ScanProfile
 import com.example.pmmovil.data.scanner.HardwareBarcodeDecoder
 import com.example.pmmovil.data.scanner.ScanEventBus
@@ -354,6 +356,19 @@ class MainActivity : AppCompatActivity() {
                             )
                         }
 
+                        // Lo que se puede hacer con un código leído. Al elegir una acción esta pantalla se reemplaza por
+                        // la de destino, de modo que «atrás» regresa a donde se escaneó y no a la hoja de acciones.
+                        composable(ScanActionsRoute.PATTERN) {
+                            ScanActionsScreen(
+                                onNavigateBack = { navController.popBackStack() },
+                                onAction = { route ->
+                                    navController.navigate(route) {
+                                        popUpTo(ScanActionsRoute.PATTERN) { inclusive = true }
+                                    }
+                                }
+                            )
+                        }
+
                         composable("ar_entradas") {
                             EntryArScreen(
                                 onNavigateBack = { navController.popBackStack() },
@@ -388,7 +403,10 @@ class MainActivity : AppCompatActivity() {
                             )
                         }
 
-                        composable("entrada_nueva") { backStackEntry ->
+                        composable(
+                            "entrada_nueva?barcode={barcode}",
+                            arguments = listOf(optionalBarcodeArgument)
+                        ) { backStackEntry ->
                             val barcodeResult by backStackEntry.savedStateHandle
                                 .getStateFlow<String?>("barcode", null)
                                 .collectAsState()
@@ -458,7 +476,10 @@ class MainActivity : AppCompatActivity() {
                             )
                         }
 
-                        composable("relacion") { backStackEntry ->
+                        composable(
+                            "relacion?barcode={barcode}",
+                            arguments = listOf(optionalBarcodeArgument)
+                        ) { backStackEntry ->
                             val barcodeResult by backStackEntry.savedStateHandle
                                 .getStateFlow<String?>("barcode", null)
                                 .collectAsState()
@@ -490,7 +511,10 @@ class MainActivity : AppCompatActivity() {
                             )
                         }
 
-                        composable("caseta_hub") { backStackEntry ->
+                        composable(
+                            "caseta_hub?barcode={barcode}",
+                            arguments = listOf(optionalBarcodeArgument)
+                        ) { backStackEntry ->
                             // El escaner del hub sirve para BUSCAR una caja, por eso
                             // acepta codigo de barras ademas de QR (a diferencia del
                             // de la pantalla de entrada, que es solo QR de pre-registro).
@@ -574,7 +598,8 @@ class MainActivity : AppCompatActivity() {
                         }
 
                         composable(
-                            "salida_caseta",
+                            "salida_caseta?barcode={barcode}",
+                            arguments = listOf(optionalBarcodeArgument),
                             enterTransition = { zEntra() },
                             exitTransition = { zSale() },
                             popEnterTransition = { zVuelve() },
@@ -612,7 +637,8 @@ class MainActivity : AppCompatActivity() {
                         }
 
                         composable(
-                            "caseta_entrada",
+                            "caseta_entrada?barcode={barcode}",
+                            arguments = listOf(optionalBarcodeArgument),
                             enterTransition = { zEntra() },
                             exitTransition = { zSale() },
                             popEnterTransition = { zVuelve() },
@@ -1014,6 +1040,16 @@ class MainActivity : AppCompatActivity() {
 // deslizamiento lateral comunicaría hermandad (me moví al de al lado).
 
 private const val Z_MS = 340
+
+/**
+ * Código que llega ya leído a una pantalla que escanea (viene de la hoja de acciones). La pantalla lo recibe por el mismo
+ * `savedStateHandle["barcode"]` que usa al volver de la cámara, así que no necesita saber de dónde vino.
+ */
+private val optionalBarcodeArgument = navArgument("barcode") {
+    type = NavType.StringType
+    nullable = true
+    defaultValue = null
+}
 
 private fun zEntra(): EnterTransition =
     scaleIn(tween(Z_MS, easing = FastOutSlowInEasing), initialScale = 0.90f) +

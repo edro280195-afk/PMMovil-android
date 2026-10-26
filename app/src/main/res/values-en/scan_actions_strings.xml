@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Actions screen for a scanned code. -->
+    <string name="scan_actions_title">What I read</string>
+    <string name="scan_actions_subtitle">Choose what you want to do</string>
+    <string name="scan_actions_back">Back</string>
+    <string name="scan_actions_read_only">Reading does not record anything: it only opens the screen you choose.</string>
+    <string name="scan_actions_none">Your role has no actions for this code.</string>
+    <string name="scan_actions_section">Actions</string>
+
+    <!-- Code type (label tag, in small caps). -->
+    <string name="scan_kind_caja">BOX</string>
+    <string name="scan_kind_relacion">RELEASE</string>
+    <string name="scan_kind_carpeta">FOLDER</string>
+    <string name="scan_kind_bulto">PACKAGE</string>
+    <string name="scan_kind_preregistro">PRE-REGISTRATION</string>
+    <string name="scan_kind_gafete">BADGE</string>
+    <string name="scan_kind_producto">PRODUCT</string>
+    <string name="scan_kind_candidato">REFERENCE</string>
+    <string name="scan_kind_desconocido">NO FORMAT</string>
+
+    <!-- What the code is, in one line. -->
+    <string name="scan_hint_caja">Gate box</string>
+    <string name="scan_hint_relacion">Exit release</string>
+    <string name="scan_hint_carpeta">Entry folder</string>
+    <string name="scan_hint_bulto">Package %1$d of %2$d of the entry</string>
+    <string name="scan_hint_preregistro">Pre-registration of a truck without a box</string>
+    <string name="scan_hint_gafete">This is a badge. For security it is not looked up or saved.</string>
+    <string name="scan_hint_producto">Customer product label. It is read inside a review.</string>
+    <string name="scan_hint_candidato">It looks like a reference, but not an entry. Look it up from the right module.</string>
+    <string name="scan_hint_desconocido">I do not recognise this code.</string>
+
+    <!-- Actions: title and what each one opens. -->
+    <string name="scan_action_create_entry">Create an entry with this box</string>
+    <string name="scan_action_create_entry_detail">Opens Warehouse Entry with the box already loaded</string>
+    <string name="scan_action_exit_gate">Release the exit</string>
+    <string name="scan_action_exit_gate_detail">Opens the gate exit with this code</string>
+    <string name="scan_action_find_in_yard">Find it in the yard</string>
+    <string name="scan_action_find_in_yard_detail">Locates it in the gate hub</string>
+    <string name="scan_action_open_relation">Open the release</string>
+    <string name="scan_action_open_relation_detail">Shows the load and its authorisation</string>
+    <string name="scan_action_open_entry">Open the entry</string>
+    <string name="scan_action_open_entry_detail">View or edit the entry in the warehouse</string>
+    <string name="scan_action_review_entry">Open the review</string>
+    <string name="scan_action_review_entry_detail">View or continue the goods review</string>
+    <string name="scan_action_show_on_map">Open the map</string>
+    <string name="scan_action_show_on_map_detail">Warehouse map</string>
+    <string name="scan_action_register_prereg">Register the arrival</string>
+    <string name="scan_action_register_prereg_detail">Opens the gate entry with the pre-registration data</string>
+</resources>

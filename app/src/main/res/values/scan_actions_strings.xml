@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Pantalla de acciones por código leído. -->
+    <string name="scan_actions_title">Lo que leí</string>
+    <string name="scan_actions_subtitle">Elige qué quieres hacer</string>
+    <string name="scan_actions_back">Volver</string>
+    <string name="scan_actions_read_only">Leer no registra nada: solo se abre la pantalla que elijas.</string>
+    <string name="scan_actions_none">Tu puesto no tiene acciones para este código.</string>
+    <string name="scan_actions_section">Acciones</string>
+
+    <!-- Tipo de código (rótulo de la etiqueta, en versalitas). -->
+    <string name="scan_kind_caja">CAJA</string>
+    <string name="scan_kind_relacion">RELACIÓN</string>
+    <string name="scan_kind_carpeta">CARPETA</string>
+    <string name="scan_kind_bulto">BULTO</string>
+    <string name="scan_kind_preregistro">PRE-REGISTRO</string>
+    <string name="scan_kind_gafete">GAFETE</string>
+    <string name="scan_kind_producto">PRODUCTO</string>
+    <string name="scan_kind_candidato">REFERENCIA</string>
+    <string name="scan_kind_desconocido">SIN FORMATO</string>
+
+    <!-- Qué es el código, en una línea. -->
+    <string name="scan_hint_caja">Caja de caseta</string>
+    <string name="scan_hint_relacion">Relación de salida</string>
+    <string name="scan_hint_carpeta">Carpeta de la entrada</string>
+    <string name="scan_hint_bulto">Bulto %1$d de %2$d de la entrada</string>
+    <string name="scan_hint_preregistro">Pre-registro de un camión sin caja</string>
+    <string name="scan_hint_gafete">Es un gafete. Por seguridad no se consulta ni se guarda.</string>
+    <string name="scan_hint_producto">Etiqueta de producto del cliente. Se lee dentro de una revisión.</string>
+    <string name="scan_hint_candidato">Parece una referencia, pero no una entrada. Búscala desde el módulo que corresponda.</string>
+    <string name="scan_hint_desconocido">No reconozco este código.</string>
+
+    <!-- Acciones: título y qué abre. -->
+    <string name="scan_action_create_entry">Crear entrada con esta caja</string>
+    <string name="scan_action_create_entry_detail">Abre Entrada Bodega con la caja ya cargada</string>
+    <string name="scan_action_exit_gate">Dar salida</string>
+    <string name="scan_action_exit_gate_detail">Abre la salida de caseta con este código</string>
+    <string name="scan_action_find_in_yard">Buscar en el patio</string>
+    <string name="scan_action_find_in_yard_detail">La ubica en el hub de caseta</string>
+    <string name="scan_action_open_relation">Abrir la relación</string>
+    <string name="scan_action_open_relation_detail">Consulta la carga y su autorización</string>
+    <string name="scan_action_open_entry">Abrir la entrada</string>
+    <string name="scan_action_open_entry_detail">Ver o editar la entrada en bodega</string>
+    <string name="scan_action_review_entry">Abrir la revisión</string>
+    <string name="scan_action_review_entry_detail">Consulta o continúa la revisión de la mercancía</string>
+    <string name="scan_action_show_on_map">Abrir el mapa</string>
+    <string name="scan_action_show_on_map_detail">Mapa de la bodega</string>
+    <string name="scan_action_register_prereg">Registrar la llegada</string>
+    <string name="scan_action_register_prereg_detail">Abre la entrada de caseta con los datos del pre-registro</string>
+</resources>
