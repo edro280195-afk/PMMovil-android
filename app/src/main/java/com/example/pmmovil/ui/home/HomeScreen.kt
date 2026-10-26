@@ -69,13 +69,16 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.animation.AnimatedVisibility
 import com.example.pmmovil.data.model.MobileModuleIds
+import com.example.pmmovil.BuildConfig
 import com.example.pmmovil.R
 import com.example.pmmovil.data.preferences.ModePreferences
 import com.example.pmmovil.ui.auth.AuthViewModel
 import com.example.pmmovil.ui.home.components.BrandedHeroHeader
 import com.example.pmmovil.ui.home.components.ModuleGrid
 import com.example.pmmovil.ui.home.components.ModuleItem
+import com.example.pmmovil.ui.home.components.NewHomeContent
 import com.example.pmmovil.ui.home.components.SectionHeader
+import com.example.pmmovil.ui.scanner.HardwareScannerListener
 import com.example.pmmovil.ui.home.components.SystemFooter
 import com.example.pmmovil.ui.home.components.adminModules
 import com.example.pmmovil.ui.home.components.casetaModules
@@ -120,6 +123,12 @@ fun HomeScreen(
     onOpenPrinterSettings: () -> Unit,
     onOpenSettings: () -> Unit = {},
     onModuleTap: (String) -> Unit = {},
+    // Solo los usa el inicio nuevo (BuildConfig.USE_NEW_HOME): abrir la cámara, y recibir el código leído, ya sea de la
+    // cámara (barcodeScanResult) o del lector de mano (onScanned).
+    onNavigateToScanner: () -> Unit = {},
+    barcodeScanResult: String? = null,
+    onBarcodeScanConsumed: () -> Unit = {},
+    onScanned: (String) -> Unit = {},
     authViewModel: AuthViewModel = hiltViewModel(),
     homeViewModel: HomeViewModel = hiltViewModel()
 ) {
@@ -133,6 +142,18 @@ fun HomeScreen(
     var showNotifications by rememberSaveable { mutableStateOf(false) }
     BackHandler(enabled = showNotifications) {
         showNotifications = false
+    }
+
+    if (BuildConfig.USE_NEW_HOME) {
+        // Sin permisos resueltos la hoja de acciones diría «tu puesto no tiene acciones» de algo que sí puede hacer.
+        val scanReady = state.permissionsResolved && !state.permissionsFailed && !showNotifications
+        HardwareScannerListener { raw -> if (scanReady) onScanned(raw) }
+        LaunchedEffect(barcodeScanResult) {
+            barcodeScanResult?.takeIf(String::isNotBlank)?.let {
+                onScanned(it)
+                onBarcodeScanConsumed()
+            }
+        }
     }
     val permissions = state.permissions
     val isSystemsArea = homeViewModel.isSystemsArea()
@@ -300,6 +321,22 @@ fun HomeScreen(
                     } else if (allActiveModules.isEmpty()) {
                         item("empty-modules") {
                             HomeNoModulesAssigned()
+                        }
+                    } else if (BuildConfig.USE_NEW_HOME) {
+                        item("new-home") {
+                            NewHomeContent(
+                                modules = allActiveModules,
+                                wide = screenWidth >= 720,
+                                onScan = onNavigateToScanner,
+                                onModuleClick = onModuleClick,
+                                onBlocked = { stationName ->
+                                    scope.launch {
+                                        snackbar.showSnackbar(
+                                            context.getString(R.string.home_new_station_blocked, stationName)
+                                        )
+                                    }
+                                }
+                            )
                         }
                     } else if (screenWidth >= 900) {
                         // ═════════════════════════════════════════════════════════

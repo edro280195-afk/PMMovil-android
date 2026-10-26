@@ -72,6 +72,12 @@ android {
         .orElse("false")
         .get()
         .toBoolean()
+    // Inicio nuevo (visor de escaneo universal + Tablero). Apagado hasta verificarlo en aparato; se prueba
+    // con -PpmmNewHome=true sin tocar el código.
+    val newHomeEnabled = providers.gradleProperty("pmmNewHome")
+        .orElse("false")
+        .get()
+        .toBoolean()
 
     defaultConfig {
         applicationId = "com.example.pmmovil"
@@ -87,6 +93,9 @@ android {
         // Etiqueta de entrada renderizada como imagen (^GF/Z64) en vez del ZPL de texto.
         // Cambiar a "false" para volver al path hand-coded de ZebraZplBuilder.
         buildConfigField("boolean", "USE_IMAGE_LABELS", "true")
+
+        // Inicio nuevo: visor de escaneo universal y Tablero de La Línea en lugar del Bento de módulos.
+        buildConfigField("boolean", "USE_NEW_HOME", newHomeEnabled.toString())
 
         // Las lecturas pueden contener datos operativos; la traza de red se
         // habilita explícitamente con -PpmmNetworkTrace=true cuando se requiere

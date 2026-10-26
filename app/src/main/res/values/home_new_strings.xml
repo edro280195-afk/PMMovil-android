@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Inicio nuevo: visor de escaneo universal. -->
+    <string name="home_new_viewer_caption">Escáner</string>
+    <string name="home_new_viewer_hardware">Lector de mano activo</string>
+    <string name="home_new_viewer_cta">Escanear</string>
+    <string name="home_new_viewer_trigger">o jala el gatillo</string>
+    <string name="home_new_viewer_hint_caja">CAJA</string>
+    <string name="home_new_viewer_hint_relacion">RELACIÓN</string>
+    <string name="home_new_viewer_hint_bulto">BULTO</string>
+    <string name="home_new_viewer_description">Escanear un código QR de PMM</string>
+
+    <!-- Inicio nuevo: el Tablero (La Línea). -->
+    <string name="home_new_board_title">La Línea</string>
+    <string name="home_new_board_subtitle">el recorrido de la mercancía</string>
+    <string name="home_new_station_caseta_desc">Cajas en el patio</string>
+    <string name="home_new_station_entrada_desc">Recepción en bodega</string>
+    <string name="home_new_station_revision_desc">Mercancía por revisar</string>
+    <string name="home_new_station_relacion_desc">Cargas por supervisar</string>
+    <string name="home_new_station_salida_desc">Salida de caseta</string>
+    <string name="home_new_station_blocked">Tu puesto no tiene el módulo «%1$s».</string>
+    <string name="home_new_station_blocked_state">sin acceso</string>
+
+    <!-- Inicio nuevo: el resto de los módulos. -->
+    <string name="home_new_more_title">Más</string>
+    <string name="home_new_more_subtitle">otros módulos</string>
+</resources>

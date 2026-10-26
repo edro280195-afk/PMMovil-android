@@ -313,8 +313,22 @@ class MainActivity : AppCompatActivity() {
                             )
                         }
 
-                        composable("home") {
+                        composable("home") { backStackEntry ->
+                            // Solo lo usa el inicio nuevo: la cámara devuelve el código por el mismo
+                            // savedStateHandle["barcode"] que las demás pantallas que escanean.
+                            val barcodeResult by backStackEntry.savedStateHandle
+                                .getStateFlow<String?>("barcode", null)
+                                .collectAsState()
                             HomeScreen(
+                                onNavigateToScanner = {
+                                    navController.navigate("scanner?profile=${ScanProfile.QrOnly.name}")
+                                },
+                                barcodeScanResult = barcodeResult,
+                                onBarcodeScanConsumed = {
+                                    backStackEntry.savedStateHandle["barcode"] = null
+                                },
+                                // Se clasifica antes de navegar: la ruta nunca lleva un gafete (ver ScanActionsRoute).
+                                onScanned = { raw -> navController.navigate(ScanActionsRoute.forScan(raw)) },
                                 onNavigateToAsignaciones = {
                                     navController.navigate("asignaciones")
                                 },

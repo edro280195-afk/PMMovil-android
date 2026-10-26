@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- New home: universal scan viewer. -->
+    <string name="home_new_viewer_caption">Scanner</string>
+    <string name="home_new_viewer_hardware">Handheld scanner on</string>
+    <string name="home_new_viewer_cta">Scan</string>
+    <string name="home_new_viewer_trigger">or pull the trigger</string>
+    <string name="home_new_viewer_hint_caja">BOX</string>
+    <string name="home_new_viewer_hint_relacion">RELEASE</string>
+    <string name="home_new_viewer_hint_bulto">PACKAGE</string>
+    <string name="home_new_viewer_description">Scan a PMM QR code</string>
+
+    <!-- New home: the board (The Line). -->
+    <string name="home_new_board_title">The Line</string>
+    <string name="home_new_board_subtitle">the journey of the goods</string>
+    <string name="home_new_station_caseta_desc">Boxes in the yard</string>
+    <string name="home_new_station_entrada_desc">Warehouse receiving</string>
+    <string name="home_new_station_revision_desc">Goods to review</string>
+    <string name="home_new_station_relacion_desc">Loads to supervise</string>
+    <string name="home_new_station_salida_desc">Gate exit</string>
+    <string name="home_new_station_blocked">Your role does not have the “%1$s” module.</string>
+    <string name="home_new_station_blocked_state">no access</string>
+
+    <!-- New home: the rest of the modules. -->
+    <string name="home_new_more_title">More</string>
+    <string name="home_new_more_subtitle">other modules</string>
+</resources>
