@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Signal words: always read together with their shape and color, never color alone. -->
+    <string name="signal_alto">Stop</string>
+    <string name="signal_atencion">Attention</string>
+    <string name="signal_listo">Ready</string>
+    <string name="signal_aviso">Notice</string>
+    <string name="signal_cerrado">Closed</string>
+    <string name="signal_sin_dato">No data</string>
+
+    <!-- Line stations (long name for screen readers and the short printed tag). -->
+    <string name="station_caseta">Gatehouse</string>
+    <string name="station_entrada">Receiving</string>
+    <string name="station_revision">Review</string>
+    <string name="station_relacion">Release</string>
+    <string name="station_salida">Exit</string>
+    <string name="station_caseta_short">GAT</string>
+    <string name="station_entrada_short">REC</string>
+    <string name="station_revision_short">REV</string>
+    <string name="station_relacion_short">REL</string>
+    <string name="station_salida_short">EXT</string>
+
+    <string name="station_state_done">completed</string>
+    <string name="station_state_now">in progress</string>
+    <string name="station_state_warn">has a problem</string>
+    <string name="station_state_unknown">no data</string>
+    <string name="station_state_todo">pending</string>
+    <string name="station_state_na">not applicable</string>
+</resources>

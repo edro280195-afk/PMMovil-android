@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Palabras de las señales: se leen junto con su forma y su color, nunca solo el color. -->
+    <string name="signal_alto">Alto</string>
+    <string name="signal_atencion">Atención</string>
+    <string name="signal_listo">Listo</string>
+    <string name="signal_aviso">Aviso</string>
+    <string name="signal_cerrado">Cerrado</string>
+    <string name="signal_sin_dato">Sin dato</string>
+
+    <!-- Estaciones de la Línea (nombre largo para lectores de pantalla y abreviatura impresa). -->
+    <string name="station_caseta">Caseta</string>
+    <string name="station_entrada">Entrada</string>
+    <string name="station_revision">Revisión</string>
+    <string name="station_relacion">Relación</string>
+    <string name="station_salida">Salida</string>
+    <string name="station_caseta_short">CAS</string>
+    <string name="station_entrada_short">ENT</string>
+    <string name="station_revision_short">REV</string>
+    <string name="station_relacion_short">REL</string>
+    <string name="station_salida_short">SAL</string>
+
+    <string name="station_state_done">completada</string>
+    <string name="station_state_now">en curso</string>
+    <string name="station_state_warn">con problema</string>
+    <string name="station_state_unknown">sin dato</string>
+    <string name="station_state_todo">pendiente</string>
+    <string name="station_state_na">no aplica</string>
+</resources>

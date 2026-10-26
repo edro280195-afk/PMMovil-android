@@ -3,5 +3,12 @@
     xmlns:tools="http://schemas.android.com/tools">
     <application
         android:usesCleartextTraffic="true"
-        tools:replace="android:usesCleartextTraffic" />
+        tools:replace="android:usesCleartextTraffic">
+        <!-- Solo debug: galería de las piezas de la señalética. No existe en release. -->
+        <activity
+            android:name=".debug.ComponentGalleryActivity"
+            android:exported="false"
+            android:label="Galería de componentes"
+            android:theme="@style/Theme.PMMovil" />
+    </application>
 </manifest>
