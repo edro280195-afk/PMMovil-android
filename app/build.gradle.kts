@@ -60,12 +60,10 @@ android {
         .orElse("")
         .get()
     // Debug local: el API se ejecuta con el perfil Development en el puerto 5000.
-    // Se puede sobrescribir desde Android Studio/Gradle con -PpmmApiBaseUrl=...
-    // cuando la tableta sea física y localhost no apunte a la PC de desarrollo.
+    // Con `adb reverse tcp:5000 tcp:5000`, la tableta alcanza la PC por localhost.
+    // Se puede sobrescribir con -PpmmApiBaseUrl=... para otra configuración.
     val debugApiBaseUrl = providers.gradleProperty("pmmApiBaseUrl")
-        // Tableta física: localhost sería la propia tableta. La laptop actual
-        // está en 192.168.10.193; se puede sobrescribir con -PpmmApiBaseUrl.
-        .orElse("http://192.168.10.193:5000/api/")
+        .orElse("http://localhost:5000/api/")
         .get()
     val releaseApiBaseUrl = providers.gradleProperty("pmmReleaseApiBaseUrl")
         .orElse("https://revisionapi.grupopmm.com/api/")
