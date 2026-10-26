@@ -45,8 +45,6 @@
     <string name="home_module_relation_subtitle">Supervisar</string>
     <string name="home_module_map_title">Mapa</string>
     <string name="home_module_map_subtitle">Ubicaciones</string>
-    <string name="home_module_rack_census_title">Censo de racks</string>
-    <string name="home_module_rack_census_subtitle">Conteo por QR</string>
     <string name="home_module_gate_operation_title">Operación de caseta</string>
     <string name="home_module_gate_operation_subtitle">Entradas y control</string>
     <string name="home_module_relation_exit_title">Salida de caseta</string>

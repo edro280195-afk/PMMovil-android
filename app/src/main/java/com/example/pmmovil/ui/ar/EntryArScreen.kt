@@ -98,7 +98,6 @@ fun EntryArScreen(
         )
     }
     var useSpatialAr by remember { mutableStateOf<Boolean?>(null) }
-    var arMessage by remember { mutableStateOf("Preparando cámara y anclas espaciales…") }
     var selectedItemKey by remember { mutableStateOf<String?>(null) }
     var selectedItemSnapshot by remember { mutableStateOf<EntryArOverlayItem?>(null) }
     val liveSelectedItem = uiState.items.firstOrNull { it.key == selectedItemKey }
@@ -117,10 +116,7 @@ fun EntryArScreen(
             onQrSeen = entryArViewModel::onSpatialQrSeen,
             onQrObserved = entryArViewModel::onSpatialQrObserved,
             onProjected = entryArViewModel::updateProjectedPosition,
-            unavailableListener = { message ->
-                useSpatialAr = false
-                arMessage = message
-            }
+            unavailableListener = { useSpatialAr = false }
         )
     }
     val requestCamera = rememberLauncherForActivityResult(
@@ -132,16 +128,9 @@ fun EntryArScreen(
     BackHandler(onBack = onNavigateBack)
     val tryStartSpatial = rememberUpdatedState<(Activity) -> Unit> { activity ->
         if (cameraGranted) {
-            arMessage = "Preparando cámara y anclas espaciales…"
             when (arView.resumeAr(activity)) {
-                ArStartResult.STARTED -> {
-                    useSpatialAr = true
-                    arMessage = ""
-                }
-                ArStartResult.INSTALLING -> {
-                    useSpatialAr = null
-                    arMessage = "Instalando Google Play Services for AR…"
-                }
+                ArStartResult.STARTED -> useSpatialAr = true
+                ArStartResult.INSTALLING -> useSpatialAr = null
                 ArStartResult.UNAVAILABLE -> useSpatialAr = false
             }
         }
@@ -340,9 +329,7 @@ fun EntryArScreen(
                 Column(modifier = Modifier.weight(1f)) {
                     Text("AR de entradas", color = Color.White, fontWeight = FontWeight.Bold)
                     Text(
-                        if (useSpatialAr == true) "Anclas espaciales · hasta seis QR"
-                        else if (useSpatialAr == false) "Vista asistida · hasta seis QR"
-                        else "Iniciando visor…",
+                        "Escanea hasta seis QR",
                         color = Color(0xFFD1D5DB),
                         fontSize = 11.sp
                     )
@@ -376,18 +363,6 @@ fun EntryArScreen(
                     CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = Color.White)
                     Text("Consultando entradas…", color = Color.White, fontSize = 12.sp)
                 }
-            }
-
-            if (useSpatialAr == false && arMessage.isNotBlank()) {
-                Text(
-                    arMessage,
-                    modifier = Modifier
-                        .padding(8.dp)
-                        .background(Color(0xCC111827), RoundedCornerShape(10.dp))
-                        .padding(10.dp),
-                    color = Color.White,
-                    fontSize = 11.sp
-                )
             }
 
         }

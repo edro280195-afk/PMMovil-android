@@ -45,8 +45,6 @@
     <string name="home_module_relation_subtitle">Supervision</string>
     <string name="home_module_map_title">Map</string>
     <string name="home_module_map_subtitle">Locations</string>
-    <string name="home_module_rack_census_title">Rack census</string>
-    <string name="home_module_rack_census_subtitle">QR count</string>
     <string name="home_module_gate_operation_title">Gatehouse operation</string>
     <string name="home_module_gate_operation_subtitle">Entry and control</string>
     <string name="home_module_relation_exit_title">Gate exit</string>

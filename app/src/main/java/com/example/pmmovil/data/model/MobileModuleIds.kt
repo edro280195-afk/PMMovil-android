@@ -22,7 +22,6 @@ object MobileModuleIds {
     const val PRE_INSPECTION = 154
     const val CARTA_PORTE = 155
     const val IMEX = 156
-    const val INVENTORY = 158
     const val REVIEW = 159
     const val SYSTEMS_MONITOR = 160
     const val SYSTEMS_ANALYTICS = 161

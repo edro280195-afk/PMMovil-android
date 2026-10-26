@@ -182,13 +182,6 @@ fun HomeScreen(
             list.add(ModuleItem(MobileModuleIds.WAREHOUSE_OPERATIONS, R.string.home_module_map_title, R.string.home_module_map_subtitle, Icons.Default.Map, com.example.pmmovil.ui.theme.PmmGreenDark, Color(0xFFD1FAE5), enabled = true, routeKey = HomeModuleRouteKeys.WAREHOUSE_MAP))
         }
 
-        // 5.1 Censo de racks (Inventario). El modulo es 158, distinto al de
-        // operaciones de bodega: dar acceso al censo no da acceso a entradas.
-        val censusPerm = hasFullAccess || permissions.any { it.moduloId == MobileModuleIds.INVENTORY && it.canRead }
-        if (censusPerm) {
-            list.add(ModuleItem(MobileModuleIds.INVENTORY, R.string.home_module_rack_census_title, R.string.home_module_rack_census_subtitle, Icons.Default.Inventory2, com.example.pmmovil.ui.theme.PmmAmber, Color(0xFFFEF3C7), enabled = true, routeKey = HomeModuleRouteKeys.RACK_CENSUS))
-        }
-
         // 6. Caseta (Vigilancia)
         val gatePerm = hasFullAccess || permissions.any { it.moduloId == MobileModuleIds.GATE && it.canRead }
         if (gatePerm) {

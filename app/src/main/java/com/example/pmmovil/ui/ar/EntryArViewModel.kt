@@ -2,8 +2,8 @@ package com.example.pmmovil.ui.ar
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.pmmovil.data.inventory.RackCensusCode
-import com.example.pmmovil.data.inventory.RackCensusCodeParser
+import com.example.pmmovil.data.entryar.EntryArQrCode
+import com.example.pmmovil.data.entryar.EntryArQrCodeParser
 import com.example.pmmovil.data.model.EntryArCardDto
 import com.example.pmmovil.data.repository.EntryArRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -17,7 +17,7 @@ import kotlinx.coroutines.launch
 
 data class EntryArOverlayItem(
     val key: String,
-    val code: RackCensusCode,
+    val code: EntryArQrCode,
     val card: EntryArCardDto,
     val x: Float = 0.5f,
     val y: Float = 0.5f,
@@ -83,7 +83,7 @@ class EntryArViewModel @Inject constructor(
     }
 
     private fun updateQr(rawValue: String, x: Float, y: Float, spatial: Boolean) {
-        val code = RackCensusCodeParser.parse(rawValue) ?: return
+        val code = EntryArQrCodeParser.parse(rawValue) ?: return
         val now = System.currentTimeMillis()
         if (isIgnoredAfterClear(code.normalized, now)) return
         val currentItems = mutableState.value.items

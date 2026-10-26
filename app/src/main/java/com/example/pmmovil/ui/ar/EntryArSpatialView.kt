@@ -12,7 +12,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.AttributeSet
 import android.view.Surface
-import com.example.pmmovil.data.inventory.RackCensusCodeParser
+import com.example.pmmovil.data.entryar.EntryArQrCodeParser
 import com.google.ar.core.ArCoreApk
 import com.google.ar.core.Config
 import com.google.ar.core.Coordinates2d
@@ -41,7 +41,7 @@ class EntryArSpatialView @JvmOverloads constructor(
     private val onQrSeen: (String, Float, Float) -> Unit,
     private val onQrObserved: (String) -> Unit,
     private val onProjected: (String, Float, Float) -> Unit,
-    private val unavailableListener: (String) -> Unit
+    private val unavailableListener: () -> Unit
 ) : GLSurfaceView(context, attrs) {
 
     private val renderer = EntryArRenderer(
@@ -88,18 +88,9 @@ class EntryArSpatialView @JvmOverloads constructor(
             super.onResume()
             surfaceResumed = true
             return ArStartResult.STARTED
-        } catch (exception: Exception) {
+        } catch (_: Exception) {
             closeSession()
-            val message = when (exception) {
-                is com.google.ar.core.exceptions.UnavailableArcoreNotInstalledException ->
-                    "Falta instalar Google Play Services for AR. Se abrirá el visor asistido."
-                is com.google.ar.core.exceptions.UnavailableApkTooOldException ->
-                    "Google Play Services for AR necesita actualizarse. Se abrirá el visor asistido."
-                is com.google.ar.core.exceptions.UnavailableDeviceNotCompatibleException ->
-                    "Este equipo no es compatible con ARCore. Se abrirá el visor asistido."
-                else -> "No se pudo iniciar ARCore (${exception.javaClass.simpleName}). Se abrirá el visor asistido."
-            }
-            publishUnavailable(message)
+            publishUnavailable()
             return ArStartResult.UNAVAILABLE
         }
     }
@@ -127,8 +118,8 @@ class EntryArSpatialView @JvmOverloads constructor(
         arSession = null
     }
 
-    private fun publishUnavailable(message: String) {
-        mainHandler.post { unavailableListener.invoke(message) }
+    private fun publishUnavailable() {
+        mainHandler.post { unavailableListener.invoke() }
     }
 }
 
@@ -318,7 +309,7 @@ private class EntryArRenderer(
                 .addOnSuccessListener { barcodes ->
                     barcodes.forEach { barcode ->
                         val raw = barcode.rawValue ?: return@forEach
-                        val parsed = RackCensusCodeParser.parse(raw) ?: return@forEach
+                        val parsed = EntryArQrCodeParser.parse(raw) ?: return@forEach
                         val bounds = barcode.boundingBox ?: return@forEach
                         val rawPoint = uprightToImagePoint(
                             bounds.exactCenterX(),
