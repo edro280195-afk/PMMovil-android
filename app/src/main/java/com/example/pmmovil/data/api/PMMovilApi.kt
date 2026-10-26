@@ -165,6 +165,13 @@ interface PMMovilApi {
     suspend fun getEntryArCards(@Body request: EntryArBatchRequest): Response<EntryArBatchResponse>
 
     /**
+     * Las cinco cifras del Tablero del inicio, una por estación y solo las que el usuario puede ver. Es aparte de los
+     * permisos a propósito: si falla o tarda, el inicio sigue siendo navegable.
+     */
+    @GET("Home/resumen")
+    suspend fun getHomeSummary(): Response<HomeSummaryDto>
+
+    /**
      * La ficha de un código leído (caja, relación, carpeta, bulto o pre-registro). Solo consulta. El código va en el
      * cuerpo: el folio de caja lleva `/` y el pre-registro lleva un token. Responde 400 si el código no es de los que
      * cubre la ficha (el gafete jamás se envía) y 200 con `found = false` si tiene forma válida pero no existe.

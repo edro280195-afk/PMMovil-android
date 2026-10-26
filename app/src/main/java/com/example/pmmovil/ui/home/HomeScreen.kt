@@ -133,6 +133,7 @@ fun HomeScreen(
     homeViewModel: HomeViewModel = hiltViewModel()
 ) {
     val state by homeViewModel.state.collectAsState()
+    val summary by homeViewModel.summary.collectAsState()
     val lifecycleOwner = LocalLifecycleOwner.current
     val haptic = LocalHapticFeedback.current
     val context = LocalContext.current
@@ -163,6 +164,8 @@ fun HomeScreen(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 homeViewModel.refreshNotificationUnreadCount()
+                // Las cifras del Tablero solo existen en el inicio nuevo; el viejo no las pide.
+                if (BuildConfig.USE_NEW_HOME) homeViewModel.refreshSummary()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -281,6 +284,7 @@ fun HomeScreen(
                 onRefresh = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     homeViewModel.refresh()
+                    if (BuildConfig.USE_NEW_HOME) homeViewModel.refreshSummary(force = true)
                 },
                 modifier = Modifier.fillMaxSize()
             ) {
@@ -326,6 +330,7 @@ fun HomeScreen(
                         item("new-home") {
                             NewHomeContent(
                                 modules = allActiveModules,
+                                summary = summary,
                                 wide = screenWidth >= 720,
                                 onScan = onNavigateToScanner,
                                 onModuleClick = onModuleClick,

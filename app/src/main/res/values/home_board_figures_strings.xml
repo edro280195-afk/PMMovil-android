@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Lo que cuenta la cifra de cada estación del Tablero. -->
+    <string name="home_new_unit_caseta">en el patio</string>
+    <string name="home_new_unit_entrada">capturadas hoy</string>
+    <string name="home_new_unit_revision">tuyas por revisar</string>
+    <string name="home_new_unit_relacion">por supervisar</string>
+    <string name="home_new_unit_salida">salidas hoy</string>
+    <string name="home_new_figure_unavailable">sin dato</string>
+    <string name="home_new_figure_loading">cargando</string>
+
+    <!-- El caso más fuerte de cada estación, bajo su fila. -->
+    <plurals name="home_exception_old_in_yard">
+        <item quantity="one">%d con más de 7 días</item>
+        <item quantity="other">%d con más de 7 días</item>
+    </plurals>
+    <plurals name="home_exception_discrepancies">
+        <item quantity="one">%d discrepancia</item>
+        <item quantity="other">%d discrepancias</item>
+    </plurals>
+    <plurals name="home_exception_blocked">
+        <item quantity="one">%d bloqueada</item>
+        <item quantity="other">%d bloqueadas</item>
+    </plurals>
+    <plurals name="home_exception_ready_to_exit">
+        <item quantity="one">%d lista para salir</item>
+        <item quantity="other">%d listas para salir</item>
+    </plurals>
+</resources>

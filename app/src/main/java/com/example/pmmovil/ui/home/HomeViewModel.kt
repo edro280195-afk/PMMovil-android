@@ -1,12 +1,15 @@
 package com.example.pmmovil.ui.home
 
+import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.pmmovil.R
 import com.example.pmmovil.data.model.ModuloPermisoDto
 import com.example.pmmovil.data.repository.AuthRepository
+import com.example.pmmovil.data.repository.HomeSummaryRepository
 import com.example.pmmovil.data.repository.NotificationInboxRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -55,11 +58,18 @@ enum class HomeLoadPhase { Sesion, Permisos, Listo }
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val authRepository: AuthRepository,
-    private val notificationInboxRepository: NotificationInboxRepository
+    private val notificationInboxRepository: NotificationInboxRepository,
+    private val homeSummaryRepository: HomeSummaryRepository
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(HomeUiState())
     val state: StateFlow<HomeUiState> = _state.asStateFlow()
+
+    // Las cifras del Tablero son aparte de los permisos: si fallan o tardan, el inicio sigue siendo navegable.
+    private val _summary = MutableStateFlow(HomeSummaryUiState())
+    val summary: StateFlow<HomeSummaryUiState> = _summary.asStateFlow()
+    private var summaryJob: Job? = null
+    private var lastSummaryRequestAt: Long? = null
 
     fun getUserName(): String? = authRepository.getName()
     fun getUserUsername(): String? = authRepository.getUsername()
@@ -78,6 +88,29 @@ class HomeViewModel @Inject constructor(
     fun refresh() {
         load(showLoadingSkeleton = false)
         refreshNotificationUnreadCount()
+    }
+
+    /**
+     * Pide las cifras del Tablero. Se llama cada vez que el inicio vuelve a primer plano, pero no más de una vez por
+     * [SUMMARY_MIN_INTERVAL_MILLIS] ni mientras haya una petición en vuelo; [force] (jalar para actualizar) se salta el
+     * intervalo. Si falla y ya había cifras, se conservan las anteriores: un número de hace un minuto es mejor que un guion.
+     */
+    fun refreshSummary(force: Boolean = false) {
+        val now = SystemClock.elapsedRealtime()
+        if (summaryJob?.isActive == true) return
+        if (!force && !shouldRefreshSummary(lastSummaryRequestAt, now)) return
+        lastSummaryRequestAt = now
+        summaryJob = viewModelScope.launch {
+            homeSummaryRepository.get()
+                .onSuccess { dto ->
+                    _summary.value = HomeSummaryUiState(loaded = true, failed = false, figures = boardFigures(dto))
+                }
+                .onFailure {
+                    _summary.value = _summary.value.let { previous ->
+                        if (previous.loaded) previous else previous.copy(failed = true)
+                    }
+                }
+        }
     }
 
     fun refreshNotificationUnreadCount() {

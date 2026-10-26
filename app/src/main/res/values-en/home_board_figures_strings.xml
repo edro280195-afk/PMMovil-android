@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- What each station's figure counts. -->
+    <string name="home_new_unit_caseta">in the yard</string>
+    <string name="home_new_unit_entrada">captured today</string>
+    <string name="home_new_unit_revision">yours to review</string>
+    <string name="home_new_unit_relacion">to supervise</string>
+    <string name="home_new_unit_salida">exits today</string>
+    <string name="home_new_figure_unavailable">no data</string>
+    <string name="home_new_figure_loading">loading</string>
+
+    <!-- The strongest case of each station, under its row. -->
+    <plurals name="home_exception_old_in_yard">
+        <item quantity="one">%d over 7 days old</item>
+        <item quantity="other">%d over 7 days old</item>
+    </plurals>
+    <plurals name="home_exception_discrepancies">
+        <item quantity="one">%d discrepancy</item>
+        <item quantity="other">%d discrepancies</item>
+    </plurals>
+    <plurals name="home_exception_blocked">
+        <item quantity="one">%d blocked</item>
+        <item quantity="other">%d blocked</item>
+    </plurals>
+    <plurals name="home_exception_ready_to_exit">
+        <item quantity="one">%d ready to leave</item>
+        <item quantity="other">%d ready to leave</item>
+    </plurals>
+</resources>

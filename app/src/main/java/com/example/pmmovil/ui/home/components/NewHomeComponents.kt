@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -53,8 +54,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.pmmovil.R
 import com.example.pmmovil.data.model.MobileModuleIds
+import com.example.pmmovil.ui.components.FlipCounter
+import com.example.pmmovil.ui.components.SignalChip
+import com.example.pmmovil.ui.components.Skeleton
 import com.example.pmmovil.ui.components.Station
+import com.example.pmmovil.ui.home.BoardFigure
 import com.example.pmmovil.ui.home.HomeModuleRouteKeys
+import com.example.pmmovil.ui.home.HomeSummaryUiState
+import com.example.pmmovil.ui.home.stationUnit
 import com.example.pmmovil.ui.home.tableroFocus
 import com.example.pmmovil.ui.theme.PmmBlueDeep
 import com.example.pmmovil.ui.theme.PmmBlueMid
@@ -66,11 +73,18 @@ import com.example.pmmovil.ui.theme.PmmTextSecondary
 import com.example.pmmovil.ui.theme.PmmYellow
 import com.example.pmmovil.ui.theme.SignageType
 
-/** Una fila del Tablero: la estación y el módulo que abre, o `null` si el puesto del usuario no lo tiene. */
+/** Cómo va la cifra de una fila: todavía no llega, llegó, o no se pudo calcular. */
+enum class FigureState { Loading, Ready, Unavailable }
+
+/**
+ * Una fila del Tablero: la estación y el módulo que abre, o `null` si el puesto del usuario no lo tiene, más su cifra.
+ */
 data class BoardRow(
     val station: Station,
     val module: ModuleItem?,
-    val focus: Boolean
+    val focus: Boolean,
+    val figure: BoardFigure? = null,
+    val figureState: FigureState = FigureState.Loading
 ) {
     val allowed: Boolean get() = module != null
 }
@@ -97,10 +111,11 @@ private fun stationDescription(station: Station): Int = when (station) {
 }
 
 /**
- * El inicio nuevo: el visor de escaneo universal, La Línea con las cinco estaciones y, debajo, los módulos que no son
- * una estación. Por ahora el Tablero es solo navegación; las cifras de cada estación llegan en un paso aparte.
+ * El inicio nuevo: el visor de escaneo universal, La Línea con las cinco estaciones, cada una con su cifra y su caso más
+ * fuerte, y debajo los módulos que no son una estación.
  *
  * @param modules los módulos que el usuario puede abrir (los mismos que pinta el inicio de siempre).
+ * @param summary las cifras del Tablero. Llegan aparte de los módulos: mientras no llegan, cada fila pinta un esqueleto.
  * @param wide tableta: el visor y La Línea van lado a lado.
  * @param onBlocked se llama con el nombre de la estación cuando el usuario toca una que su puesto no tiene.
  */
@@ -111,12 +126,26 @@ fun NewHomeContent(
     onScan: () -> Unit,
     onModuleClick: (ModuleItem) -> Unit,
     onBlocked: (stationName: String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    summary: HomeSummaryUiState = HomeSummaryUiState()
 ) {
-    val rows = remember(modules) {
+    val rows = remember(modules, summary) {
         val byStation = Station.entries.associateWith { stationModule(it, modules) }
         val focus = tableroFocus(Station.entries.filter { byStation[it] != null })
-        Station.entries.map { BoardRow(it, byStation[it], it == focus) }
+        Station.entries.map { station ->
+            val figure = summary.figures[station]
+            BoardRow(
+                station = station,
+                module = byStation[station],
+                focus = station == focus,
+                figure = figure,
+                figureState = when {
+                    figure != null -> FigureState.Ready
+                    summary.loading -> FigureState.Loading
+                    else -> FigureState.Unavailable
+                }
+            )
+        }
     }
     val more = remember(modules, rows) {
         val onTheLine = rows.mapNotNull { it.module }.toSet()
@@ -417,49 +446,102 @@ fun HomeBoard(
 
 @Composable
 private fun BoardRowItem(number: Int, row: BoardRow, onClick: () -> Unit) {
+    val resources = LocalContext.current.resources
     val name = stringResource(row.station.nameRes)
-    val detail = if (row.allowed) {
-        stringResource(stationDescription(row.station))
-    } else {
-        stringResource(R.string.home_new_station_blocked_state)
+    val figure = row.figure.takeIf { row.allowed && row.figureState == FigureState.Ready }
+    // Con cifra, el renglón de abajo dice qué cuenta; sin ella, sigue diciendo de qué trata la estación.
+    val detail = when {
+        !row.allowed -> stringResource(R.string.home_new_station_blocked_state)
+        figure != null -> stringResource(stationUnit(row.station))
+        else -> stringResource(stationDescription(row.station))
     }
-    Row(
+    val exceptionText = figure?.exception?.let { resources.getQuantityString(it.code.phrase, it.count, it.count) }
+    val spoken = buildString {
+        append("$name. $detail")
+        if (figure != null) append(". ${figure.count}")
+        if (exceptionText != null) append(". $exceptionText")
+    }
+
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 60.dp)
             .clip(RoundedCornerShape(12.dp))
             .then(if (row.focus) Modifier.background(PmmNavyDark) else Modifier)
             .alpha(if (row.allowed) 1f else 0.55f)
             .clickable(role = Role.Button, onClick = onClick)
-            .semantics(mergeDescendants = true) { contentDescription = "$name. $detail" }
-            .padding(end = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .semantics(mergeDescendants = true) { contentDescription = spoken }
     ) {
-        Box(Modifier.width(44.dp), contentAlignment = Alignment.Center) {
-            BoardNode(number = number, row = row)
-        }
-        Column(
+        Row(
             modifier = Modifier
-                .weight(1f)
-                .padding(vertical = 6.dp)
+                .fillMaxWidth()
+                .heightIn(min = 60.dp)
+                .padding(end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = name,
-                color = if (row.focus) Color.White else PmmTextPrimary,
-                fontWeight = FontWeight.Black,
-                fontSize = 16.sp
-            )
-            Text(
-                text = detail,
-                color = if (row.focus) Color.White.copy(alpha = 0.82f) else PmmTextSecondary,
-                fontSize = 12.sp
+            Box(Modifier.width(44.dp), contentAlignment = Alignment.Center) {
+                BoardNode(number = number, row = row)
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(vertical = 6.dp)
+            ) {
+                Text(
+                    text = name,
+                    color = if (row.focus) Color.White else PmmTextPrimary,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 16.sp
+                )
+                Text(
+                    text = detail,
+                    color = if (row.focus) Color.White.copy(alpha = 0.82f) else PmmTextSecondary,
+                    fontSize = 12.sp
+                )
+            }
+            if (row.allowed) BoardFigureSlot(row = row)
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = if (row.focus) Color.White else PmmTextMuted
             )
         }
-        Icon(
-            Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = null,
-            tint = if (row.focus) Color.White else PmmTextMuted
-        )
+        val exception = figure?.exception
+        if (exception != null && exceptionText != null) {
+            // El caso más fuerte cuelga como un ramal bajo la estación, alineado con su texto.
+            SignalChip(
+                kind = exception.signal,
+                detail = exceptionText,
+                modifier = Modifier.padding(start = 44.dp, end = 12.dp, bottom = 10.dp)
+            )
+        }
+    }
+}
+
+/** La cifra de una estación: rueda al llegar, un esqueleto mientras se espera y un guion si no se pudo calcular. */
+@Composable
+private fun BoardFigureSlot(row: BoardRow) {
+    val color = if (row.focus) Color.White else PmmTextPrimary
+    Box(
+        modifier = Modifier.padding(horizontal = 8.dp),
+        contentAlignment = Alignment.CenterEnd
+    ) {
+        when (row.figureState) {
+            FigureState.Ready -> row.figure?.let {
+                FlipCounter(
+                    value = it.count,
+                    style = SignageType.Numeral.copy(fontSize = 32.sp, lineHeight = 32.sp),
+                    color = color
+                )
+            }
+
+            FigureState.Loading -> Skeleton(width = 38.dp, height = 24.dp)
+
+            FigureState.Unavailable -> Text(
+                text = "—",
+                color = if (row.focus) Color.White.copy(alpha = 0.6f) else PmmTextMuted,
+                style = SignageType.Numeral.copy(fontSize = 28.sp, lineHeight = 28.sp)
+            )
+        }
     }
 }
 
