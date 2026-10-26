@@ -9,6 +9,7 @@ import com.example.pmmovil.data.model.CargarRelacionResponse
 import com.example.pmmovil.data.model.RelacionPendiente
 import com.example.pmmovil.data.repository.AuthRepository
 import com.example.pmmovil.data.repository.RelacionRepository
+import com.example.pmmovil.data.scanner.PendingCode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -61,6 +62,7 @@ class RelacionViewModel @Inject constructor(
     )
     val uiState: StateFlow<RelacionUiState> = _uiState.asStateFlow()
     private var searchJob: Job? = null
+    private val pendingCode = PendingCode()
 
     init {
         loadPending()
@@ -93,7 +95,12 @@ class RelacionViewModel @Inject constructor(
     }
 
     fun openDetail(relno: String) {
-        if (relno.isBlank() || _uiState.value.isLoading) return
+        if (relno.isBlank()) return
+        if (_uiState.value.isLoading) {
+            // Llegó mientras cargaba la lista (por ejemplo, abierta desde el escáner universal): se abre al terminar.
+            pendingCode.hold(relno)
+            return
+        }
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, detail = null) }
             repository.getDetail(relno.trim())
@@ -119,7 +126,13 @@ class RelacionViewModel @Inject constructor(
                         )
                     }
                 }
+            openPendingCode()
         }
+    }
+
+    /** Si llegó un código mientras se cargaba algo, lo abre ahora que la pantalla ya puede atenderlo. */
+    private fun openPendingCode() {
+        pendingCode.take()?.let(::openDetail)
     }
 
     fun closeDetail() {
@@ -273,6 +286,7 @@ class RelacionViewModel @Inject constructor(
                         )
                     }
                 }
+            openPendingCode()
         }
     }
 
@@ -292,6 +306,7 @@ class RelacionViewModel @Inject constructor(
                         )
                     }
                 }
+            openPendingCode()
         }
     }
 }

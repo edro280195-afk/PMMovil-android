@@ -10,6 +10,7 @@ import com.example.pmmovil.data.model.SalidaPatioItem
 import com.example.pmmovil.data.repository.AuthRepository
 import com.example.pmmovil.data.repository.CasetaRepository
 import com.example.pmmovil.data.repository.SalidaCasetaRepository
+import com.example.pmmovil.data.scanner.PendingCode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.File
 import java.text.SimpleDateFormat
@@ -137,6 +138,8 @@ class SalidaCasetaViewModel @Inject constructor(
     private val photoEncodingScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val pendingEncodedPhotos = mutableMapOf<String, Deferred<String?>>()
 
+    private val pendingCode = PendingCode()
+
     init {
         if (_uiState.value.tieneAcceso) refresh() else _uiState.update { it.copy(isLoading = false) }
     }
@@ -152,8 +155,13 @@ class SalidaCasetaViewModel @Inject constructor(
                 if (silencioso) it.copy(isRefreshing = true) else it.copy(isLoading = it.items.isEmpty(), isRefreshing = true)
             }
             repository.getPatio()
-                .onSuccess { respuesta -> aplicarPatio(respuesta.items, respuesta.hoy) }
+                .onSuccess { respuesta ->
+                    aplicarPatio(respuesta.items, respuesta.hoy)
+                    pendingCode.take()?.let(::onScannerInput)
+                }
                 .onFailure { error ->
+                    // Si el patio no cargó, buscar el código daría un «no encontré» falso: ya se muestra el error.
+                    pendingCode.take()
                     _uiState.update {
                         it.copy(
                             isLoading = false,
@@ -236,6 +244,12 @@ class SalidaCasetaViewModel @Inject constructor(
             _uiState.update {
                 it.copy(message = "⚠ Lectura vacía. Vuelve a escanear la caja.", feedbackSeq = it.feedbackSeq + 1)
             }
+            return
+        }
+        if (_uiState.value.isLoading) {
+            // El patio aún no llega (por ejemplo, abierta desde el escáner universal): buscar ahora diría
+            // «no encontré» de algo que sí está. Se busca al terminar de cargar.
+            pendingCode.hold(code)
             return
         }
         val coincidencias = _uiState.value.items.filter { item ->
