@@ -144,10 +144,11 @@ fun ScanActionsScreen(
                         }
                         ActionsSection(
                             actions = state.actions,
-                            // Con ficha, «sin acciones» es que el estado no permite ninguna; sin ella, que el puesto no puede.
+                            // Sin acciones puede ser que el estado de la pieza no permita ninguna (una caja que ya salió) o
+                            // que sí las permita y el puesto del usuario no pueda hacerlas: se dice cuál de las dos.
                             emptyText = when {
-                                result != null -> R.string.trace_no_actions
-                                ScanActionResolver.actionsFor(code).isNotEmpty() -> R.string.scan_actions_none
+                                result != null && result.actions.isEmpty() -> R.string.trace_no_actions
+                                result != null || ScanActionResolver.actionsFor(code).isNotEmpty() -> R.string.scan_actions_none
                                 else -> null
                             },
                             onAction = onAction
