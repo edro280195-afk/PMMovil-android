@@ -438,7 +438,9 @@ fun SmartBarcodeCameraView(
     compact: Boolean = false,
     showStatusOverlay: Boolean = true,
     startZoomRatio: Float = 1f,
-    scanDistance: ScanDistance = ScanDistance.Far
+    scanDistance: ScanDistance = ScanDistance.Far,
+    // Color del marco cuando se fija sobre un código (verde por omisión; el escáner universal lo pone amarillo).
+    lockedAccent: Color = PmmGreen
 ) {
     val context = LocalContext.current
     var hasPermission by remember {
@@ -496,6 +498,7 @@ fun SmartBarcodeCameraView(
                     startZoomRatio = startZoomRatio,
                     scanDistance = scanDistance,
                     isPaused = isPaused,
+                    lockedAccent = lockedAccent,
                     modifier = Modifier.fillMaxSize()
                 )
                 if (isPaused) {
@@ -528,6 +531,7 @@ private fun SmartBarcodeCameraContent(
     startZoomRatio: Float,
     scanDistance: ScanDistance,
     isPaused: Boolean,
+    lockedAccent: Color,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -1256,6 +1260,7 @@ private fun SmartBarcodeCameraContent(
             compact = compact,
             showGuidanceOverlay = showStatusOverlay,
             lockedFrame = lockedFrame.takeUnless { selectionFrozen },
+            lockedAccent = lockedAccent,
             onResetZoom = { takeManualZoom(startZoomRatio) },
             modifier = Modifier.fillMaxSize()
         )
@@ -1775,13 +1780,14 @@ private fun SmartScannerFrame(
     compact: Boolean,
     showGuidanceOverlay: Boolean,
     lockedFrame: ScannerFrameRect?,
+    lockedAccent: Color,
     onResetZoom: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val isSearching = autoZoomPhase == AutoZoomPhase.Searching
     val accent by animateColorAsState(
         targetValue = when {
-            isCaptured || hasCandidate -> PmmGreen
+            isCaptured || hasCandidate -> lockedAccent
             isSearching -> PmmBlueLight
             state == FrameState.TooDark || state == FrameState.TooBright -> Color(0xFFF8B84E)
             state == FrameState.Blurry || state == FrameState.NoContent -> PmmRedDark
@@ -1868,7 +1874,7 @@ private fun SmartScannerFrame(
 
             if (capturePulse > 0f) {
                 drawRoundRect(
-                    color = PmmGreen.copy(alpha = 0.22f * capturePulse),
+                    color = lockedAccent.copy(alpha = 0.22f * capturePulse),
                     topLeft = Offset(left, top),
                     size = rectSize,
                     cornerRadius = CornerRadius(radius, radius)

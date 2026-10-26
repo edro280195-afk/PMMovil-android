@@ -8,6 +8,14 @@
     <string name="scan_actions_none">Your role has no actions for this code.</string>
     <string name="scan_actions_section">Actions</string>
 
+    <!-- Universal scanner. -->
+    <string name="scanner_universal_title">Scan</string>
+    <string name="scanner_universal_subtitle">Point at any PMM QR</string>
+    <string name="scanner_mode_one">One</string>
+    <string name="scanner_mode_many">Many (AR)</string>
+    <string name="scanner_mode_description">Scan mode</string>
+    <string name="scanner_lock_badge">BADGE · not looked up</string>
+
     <!-- Code type (label tag, in small caps). -->
     <string name="scan_kind_caja">BOX</string>
     <string name="scan_kind_relacion">RELEASE</string>

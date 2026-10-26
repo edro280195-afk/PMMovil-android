@@ -8,6 +8,14 @@
     <string name="scan_actions_none">Tu puesto no tiene acciones para este código.</string>
     <string name="scan_actions_section">Acciones</string>
 
+    <!-- Escáner universal. -->
+    <string name="scanner_universal_title">Escanear</string>
+    <string name="scanner_universal_subtitle">Apunta a cualquier QR de PMM</string>
+    <string name="scanner_mode_one">Uno</string>
+    <string name="scanner_mode_many">Varios (AR)</string>
+    <string name="scanner_mode_description">Modo de escaneo</string>
+    <string name="scanner_lock_badge">GAFETE · no se consulta</string>
+
     <!-- Tipo de código (rótulo de la etiqueta, en versalitas). -->
     <string name="scan_kind_caja">CAJA</string>
     <string name="scan_kind_relacion">RELACIÓN</string>

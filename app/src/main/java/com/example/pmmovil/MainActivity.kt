@@ -43,9 +43,11 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.pmmovil.ui.revision.MODO_ETIQUETAS
+import com.example.pmmovil.data.model.MobileModuleIds
 import com.example.pmmovil.data.scanner.ScanActionsRoute
 import com.example.pmmovil.ui.scanactions.ScanActionsScreen
 import com.example.pmmovil.ui.scanner.ScanProfile
+import com.example.pmmovil.ui.scanner.UniversalScannerScreen
 import com.example.pmmovil.data.scanner.HardwareBarcodeDecoder
 import com.example.pmmovil.data.scanner.ScanEventBus
 import com.example.pmmovil.data.scanner.isLikelyBarcodeScanner
@@ -325,9 +327,7 @@ class MainActivity : AppCompatActivity() {
                                 .getStateFlow<String?>("barcode", null)
                                 .collectAsState()
                             HomeScreen(
-                                onNavigateToScanner = {
-                                    navController.navigate("scanner?profile=${ScanProfile.QrOnly.name}")
-                                },
+                                onNavigateToScanner = { navController.navigate("scanner_universal") },
                                 barcodeScanResult = barcodeResult,
                                 onBarcodeScanConsumed = {
                                     backStackEntry.savedStateHandle["barcode"] = null
@@ -982,6 +982,30 @@ class MainActivity : AppCompatActivity() {
                                         ?.savedStateHandle
                                         ?.set("photosChanged", true)
                                     navController.popBackStack()
+                                }
+                            )
+                        }
+
+                        // El escáner del inicio: solo QR, con el tipo del código sobre el visor y el cambio a «Varios
+                        // (AR)». Devuelve la lectura igual que "scanner": por savedStateHandle["barcode"] del inicio.
+                        composable("scanner_universal") {
+                            UniversalScannerScreen(
+                                onBarcodeScanned = { barcode ->
+                                    navController.previousBackStackEntry
+                                        ?.savedStateHandle
+                                        ?.set("barcode", barcode)
+                                    navController.popBackStack()
+                                },
+                                onClose = { navController.popBackStack() },
+                                // El AR de entradas es de Revisión: sin ese módulo no se ofrece el modo.
+                                onOpenAr = if (authRepository.hasPermission(MobileModuleIds.REVIEW, "Lectura")) {
+                                    {
+                                        navController.navigate("ar_entradas") {
+                                            popUpTo("scanner_universal") { inclusive = true }
+                                        }
+                                    }
+                                } else {
+                                    null
                                 }
                             )
                         }

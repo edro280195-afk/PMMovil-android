@@ -228,8 +228,9 @@ private fun ActionButton(action: ScanAction, onClick: () -> Unit) {
     }
 }
 
+/** Rótulo del tipo de código («CAJA», «BULTO»…); también lo usa el escáner universal sobre el visor. */
 @StringRes
-private fun kindLabel(code: ScannedCode): Int = when (code) {
+internal fun kindLabel(code: ScannedCode): Int = when (code) {
     is ScannedCode.Caja -> R.string.scan_kind_caja
     is ScannedCode.Relacion -> R.string.scan_kind_relacion
     is ScannedCode.Carpeta -> R.string.scan_kind_carpeta
