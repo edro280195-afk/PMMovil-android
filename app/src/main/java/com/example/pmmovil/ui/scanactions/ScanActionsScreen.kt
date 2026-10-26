@@ -25,9 +25,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -57,20 +60,26 @@ import com.example.pmmovil.ui.theme.PmmYellow
 import com.example.pmmovil.ui.theme.SignageType
 
 /**
- * Lo que se puede hacer con un código leído: la etiqueta con su tipo y, debajo, solo las acciones que el puesto del
- * usuario permite. Leer nunca registra nada; cada acción abre una pantalla que ya existe con el código cargado.
+ * La ficha de un código leído: la etiqueta con su tipo y sus datos, lo que conviene saber, las acciones que el estado de
+ * la pieza y el puesto del usuario permiten, La Línea (en qué punto del recorrido va) y las piezas relacionadas. Leer
+ * nunca registra nada; cada acción abre una pantalla que ya existe con el código cargado.
+ *
+ * La ficha viene del servidor. Si no hay red se muestra lo que dice el código y las acciones que se deducen de él.
  *
  * @param onAction recibe la ruta de la pantalla elegida; quien la llama decide cómo navegar.
+ * @param onOpenCode recibe el código de una pieza relacionada (la caja, la relación, una entrada) para abrir su ficha.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ScanActionsScreen(
     onNavigateBack: () -> Unit,
     onAction: (route: String) -> Unit,
+    onOpenCode: (code: String) -> Unit,
     viewModel: ScanActionsViewModel = hiltViewModel()
 ) {
-    val state = viewModel.state
+    val state by viewModel.state.collectAsState()
     val code = state.code
+    val trace = state.trace
 
     Scaffold(
         containerColor = PmmBgPrimary,
@@ -115,26 +124,46 @@ fun ScanActionsScreen(
                     .padding(horizontal = 16.dp, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                CodeLabel(code)
+                CodeLabel(code = code, trace = trace)
 
-                if (state.actions.isNotEmpty()) {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(
-                            text = stringResource(R.string.scan_actions_section).uppercase(),
-                            color = PmmTextSecondary,
-                            style = SignageType.Caption
-                        )
-                        state.actions.forEach { action ->
-                            ActionButton(action = action, onClick = { onAction(action.route) })
-                        }
-                    }
-                } else if (ScanActionResolver.actionsFor(code).isNotEmpty()) {
-                    // El código sí lleva a algo, pero este puesto no puede hacerlo: se dice, no se esconde.
-                    Text(
-                        text = stringResource(R.string.scan_actions_none),
+                val result = (trace as? TraceUiState.Ready)?.result
+                if (result != null) TraceFlags(flags = knownFlags(result))
+
+                when (trace) {
+                    TraceUiState.Loading -> TraceLoading()
+
+                    TraceUiState.NotFound -> Text(
+                        text = stringResource(R.string.trace_not_found),
                         color = PmmTextSecondary,
                         fontSize = 14.sp
                     )
+
+                    is TraceUiState.Ready, TraceUiState.Unavailable, TraceUiState.NotRequested -> {
+                        if (trace == TraceUiState.Unavailable) {
+                            UnavailableNote(onRetry = viewModel::retry)
+                        }
+                        ActionsSection(
+                            actions = state.actions,
+                            // Con ficha, «sin acciones» es que el estado no permite ninguna; sin ella, que el puesto no puede.
+                            emptyText = when {
+                                result != null -> R.string.trace_no_actions
+                                ScanActionResolver.actionsFor(code).isNotEmpty() -> R.string.scan_actions_none
+                                else -> null
+                            },
+                            onAction = onAction
+                        )
+                    }
+                }
+
+                if (result != null) {
+                    SectionTitle(R.string.trace_section_line)
+                    StationTimeline(rows = stationRows(result))
+
+                    val related = relatedRows(result)
+                    if (related.isNotEmpty()) {
+                        SectionTitle(R.string.trace_section_related)
+                        RelatedList(rows = related, onOpenCode = onOpenCode)
+                    }
                 }
 
                 Text(
@@ -148,9 +177,13 @@ fun ScanActionsScreen(
 }
 
 @Composable
-private fun CodeLabel(code: ScannedCode) {
-    val signal = when (code) {
-        is ScannedCode.Candidato, is ScannedCode.Desconocido -> SignalKind.SinDato
+private fun CodeLabel(code: ScannedCode, trace: TraceUiState) {
+    val result = (trace as? TraceUiState.Ready)?.result
+    // Con ficha, la señal la dice el servidor; sin ella, lo único que se sabe es si el código tiene forma de algo.
+    val signal = when {
+        result != null -> signalKindOf(result.signal)
+        trace == TraceUiState.NotFound -> SignalKind.SinDato
+        code is ScannedCode.Candidato || code is ScannedCode.Desconocido -> SignalKind.SinDato
         else -> SignalKind.Aviso
     }
     LabelCard(
@@ -176,7 +209,11 @@ private fun CodeLabel(code: ScannedCode) {
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                Text(text = kindHint(code), color = PmmTextSecondary, fontSize = 14.sp)
+                if (result != null) {
+                    TraceFields(result = result, modifier = Modifier.padding(top = 4.dp))
+                } else {
+                    Text(text = kindHint(code), color = PmmTextSecondary, fontSize = 14.sp)
+                }
             }
         },
         stub = {
@@ -190,6 +227,54 @@ private fun CodeLabel(code: ScannedCode) {
             }
         }
     )
+}
+
+@Composable
+private fun SectionTitle(@StringRes text: Int) {
+    Text(
+        text = stringResource(text).uppercase(),
+        color = PmmTextSecondary,
+        style = SignageType.Caption
+    )
+}
+
+/** Las acciones disponibles; la principal en amarillo. Sin ninguna, dice por qué en vez de dejar un hueco. */
+@Composable
+private fun ActionsSection(
+    actions: List<ScanAction>,
+    @StringRes emptyText: Int?,
+    onAction: (route: String) -> Unit
+) {
+    if (actions.isNotEmpty()) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            SectionTitle(R.string.scan_actions_section)
+            actions.forEach { action ->
+                ActionButton(action = action, onClick = { onAction(action.route) })
+            }
+        }
+    } else if (emptyText != null) {
+        Text(text = stringResource(emptyText), color = PmmTextSecondary, fontSize = 14.sp)
+    }
+}
+
+/** Aviso de que no se pudo consultar al servidor, con la salida a la mano. */
+@Composable
+private fun UnavailableNote(onRetry: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.trace_unavailable),
+            color = PmmTextSecondary,
+            fontSize = 13.sp,
+            modifier = Modifier.weight(1f)
+        )
+        TextButton(onClick = onRetry, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text(stringResource(R.string.trace_retry), fontWeight = FontWeight.Bold)
+        }
+    }
 }
 
 @Composable

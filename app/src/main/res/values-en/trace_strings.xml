@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Code card: what the server answers. -->
+    <string name="trace_loading">Looking it up…</string>
+    <string name="trace_unavailable">No connection to the server. Showing only what the code says.</string>
+    <string name="trace_retry">Retry</string>
+    <string name="trace_not_found">This code does not exist in the system.</string>
+    <string name="trace_no_actions">There is nothing to do with this in its current state.</string>
+
+    <string name="trace_section_flags">Heads up</string>
+    <string name="trace_section_line">The Line</string>
+    <string name="trace_section_related">Related</string>
+
+    <!-- Flags. -->
+    <string name="trace_flag_sin_entrada_vinculada">No entry linked to this box. One may exist without being linked.</string>
+    <string name="trace_flag_entrada_por_relacion">The entry was found through the exit release.</string>
+    <string name="trace_flag_sin_relacion">No exit release yet.</string>
+    <string name="trace_flag_danada">Damaged goods.</string>
+    <string name="trace_flag_hazmat">Hazardous goods (hazmat).</string>
+    <string name="trace_flag_discrepancia">Review with discrepancies.</string>
+    <string name="trace_flag_lista_recortada">There are more entries than shown.</string>
+    <string name="trace_flag_cancelada">Cancelled box.</string>
+    <string name="trace_flag_relacion_ocupada">Someone is editing the release.</string>
+    <string name="trace_flag_registro_abierto">The release already left, but the box is still in the yard: its record needs closing.</string>
+    <string name="trace_flag_etiqueta_no_registrada">This label is not registered with that position.</string>
+
+    <!-- Review progress. -->
+    <string name="trace_review_sin_revisar">Not reviewed</string>
+    <string name="trace_review_en_progreso">In progress</string>
+    <string name="trace_review_completa">Complete</string>
+    <string name="trace_review_completa_discrepancias">Complete with discrepancies</string>
+    <string name="trace_review_progress">%1$d/%2$d invoices · %3$d/%4$d lines</string>
+
+    <!-- Pre-registration status. -->
+    <string name="trace_prereg_vigente">Valid</string>
+    <string name="trace_prereg_usado">Used</string>
+    <string name="trace_prereg_expirado">Expired</string>
+    <string name="trace_prereg_cancelado">Cancelled</string>
+
+    <!-- Label fields. -->
+    <string name="trace_field_cliente">Customer</string>
+    <string name="trace_field_linea">Carrier</string>
+    <string name="trace_field_caja">Box no.</string>
+    <string name="trace_field_planta">Plant</string>
+    <string name="trace_field_operacion">Operation</string>
+    <string name="trace_field_arrival">Arrival</string>
+    <string name="trace_field_status">Status</string>
+    <string name="trace_field_transfer">Transfer</string>
+    <string name="trace_field_authorized">Authorised</string>
+    <string name="trace_field_departure">Departure</string>
+    <string name="trace_field_review">Review</string>
+    <string name="trace_field_unit">Unit</string>
+    <string name="trace_field_expires">Expires</string>
+    <string name="trace_field_used">Used</string>
+    <string name="trace_field_label">Label</string>
+    <string name="trace_label_position">%1$d of %2$d</string>
+
+    <!-- Related: what each row is. -->
+    <string name="trace_related_caja">Box</string>
+    <string name="trace_related_relacion">Release</string>
+    <string name="trace_related_entrada">Entry</string>
+    <string name="trace_related_open">View card for %1$s</string>
+</resources>

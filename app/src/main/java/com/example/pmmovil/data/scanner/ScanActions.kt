@@ -54,40 +54,20 @@ object ScanActionResolver {
     /** Todas las acciones que existen para el tipo de código, sin mirar permisos. */
     fun actionsFor(code: ScannedCode): List<ScanAction> = when (code) {
         is ScannedCode.Caja -> listOf(
-            ScanAction(
-                ScanActionId.CreateEntry,
-                "entrada_nueva?barcode=${encode(code.normalized)}",
-                listOf(MobileModuleIds.WAREHOUSE_OPERATIONS),
-                ScanAction.LEVEL_ADD
-            ),
-            exitGate(code.normalized),
-            ScanAction(
-                ScanActionId.FindInYard,
-                "caseta_hub?barcode=${encode(code.normalized)}",
-                listOf(MobileModuleIds.GATE)
-            )
+            build(ScanActionId.CreateEntry, code.normalized),
+            build(ScanActionId.ExitGate, code.normalized),
+            build(ScanActionId.FindInYard, code.normalized)
         )
 
         is ScannedCode.Relacion -> listOf(
-            ScanAction(
-                ScanActionId.OpenRelation,
-                "relacion?barcode=${encode(code.normalized)}",
-                listOf(MobileModuleIds.WAREHOUSE_RELATION)
-            ),
-            exitGate(code.normalized)
+            build(ScanActionId.OpenRelation, code.normalized),
+            build(ScanActionId.ExitGate, code.normalized)
         )
 
         is ScannedCode.Carpeta -> entryActions(code.reference)
         is ScannedCode.Bulto -> entryActions(code.reference)
 
-        is ScannedCode.PreRegistro -> listOf(
-            ScanAction(
-                ScanActionId.RegisterPreRegistro,
-                "caseta_entrada?barcode=${encode(code.normalized)}",
-                listOf(MobileModuleIds.GATE),
-                ScanAction.LEVEL_ADD
-            )
-        )
+        is ScannedCode.PreRegistro -> listOf(build(ScanActionId.RegisterPreRegistro, code.normalized))
 
         // Un gafete, una etiqueta de producto, una referencia dudosa o un código desconocido no abren nada por sí
         // solos: el gafete lleva una credencial y los demás necesitan un contexto que aquí no existe.
@@ -112,29 +92,69 @@ object ScanActionResolver {
     }
 
     private fun entryActions(reference: String): List<ScanAction> = listOf(
-        ScanAction(
-            ScanActionId.ReviewEntry,
-            "detalle/${encode(reference)}",
-            listOf(MobileModuleIds.REVIEW)
-        ),
-        ScanAction(
-            ScanActionId.OpenEntry,
-            "entrada_editar/${encode(reference)}",
+        build(ScanActionId.ReviewEntry, reference),
+        build(ScanActionId.OpenEntry, reference),
+        build(ScanActionId.ShowOnMap, reference)
+    )
+
+    /**
+     * La acción [id] apuntando a [value], que es lo que la pantalla de destino recibe como si lo hubiera leído el lector:
+     * el folio de la caja, la relación, la referencia de la entrada o el QR del pre-registro, según la acción. El mapa
+     * no recibe nada. Es el único lugar que sabe a qué ruta va cada acción y con qué permiso, para que la hoja sin red y
+     * la ficha con servidor no puedan diferir.
+     */
+    internal fun build(id: ScanActionId, value: String): ScanAction = when (id) {
+        ScanActionId.CreateEntry -> ScanAction(
+            id,
+            "entrada_nueva?barcode=${encode(value)}",
+            listOf(MobileModuleIds.WAREHOUSE_OPERATIONS),
+            ScanAction.LEVEL_ADD
+        )
+
+        // La pantalla de salida es una sola para salida con relación y manual; los dos permisos siguen separados.
+        ScanActionId.ExitGate -> ScanAction(
+            id,
+            "salida_caseta?barcode=${encode(value)}",
+            listOf(MobileModuleIds.GATE_RELATION_EXIT, MobileModuleIds.GATE_PHYSICAL_EXIT)
+        )
+
+        ScanActionId.FindInYard -> ScanAction(
+            id,
+            "caseta_hub?barcode=${encode(value)}",
+            listOf(MobileModuleIds.GATE)
+        )
+
+        ScanActionId.OpenRelation -> ScanAction(
+            id,
+            "relacion?barcode=${encode(value)}",
+            listOf(MobileModuleIds.WAREHOUSE_RELATION)
+        )
+
+        ScanActionId.OpenEntry -> ScanAction(
+            id,
+            "entrada_editar/${encode(value)}",
             listOf(MobileModuleIds.WAREHOUSE_OPERATIONS)
-        ),
-        ScanAction(
-            ScanActionId.ShowOnMap,
+        )
+
+        ScanActionId.ReviewEntry -> ScanAction(
+            id,
+            "detalle/${encode(value)}",
+            listOf(MobileModuleIds.REVIEW)
+        )
+
+        ScanActionId.ShowOnMap -> ScanAction(
+            id,
             "mapa_bodega",
             listOf(MobileModuleIds.WAREHOUSE_OPERATIONS)
         )
-    )
 
-    // La pantalla de salida es una sola para salida con relación y manual; los dos permisos siguen separados.
-    private fun exitGate(value: String) = ScanAction(
-        ScanActionId.ExitGate,
-        "salida_caseta?barcode=${encode(value)}",
-        listOf(MobileModuleIds.GATE_RELATION_EXIT, MobileModuleIds.GATE_PHYSICAL_EXIT)
-    )
+        ScanActionId.RegisterPreRegistro -> ScanAction(
+            id,
+            "caseta_entrada?barcode=${encode(value)}",
+            listOf(MobileModuleIds.GATE),
+            ScanAction.LEVEL_ADD
+        )
+    }
 
     /** Escapa un valor para ir dentro de una ruta: `/` y `|` no pueden quedar sueltos y el espacio es `%20`. */
     internal fun encode(value: String): String =

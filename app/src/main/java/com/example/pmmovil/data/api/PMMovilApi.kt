@@ -165,6 +165,14 @@ interface PMMovilApi {
     suspend fun getEntryArCards(@Body request: EntryArBatchRequest): Response<EntryArBatchResponse>
 
     /**
+     * La ficha de un código leído (caja, relación, carpeta, bulto o pre-registro). Solo consulta. El código va en el
+     * cuerpo: el folio de caja lleva `/` y el pre-registro lleva un token. Responde 400 si el código no es de los que
+     * cubre la ficha (el gafete jamás se envía) y 200 con `found = false` si tiene forma válida pero no existe.
+     */
+    @POST("Trazabilidad/resolver")
+    suspend fun resolveTrace(@Body request: TraceRequest): Response<TraceResultDto>
+
+    /**
      * Búsqueda directa por crefAgrupada (match exacto en BD).
      * Usada por el scanner para encontrar la entrada escaneada y abrir
      * el modal de selección de modo. Devuelve 404 si no existe.

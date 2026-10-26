@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Ficha de un código: lo que responde el servidor. -->
+    <string name="trace_loading">Consultando…</string>
+    <string name="trace_unavailable">Sin conexión con el servidor. Se muestra solo lo que dice el código.</string>
+    <string name="trace_retry">Reintentar</string>
+    <string name="trace_not_found">Este código no existe en el sistema.</string>
+    <string name="trace_no_actions">No hay nada que hacer con esto en su estado actual.</string>
+
+    <string name="trace_section_flags">Ojo con esto</string>
+    <string name="trace_section_line">La Línea</string>
+    <string name="trace_section_related">Relacionado</string>
+
+    <!-- Banderas. -->
+    <string name="trace_flag_sin_entrada_vinculada">Sin entrada ligada a esta caja. Puede existir sin estar ligada.</string>
+    <string name="trace_flag_entrada_por_relacion">La entrada se encontró por la relación de salida.</string>
+    <string name="trace_flag_sin_relacion">Todavía sin relación de salida.</string>
+    <string name="trace_flag_danada">Mercancía dañada.</string>
+    <string name="trace_flag_hazmat">Mercancía peligrosa (hazmat).</string>
+    <string name="trace_flag_discrepancia">Revisión con discrepancias.</string>
+    <string name="trace_flag_lista_recortada">Hay más entradas de las que se muestran.</string>
+    <string name="trace_flag_cancelada">Caja cancelada.</string>
+    <string name="trace_flag_relacion_ocupada">Alguien está editando la relación.</string>
+    <string name="trace_flag_registro_abierto">La relación ya salió, pero la caja sigue en el patio: falta cerrar su registro.</string>
+    <string name="trace_flag_etiqueta_no_registrada">Esta etiqueta no está registrada con esa posición.</string>
+
+    <!-- Avance de revisión. -->
+    <string name="trace_review_sin_revisar">Sin revisar</string>
+    <string name="trace_review_en_progreso">En progreso</string>
+    <string name="trace_review_completa">Completa</string>
+    <string name="trace_review_completa_discrepancias">Completa con discrepancias</string>
+    <string name="trace_review_progress">%1$d/%2$d facturas · %3$d/%4$d partidas</string>
+
+    <!-- Estado de un pre-registro. -->
+    <string name="trace_prereg_vigente">Vigente</string>
+    <string name="trace_prereg_usado">Usado</string>
+    <string name="trace_prereg_expirado">Vencido</string>
+    <string name="trace_prereg_cancelado">Cancelado</string>
+
+    <!-- Campos de la etiqueta. -->
+    <string name="trace_field_cliente">Cliente</string>
+    <string name="trace_field_linea">Línea</string>
+    <string name="trace_field_caja">No. de caja</string>
+    <string name="trace_field_planta">Planta</string>
+    <string name="trace_field_operacion">Operación</string>
+    <string name="trace_field_arrival">Llegada</string>
+    <string name="trace_field_status">Estatus</string>
+    <string name="trace_field_transfer">Transfer</string>
+    <string name="trace_field_authorized">Autorizada</string>
+    <string name="trace_field_departure">Salida</string>
+    <string name="trace_field_review">Revisión</string>
+    <string name="trace_field_unit">Unidad</string>
+    <string name="trace_field_expires">Vence</string>
+    <string name="trace_field_used">Usado</string>
+    <string name="trace_field_label">Etiqueta</string>
+    <string name="trace_label_position">%1$d de %2$d</string>
+
+    <!-- Relacionado: de qué es cada fila. -->
+    <string name="trace_related_caja">Caja</string>
+    <string name="trace_related_relacion">Relación</string>
+    <string name="trace_related_entrada">Entrada</string>
+    <string name="trace_related_open">Ver ficha de %1$s</string>
+</resources>

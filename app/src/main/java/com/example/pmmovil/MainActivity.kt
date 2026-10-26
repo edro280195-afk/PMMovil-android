@@ -384,7 +384,9 @@ class MainActivity : AppCompatActivity() {
                                     navController.navigate(route) {
                                         popUpTo(ScanActionsRoute.PATTERN) { inclusive = true }
                                     }
-                                }
+                                },
+                                // Una pieza relacionada abre su propia ficha encima de esta: «atrás» vuelve a la anterior.
+                                onOpenCode = { related -> navController.navigate(ScanActionsRoute.forScan(related)) }
                             )
                         }
 
