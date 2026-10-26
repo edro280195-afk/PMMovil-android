@@ -418,7 +418,7 @@ fun EntryArScreen(
 }
 
 @Composable
-private fun EntryArFloatingCard(
+internal fun EntryArFloatingCard(
     item: EntryArOverlayItem,
     offline: Boolean,
     width: androidx.compose.ui.unit.Dp,
@@ -705,7 +705,7 @@ private fun markerLabel(item: EntryArOverlayItem): String = when {
  * tarjeta completa abierta.
  */
 @Composable
-private fun EntryArQrMarker(
+internal fun EntryArQrMarker(
     item: EntryArOverlayItem,
     onClick: () -> Unit,
     modifier: Modifier = Modifier

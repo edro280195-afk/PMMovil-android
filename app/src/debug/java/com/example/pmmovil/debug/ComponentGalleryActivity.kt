@@ -31,6 +31,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.pmmovil.data.entryar.ArItemKind
+import com.example.pmmovil.data.entryar.EntryArQrCode
+import com.example.pmmovil.data.model.EntryArCardDto
+import com.example.pmmovil.data.model.TraceCompactItemDto
+import com.example.pmmovil.ui.ar.EntryArCompactActionSheet
+import com.example.pmmovil.ui.ar.EntryArFloatingCard
+import com.example.pmmovil.ui.ar.EntryArOverlayItem
+import com.example.pmmovil.ui.ar.EntryArQrMarker
 import com.example.pmmovil.ui.components.FlipCounter
 import com.example.pmmovil.ui.components.LabelCard
 import com.example.pmmovil.ui.components.MiniStationLine
@@ -159,6 +167,44 @@ private fun Gallery() {
             )
         }
 
+        Section("AR · caja y relación (tarjeta compacta)") {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(androidx.compose.ui.graphics.Color(0xFF1F2937), RoundedCornerShape(12.dp))
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                // Los dos anchos extremos que usa el AR: 156 dp (el mínimo) y 228 dp (el máximo).
+                EntryArFloatingCard(item = arSample("E-17840/26", ArItemKind.Caja, "AVISO", listOf("HECHA", "HECHA", "SIN_DATO", "EN_CURSO", "PENDIENTE"), listOf("HAZMAT")), offline = false, width = 156.dp, onClick = {})
+                EntryArFloatingCard(item = arSample("01I26104549", ArItemKind.Relacion, "LISTO", listOf("HECHA", "HECHA", "HECHA", "HECHA", "EN_CURSO"), emptyList(), primary = true), offline = false, width = 228.dp, onClick = {})
+                EntryArFloatingCard(item = arSample("E-17835/26", ArItemKind.Caja, "CERRADO", listOf("HECHA", "HECHA", "SIN_DATO", "HECHA", "HECHA"), emptyList()), offline = false, width = 156.dp, onClick = {})
+                EntryArFloatingCard(item = arSample("E-17848/26", ArItemKind.Caja, "ATENCION", listOf("HECHA", "SIN_DATO", "SIN_DATO", "PENDIENTE", "PENDIENTE"), listOf("SIN_ENTRADA_VINCULADA")), offline = false, width = 156.dp, onClick = {})
+                EntryArFloatingCard(item = arSample("E-99999/26", ArItemKind.Caja, "SIN_DATO", emptyList(), emptyList(), found = false), offline = false, width = 156.dp, onClick = {})
+                EntryArFloatingCard(item = arSample("E-17840/26", ArItemKind.Caja, "AVISO", emptyList(), emptyList(), withCompact = false), offline = false, width = 156.dp, onClick = {})
+                EntryArFloatingCard(item = arSample("01I26104549", ArItemKind.Relacion, "AVISO", emptyList(), emptyList(), withCompact = false), offline = true, width = 156.dp, onClick = {})
+            }
+            Spacer(Modifier.height(6.dp))
+            Text("Marcas sobre el QR", fontSize = 11.sp, color = PmmTextSecondary)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(androidx.compose.ui.graphics.Color(0xFF1F2937), RoundedCornerShape(12.dp))
+                    .padding(start = 30.dp, top = 44.dp, bottom = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(70.dp)
+            ) {
+                EntryArQrMarker(item = arSample("E-17840/26", ArItemKind.Caja, "AVISO", listOf("HECHA"), emptyList()), onClick = {})
+                EntryArQrMarker(item = arSample("01I26104549", ArItemKind.Relacion, "LISTO", listOf("HECHA"), emptyList(), primary = true), onClick = {})
+            }
+            Spacer(Modifier.height(6.dp))
+            Text("Hoja al tocar una marca", fontSize = 11.sp, color = PmmTextSecondary)
+            EntryArCompactActionSheet(
+                item = arSample("E-17840/26", ArItemKind.Caja, "AVISO", listOf("HECHA", "HECHA", "SIN_DATO", "EN_CURSO", "PENDIENTE"), listOf("ENTRADA_POR_RELACION", "HAZMAT")),
+                offline = false,
+                onOpenFicha = {}
+            )
+        }
+
         Section("Tipografía") {
             Row(verticalAlignment = Alignment.Bottom) {
                 Text("14", style = SignageType.Numeral, color = PmmTextPrimary)
@@ -190,3 +236,32 @@ private fun Section(title: String, content: @Composable ColumnScope.() -> Unit) 
         }
     }
 }
+
+/** Un QR de AR de mentira para ver su tarjeta, marca y hoja sin cámara. */
+private fun arSample(
+    code: String,
+    kind: ArItemKind,
+    signal: String,
+    states: List<String>,
+    flags: List<String>,
+    found: Boolean = true,
+    withCompact: Boolean = true,
+    primary: Boolean = false
+) = EntryArOverlayItem(
+    key = code,
+    code = EntryArQrCode(code, code, code, null, null, false),
+    card = EntryArCardDto(reference = code, exists = false),
+    kind = kind,
+    compact = if (!withCompact) null else TraceCompactItemDto(
+        code = code,
+        kind = if (kind == ArItemKind.Caja) "CAJA" else "RELACION",
+        found = found,
+        signal = signal,
+        states = states,
+        flags = flags,
+        customer = if (found) "KATHION CHEMIE DE MEXICO S. DE R.L. DE C.V." else "",
+        box = "1657-2",
+        relno = "01I26104549"
+    ),
+    isPrimary = primary
+)
