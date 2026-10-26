@@ -29,6 +29,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.isActive
@@ -707,30 +709,41 @@ class DetalleRevisionViewModel @Inject constructor(
 
     fun cargarFotos() {
         photosJob?.cancel()
-        photosJob = viewModelScope.launch {
-            val cnofacts = _facturas.value.map(FacturaRevisionDto::Cnofact)
-                .map(String::trim)
-                .filter(String::isNotEmpty)
-                .distinct()
-            val references = (listOf(crefAgrupada) + cnofacts).distinct()
+        photosJob = viewModelScope.launch { consultarFotosDelServidor() }
+    }
 
-            // Las fotos de la revisión son independientes. Cargarlas en
-            // paralelo evita que una factura lenta bloquee todas las demás.
-            val resultados = references
-                .map { reference ->
-                    async { reference to repository.getFotos(reference) }
-                }
-                .awaitAll()
-                .toMap()
+    /**
+     * Resultado de pedirle al servidor las fotos de la entrada: [total] es lo que
+     * volvió y [completa] dice si TODAS las consultas respondieron. Con una
+     * consulta caída, un total de cero no prueba que no haya fotos.
+     */
+    private data class ConsultaFotos(val completa: Boolean, val total: Int)
 
-            _fotosPorFactura.value = cnofacts.associateWith { cnofact ->
-                resultados[cnofact]?.getOrNull() ?: emptyList()
+    private suspend fun consultarFotosDelServidor(): ConsultaFotos = coroutineScope {
+        val cnofacts = _facturas.value.map(FacturaRevisionDto::Cnofact)
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .distinct()
+        val references = (listOf(crefAgrupada) + cnofacts).distinct()
+
+        // Las fotos de la revisión son independientes. Cargarlas en
+        // paralelo evita que una factura lenta bloquee todas las demás.
+        val resultados = references
+            .map { reference ->
+                async { reference to repository.getFotos(reference) }
             }
-            _fotos.value = resultados.values
-                .mapNotNull { it.getOrNull() }
-                .flatten()
-                .distinctBy(FotoRevisionDto::idFotos)
+            .awaitAll()
+            .toMap()
+
+        _fotosPorFactura.value = cnofacts.associateWith { cnofact ->
+            resultados[cnofact]?.getOrNull() ?: emptyList()
         }
+        val fotos = resultados.values
+            .mapNotNull { it.getOrNull() }
+            .flatten()
+            .distinctBy(FotoRevisionDto::idFotos)
+        _fotos.value = fotos
+        ConsultaFotos(completa = resultados.values.all { it.isSuccess }, total = fotos.size)
     }
 
     private fun observeSignalR() {
@@ -1848,11 +1861,28 @@ class DetalleRevisionViewModel @Inject constructor(
         // pendingPhotoCount cubre lo que se tomó pero aún no sincroniza --
         // sin ese segundo check, tomar una foto y darle "Terminar" de
         // inmediato bloquearía en falso mientras sube.
-        if (_fotos.value.isEmpty() && pendingPhotoCount.value == 0) {
-            _toast.value = resource(R.string.message_finish_without_photo)
-            return
-        }
+        //
+        // _fotos puede estar VIEJA: una foto que subió en segundo plano
+        // (FotoSyncWorker borra su fila local al terminar) ya no cuenta como
+        // pendiente, y la lista de pantalla no se enteró (caso 01C263608160000,
+        // 26/oct: 6 fotos en el servidor y el botón decía "ninguna foto"). Por
+        // eso, antes de bloquear, se le pregunta al servidor.
         viewModelScope.launch {
+            if (_fotos.value.isEmpty() && pendingPhotoCount.value == 0) {
+                photosJob?.cancelAndJoin()
+                val consulta = consultarFotosDelServidor()
+                when (veredictoDeFotos(consulta.total, consulta.completa, pendingPhotoCount.value)) {
+                    VeredictoDeFotos.Suficiente -> Unit
+                    VeredictoDeFotos.SinFotos -> {
+                        _toast.value = resource(R.string.message_finish_without_photo)
+                        return@launch
+                    }
+                    VeredictoDeFotos.SinVerificar -> {
+                        _toast.value = resource(R.string.message_finish_photos_unverified)
+                        return@launch
+                    }
+                }
+            }
             // El flujo observado da respuesta inmediata en pantalla, pero la
             // consulta a Room dentro de la corrutina cierra la ventana entre
             // el último valor observado y el inicio del cierre.

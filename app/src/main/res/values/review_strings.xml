@@ -358,6 +358,7 @@
     <string name="message_photo_deleted">Foto eliminada</string>
     <string name="message_photo_delete_failed">Error al eliminar foto</string>
     <string name="message_finish_without_photo">No se puede terminar la revisión: no se ha tomado ninguna foto de evidencia.</string>
+    <string name="message_finish_photos_unverified">No se pudieron comprobar las fotos de la revisión en el servidor. Revisa tu conexión e inténtalo de nuevo.</string>
     <string name="message_no_reviewer">Sin revisor: %1$s</string>
     <string name="message_close_failed">Error al cerrar revisión</string>
     <string name="message_data_processing_failed">Esta entrada tiene datos que la app no pudo procesar. Repórtalo a sistemas con la referencia %1$s.</string>

@@ -353,6 +353,7 @@
     <string name="message_photo_deleted">Photo deleted</string>
     <string name="message_photo_delete_failed">Error deleting photo</string>
     <string name="message_finish_without_photo">Cannot finish the inspection: no evidence photo has been taken.</string>
+    <string name="message_finish_photos_unverified">The inspection photos could not be checked on the server. Check your connection and try again.</string>
     <string name="message_no_reviewer">No inspector: %1$s</string>
     <string name="message_close_failed">Error closing inspection</string>
     <string name="message_data_processing_failed">This entry contains data the app could not process. Report it to Systems with reference %1$s.</string>
