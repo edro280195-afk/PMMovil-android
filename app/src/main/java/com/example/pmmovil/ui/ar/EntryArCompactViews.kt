@@ -12,7 +12,9 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
@@ -81,6 +83,7 @@ private fun ArSignalCapsule(kind: SignalKind, modifier: Modifier = Modifier) {
             text = stringResource(kind.wordRes).uppercase(),
             color = kind.content,
             fontSize = 8.sp,
+            lineHeight = 10.sp,
             fontWeight = FontWeight.Bold,
             maxLines = 1
         )
@@ -102,10 +105,13 @@ internal fun ColumnScope.CompactCardBody(item: EntryArOverlayItem, offline: Bool
         verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         when {
+            // El tema pone 24 sp de alto de línea a todo texto: sin lineHeight propio cada renglón mide el doble de lo
+            // que dice su tamaño y la cápsula de abajo se sale de la tarjeta.
             compact == null -> Text(
                 if (offline) "Sin conexión: sin ficha guardada" else "Consultando…",
                 color = Color(0xFF64748B),
                 fontSize = 10.sp,
+                lineHeight = 13.sp,
                 maxLines = 2
             )
 
@@ -113,6 +119,7 @@ internal fun ColumnScope.CompactCardBody(item: EntryArOverlayItem, offline: Bool
                 "No existe en el sistema",
                 color = Color(0xFF475569),
                 fontSize = 10.sp,
+                lineHeight = 13.sp,
                 fontWeight = FontWeight.Bold
             )
 
@@ -121,6 +128,7 @@ internal fun ColumnScope.CompactCardBody(item: EntryArOverlayItem, offline: Bool
                     compact.customer.ifBlank { "Cliente sin nombre" },
                     color = Color(0xFF172B45),
                     fontSize = 10.sp,
+                    lineHeight = 13.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -155,47 +163,56 @@ internal fun EntryArCompactActionSheet(
             .padding(bottom = 20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text(item.code.normalized, color = Color(0xFF12345A), fontSize = 20.sp, fontWeight = FontWeight.Black)
-        Text(
-            if (item.kind == ArItemKind.Caja) "Caja de caseta" else "Relación de salida",
-            color = Color(0xFF475569),
-            fontSize = 12.sp
-        )
-
-        if (compact != null && compact.found) {
+        // El AR va en horizontal: la hoja mide ~400 dp de alto y la información no cabe. Se desplaza sola y el botón
+        // queda fuera de ella, siempre entero; sin esto Compose le quita el alto al botón y solo queda una franja.
+        Column(
+            modifier = Modifier
+                .weight(1f, fill = false)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(item.code.normalized, color = Color(0xFF12345A), fontSize = 20.sp, fontWeight = FontWeight.Black)
             Text(
-                compact.customer.ifBlank { "Cliente sin nombre" },
-                color = Color(0xFF172B45),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold
-            )
-            val details = listOfNotNull(
-                compact.box.takeIf { it.isNotBlank() }?.let { "Caja $it" },
-                compact.relno.takeIf { it.isNotBlank() && it != item.code.normalized }?.let { "Relación $it" }
-            ).joinToString(" · ")
-            if (details.isNotBlank()) Text(details, color = Color(0xFF475569), fontSize = 12.sp)
-
-            SignalChip(kind = signalKindOf(compact.signal), large = true)
-            MiniStationLine(states = compactStates(compact), modifier = Modifier.padding(top = 4.dp))
-
-            compact.flags.mapNotNull(::flagTextRes).distinct().forEach { phrase ->
-                Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Icon(Icons.Default.Warning, null, modifier = Modifier.size(16.dp), tint = Color(0xFFB45309))
-                    Text(stringResource(phrase), color = Color(0xFF92400E), fontSize = 12.sp)
-                }
-            }
-        } else if (compact != null) {
-            Text("Este código no existe en el sistema.", color = Color(0xFF475569), fontSize = 13.sp)
-        } else {
-            Text(
-                if (offline) "Sin conexión: la ficha completa mostrará lo que dice el código." else "Consultando…",
-                color = Color(0xFF64748B),
+                if (item.kind == ArItemKind.Caja) "Caja de caseta" else "Relación de salida",
+                color = Color(0xFF475569),
                 fontSize = 12.sp
             )
-        }
 
-        if (offline && item.fromCache) {
-            Text("Información guardada sin conexión", color = Color(0xFF64748B), fontSize = 11.sp)
+            if (compact != null && compact.found) {
+                Text(
+                    compact.customer.ifBlank { "Cliente sin nombre" },
+                    color = Color(0xFF172B45),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                val details = listOfNotNull(
+                    compact.box.takeIf { it.isNotBlank() }?.let { "Caja $it" },
+                    compact.relno.takeIf { it.isNotBlank() && it != item.code.normalized }?.let { "Relación $it" }
+                ).joinToString(" · ")
+                if (details.isNotBlank()) Text(details, color = Color(0xFF475569), fontSize = 12.sp)
+
+                SignalChip(kind = signalKindOf(compact.signal), large = true)
+                MiniStationLine(states = compactStates(compact), modifier = Modifier.padding(top = 4.dp))
+
+                compact.flags.mapNotNull(::flagTextRes).distinct().forEach { phrase ->
+                    Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Icon(Icons.Default.Warning, null, modifier = Modifier.size(16.dp), tint = Color(0xFFB45309))
+                        Text(stringResource(phrase), color = Color(0xFF92400E), fontSize = 12.sp)
+                    }
+                }
+            } else if (compact != null) {
+                Text("Este código no existe en el sistema.", color = Color(0xFF475569), fontSize = 13.sp)
+            } else {
+                Text(
+                    if (offline) "Sin conexión: la ficha completa mostrará lo que dice el código." else "Consultando…",
+                    color = Color(0xFF64748B),
+                    fontSize = 12.sp
+                )
+            }
+
+            if (offline && item.fromCache) {
+                Text("Información guardada sin conexión", color = Color(0xFF64748B), fontSize = 11.sp)
+            }
         }
 
         Button(

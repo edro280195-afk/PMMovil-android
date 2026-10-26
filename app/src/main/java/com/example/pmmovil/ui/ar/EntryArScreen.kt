@@ -459,6 +459,7 @@ internal fun EntryArFloatingCard(
                         color = Color.White,
                         fontWeight = FontWeight.Black,
                         fontSize = 12.sp,
+                        lineHeight = 14.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -469,6 +470,7 @@ internal fun EntryArFloatingCard(
                         else "Carpeta",
                         color = Color(0xFFD5E2F0),
                         fontSize = 9.sp,
+                        lineHeight = 11.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
