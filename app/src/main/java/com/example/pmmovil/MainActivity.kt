@@ -27,11 +27,16 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.State
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -421,9 +426,7 @@ class MainActivity : AppCompatActivity() {
                             "entrada_nueva?barcode={barcode}",
                             arguments = listOf(optionalBarcodeArgument)
                         ) { backStackEntry ->
-                            val barcodeResult by backStackEntry.savedStateHandle
-                                .getStateFlow<String?>("barcode", null)
-                                .collectAsState()
+                            val barcodeResult by backStackEntry.rememberBarcodeResult()
                             com.example.pmmovil.ui.entrada.EntradaScreen(
                                 onNavigateBack = { navController.popBackStack() },
                                 onNavigateToScanner = {
@@ -494,9 +497,7 @@ class MainActivity : AppCompatActivity() {
                             "relacion?barcode={barcode}",
                             arguments = listOf(optionalBarcodeArgument)
                         ) { backStackEntry ->
-                            val barcodeResult by backStackEntry.savedStateHandle
-                                .getStateFlow<String?>("barcode", null)
-                                .collectAsState()
+                            val barcodeResult by backStackEntry.rememberBarcodeResult()
                             com.example.pmmovil.ui.relacion.RelacionScreen(
                                 onNavigateBack = { navController.popBackStack() },
                                 onNavigateToScanner = {
@@ -532,9 +533,7 @@ class MainActivity : AppCompatActivity() {
                             // El escaner del hub sirve para BUSCAR una caja, por eso
                             // acepta codigo de barras ademas de QR (a diferencia del
                             // de la pantalla de entrada, que es solo QR de pre-registro).
-                            val barcodeResult by backStackEntry.savedStateHandle
-                                .getStateFlow<String?>("barcode", null)
-                                .collectAsState()
+                            val barcodeResult by backStackEntry.rememberBarcodeResult()
                             com.example.pmmovil.ui.casetahub.CasetaHubScreen(
                                 onNavigateBack = { navController.popBackStack() },
                                 onPreregistro = { navController.navigate("caseta_preregistro") },
@@ -619,9 +618,7 @@ class MainActivity : AppCompatActivity() {
                             popEnterTransition = { zVuelve() },
                             popExitTransition = { zCierra() }
                         ) { backStackEntry ->
-                            val barcodeResult by backStackEntry.savedStateHandle
-                                .getStateFlow<String?>("barcode", null)
-                                .collectAsState()
+                            val barcodeResult by backStackEntry.rememberBarcodeResult()
                             com.example.pmmovil.ui.salidacaseta.SalidaCasetaScreen(
                                 onNavigateBack = { navController.popBackStack() },
                                 onNavigateToScanner = { navController.navigate("scanner") },
@@ -658,9 +655,7 @@ class MainActivity : AppCompatActivity() {
                             popEnterTransition = { zVuelve() },
                             popExitTransition = { zCierra() }
                         ) { backStackEntry ->
-                            val barcodeResult by backStackEntry.savedStateHandle
-                                .getStateFlow<String?>("barcode", null)
-                                .collectAsState()
+                            val barcodeResult by backStackEntry.rememberBarcodeResult()
                             com.example.pmmovil.ui.casetaentrada.CasetaEntradaScreen(
                                 onNavigateBack = { navController.popBackStack() },
                                 onNavigateToScanner = {
@@ -1063,6 +1058,29 @@ private val optionalBarcodeArgument = navArgument("barcode") {
     type = NavType.StringType
     nullable = true
     defaultValue = null
+}
+
+private const val BARCODE_KEY = "barcode"
+
+/**
+ * El código que la pantalla debe procesar: primero el que trae la ruta (lo manda la hoja de acciones) y después los que
+ * devuelva la cámara, todos por `savedStateHandle["barcode"]`.
+ *
+ * Navigation NO siembra el `savedStateHandle` de la entrada con los argumentos de la ruta (solo el de los ViewModels),
+ * así que el argumento se copia aquí una sola vez. La bandera es `rememberSaveable` para que girar la pantalla no
+ * vuelva a entregar un código que la pantalla ya consumió.
+ */
+@Composable
+private fun NavBackStackEntry.rememberBarcodeResult(): State<String?> {
+    val argument = remember(this) { arguments?.getString(BARCODE_KEY) }
+    var delivered by rememberSaveable(id) { mutableStateOf(false) }
+    LaunchedEffect(id) {
+        if (!delivered && argument != null) {
+            delivered = true
+            savedStateHandle[BARCODE_KEY] = argument
+        }
+    }
+    return savedStateHandle.getStateFlow<String?>(BARCODE_KEY, null).collectAsState()
 }
 
 private fun zEntra(): EnterTransition =

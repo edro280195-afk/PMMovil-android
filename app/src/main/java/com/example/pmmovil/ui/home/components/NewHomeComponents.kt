@@ -215,7 +215,9 @@ fun HomeScanViewer(onScan: () -> Unit, modifier: Modifier = Modifier) {
                     .fillMaxWidth()
                     .heightIn(min = 262.dp)
                     .padding(14.dp),
-                verticalArrangement = Arrangement.SpaceBetween
+                // Con SpaceBetween los bloques se pegaban entre sí en cuanto el contenido llenaba el alto mínimo
+                // (rótulos contra el botón, marco contra el encabezado); con separación fija siempre respiran.
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
