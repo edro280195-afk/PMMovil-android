@@ -398,7 +398,9 @@ class MainActivity : AppCompatActivity() {
                                 },
                                 onOpenReview = { reference ->
                                     navController.navigate("detalle/${Uri.encode(reference)}")
-                                }
+                                },
+                                // Una caja o una relación abren su ficha completa encima del AR: «atrás» vuelve a la cámara.
+                                onOpenCode = { code -> navController.navigate(ScanActionsRoute.forScan(code)) }
                             )
                         }
 

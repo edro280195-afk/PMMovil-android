@@ -170,7 +170,8 @@ private fun DrawScope.drawNode(state: StationState) {
 fun MiniStationLine(
     states: List<StationState>,
     modifier: Modifier = Modifier,
-    nodeSize: Dp = 13.dp
+    nodeSize: Dp = 13.dp,
+    columnWidth: Dp = 34.dp
 ) {
     require(states.size == Station.entries.size) { "La Línea tiene ${Station.entries.size} estaciones" }
     // stringResource no se puede llamar dentro de joinToString (su lambda no es composable): se resuelve antes.
@@ -196,7 +197,7 @@ fun MiniStationLine(
             }
             Column(
                 modifier = Modifier
-                    .width(34.dp)
+                    .width(columnWidth)
                     .clearAndSetSemantics { },
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp)

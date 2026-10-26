@@ -74,6 +74,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.example.pmmovil.data.entryar.ArItemKind
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -86,6 +87,8 @@ fun EntryArScreen(
     onNavigateBack: () -> Unit,
     onOpenEntry: (String) -> Unit,
     onOpenReview: (String) -> Unit,
+    /** Abre la ficha completa de una caja o de una relación (los QR que no son entradas). */
+    onOpenCode: (String) -> Unit = {},
     entryArViewModel: EntryArViewModel = androidx.hilt.navigation.compose.hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -329,7 +332,7 @@ fun EntryArScreen(
                 Column(modifier = Modifier.weight(1f)) {
                     Text("AR de entradas", color = Color.White, fontWeight = FontWeight.Bold)
                     Text(
-                        "Escanea hasta seis QR",
+                        "Entradas, cajas y relaciones · hasta seis QR",
                         color = Color(0xFFD1D5DB),
                         fontSize = 11.sp
                     )
@@ -361,7 +364,7 @@ fun EntryArScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = Color.White)
-                    Text("Consultando entradas…", color = Color.White, fontSize = 12.sp)
+                    Text("Consultando…", color = Color.White, fontSize = 12.sp)
                 }
             }
 
@@ -376,7 +379,20 @@ fun EntryArScreen(
                 sheetState = actionSheetState,
                 containerColor = Color(0xFFF8FAFC)
             ) {
-                EntryArActionSheet(
+                if (item.kind != ArItemKind.Entry) {
+                    EntryArCompactActionSheet(
+                        item = item,
+                        offline = uiState.isOffline,
+                        onOpenFicha = {
+                            coroutineScope.launch {
+                                actionSheetState.hide()
+                                selectedItemKey = null
+                                selectedItemSnapshot = null
+                                onOpenCode(item.code.normalized)
+                            }
+                        }
+                    )
+                } else EntryArActionSheet(
                     item = item,
                     offline = uiState.isOffline,
                     onOpenEntry = {
@@ -447,7 +463,8 @@ private fun EntryArFloatingCard(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        if (item.code.printedOrdinal != null && item.code.declaredTotal != null)
+                        if (item.kind != ArItemKind.Entry) arKindLabel(item.kind)
+                        else if (item.code.printedOrdinal != null && item.code.declaredTotal != null)
                             "Bulto ${item.code.printedOrdinal} de ${item.code.declaredTotal}"
                         else "Carpeta",
                         color = Color(0xFFD5E2F0),
@@ -471,6 +488,10 @@ private fun EntryArFloatingCard(
                 }
             }
 
+            if (item.kind != ArItemKind.Entry) {
+                CompactCardBody(item = item, offline = offline)
+                return@Column
+            }
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -702,7 +723,8 @@ private fun EntryArQrMarker(
                 .clickable(onClick = onClick)
         )
         Text(
-            text = item.code.reference + " · " + markerLabel(item),
+            text = item.code.reference + " · " +
+                if (item.kind == ArItemKind.Entry) markerLabel(item) else compactMarkerLabel(item),
             color = Color.White,
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,

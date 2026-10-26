@@ -2,13 +2,17 @@ package com.example.pmmovil.ui.ar
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.pmmovil.data.entryar.ArCodeResolver
+import com.example.pmmovil.data.entryar.ArItemKind
 import com.example.pmmovil.data.entryar.EntryArQrCode
-import com.example.pmmovil.data.entryar.EntryArQrCodeParser
 import com.example.pmmovil.data.model.EntryArCardDto
+import com.example.pmmovil.data.model.TraceCompactItemDto
 import com.example.pmmovil.data.repository.EntryArRepository
+import com.example.pmmovil.data.repository.TraceCompactRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,6 +23,10 @@ data class EntryArOverlayItem(
     val key: String,
     val code: EntryArQrCode,
     val card: EntryArCardDto,
+    /** Qué clase de QR es: una entrada usa [card]; una caja o una relación usan [compact]. */
+    val kind: ArItemKind = ArItemKind.Entry,
+    /** La ficha compacta de una caja o una relación; `null` mientras llega o si no se pudo consultar. */
+    val compact: TraceCompactItemDto? = null,
     val x: Float = 0.5f,
     val y: Float = 0.5f,
     val fromCache: Boolean = false,
@@ -35,7 +43,8 @@ data class EntryArUiState(
 
 @HiltViewModel
 class EntryArViewModel @Inject constructor(
-    private val repository: EntryArRepository
+    private val repository: EntryArRepository,
+    private val compactRepository: TraceCompactRepository
 ) : ViewModel() {
 
     private val mutableState = MutableStateFlow(EntryArUiState())
@@ -83,7 +92,9 @@ class EntryArViewModel @Inject constructor(
     }
 
     private fun updateQr(rawValue: String, x: Float, y: Float, spatial: Boolean) {
-        val code = EntryArQrCodeParser.parse(rawValue) ?: return
+        // Entrada, caja o relación; todo lo demás (un gafete incluido) se descarta aquí.
+        val resolved = ArCodeResolver.resolve(rawValue) ?: return
+        val code = resolved.code
         val now = System.currentTimeMillis()
         if (isIgnoredAfterClear(code.normalized, now)) return
         val currentItems = mutableState.value.items
@@ -104,6 +115,7 @@ class EntryArViewModel @Inject constructor(
                     key = code.normalized,
                     code = code,
                     card = EntryArCardDto(reference = code.reference, exists = false),
+                    kind = resolved.kind,
                     x = x.coerceIn(0f, 1f),
                     y = y.coerceIn(0f, 1f)
                 )
@@ -234,50 +246,49 @@ class EntryArViewModel @Inject constructor(
     }
 
     private fun consultar() {
-        val references = mutableState.value.items.map { it.code.reference }.distinct().take(MAX_VISIBLE_QR)
-        if (references.isEmpty()) return
+        val visible = mutableState.value.items
+        val references = visible.filter { it.kind == ArItemKind.Entry }
+            .map { it.code.reference }.distinct().take(MAX_VISIBLE_QR)
+        val compactCodes = visible.filter { it.kind != ArItemKind.Entry }
+            .map { it.code.normalized }.distinct().take(MAX_VISIBLE_QR)
+        if (references.isEmpty() && compactCodes.isEmpty()) return
         val seq = ++requestSeq
         // Trabajo propio: ningún refresco posterior lo cancela. Si llega otra consulta más nueva, esta se descarta sola.
         viewModelScope.launch {
             mutableState.value = mutableState.value.copy(isLoading = true, message = null)
 
-            val result = repository.getCards(references)
+            // Las dos consultas salen a la vez y cada una se resuelve por su cuenta: que falle la de cajas no deja sin
+            // tarjeta a las entradas ni al revés.
+            val entriesCall = async { if (references.isEmpty()) null else repository.getCards(references) }
+            val compactCall = async { if (compactCodes.isEmpty()) null else compactRepository.get(compactCodes) }
+            val entriesResult = entriesCall.await()
+            val compactResult = compactCall.await()
             if (seq != requestSeq) return@launch
-            result.onSuccess { cards ->
-                val byReference = cards.associateBy { it.reference }
-                mutableState.value = mutableState.value.copy(
-                    items = mutableState.value.items.map { item ->
-                        item.copy(
-                            card = byReference[item.code.reference]
-                                ?: EntryArCardDto(reference = item.code.reference, exists = false),
-                            fromCache = false
-                        )
-                    },
-                    isLoading = false,
-                    isOffline = false,
-                    message = null
+
+            val entries = when {
+                entriesResult == null -> ArLookup<EntryArCardDto>()
+                entriesResult.isSuccess -> ArLookup(
+                    entriesResult.getOrThrow().associateBy { it.reference },
+                    ArFetchOutcome.Fresh
                 )
-            }.onFailure { error ->
-                val cached = repository.getCachedCards(references).associateBy { it.reference }
-                mutableState.value = mutableState.value.copy(
-                    items = mutableState.value.items.map { item ->
-                        val cachedCard = cached[item.code.reference]
-                        item.copy(
-                            card = cachedCard
-                                ?: EntryArCardDto(reference = item.code.reference, exists = false),
-                            fromCache = cachedCard != null
-                        )
-                    },
-                    isLoading = false,
-                    isOffline = true,
-                    message = if (cached.isEmpty()) {
-                        "Sin conexión. No hay datos guardados para estas entradas."
-                    } else {
-                        "Sin conexión. Se muestran los últimos datos consultados."
-                    }
+                else -> ArLookup(
+                    repository.getCachedCards(references).associateBy { it.reference },
+                    ArFetchOutcome.Offline
                 )
-                error.message
             }
+            val compact = when {
+                compactResult == null -> ArLookup<TraceCompactItemDto>()
+                compactResult.isSuccess -> ArLookup(compactResult.getOrThrow(), ArFetchOutcome.Fresh)
+                else -> ArLookup(compactRepository.latest(compactCodes), ArFetchOutcome.Offline)
+            }
+
+            val message = arOfflineMessage(entries, compact)
+            mutableState.value = mutableState.value.copy(
+                items = mergeArItems(mutableState.value.items, entries, compact),
+                isLoading = false,
+                isOffline = message != null,
+                message = message
+            )
         }
     }
 

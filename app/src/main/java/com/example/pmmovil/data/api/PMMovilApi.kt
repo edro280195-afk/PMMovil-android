@@ -165,6 +165,13 @@ interface PMMovilApi {
     suspend fun getEntryArCards(@Body request: EntryArBatchRequest): Response<EntryArBatchResponse>
 
     /**
+     * La ficha en una línea de hasta seis cajas o relaciones, para las marcas del AR. Un código que no es de caja ni de
+     * relación vuelve como no encontrado sin tumbar el lote.
+     */
+    @POST("Trazabilidad/compactas")
+    suspend fun resolveTraceCompact(@Body request: TraceCompactRequest): Response<TraceCompactResponseDto>
+
+    /**
      * Las cinco cifras del Tablero del inicio, una por estación y solo las que el usuario puede ver. Es aparte de los
      * permisos a propósito: si falla o tarda, el inicio sigue siendo navegable.
      */

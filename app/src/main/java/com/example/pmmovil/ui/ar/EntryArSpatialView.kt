@@ -12,7 +12,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.AttributeSet
 import android.view.Surface
-import com.example.pmmovil.data.entryar.EntryArQrCodeParser
+import com.example.pmmovil.data.entryar.ArCodeResolver
 import com.google.ar.core.ArCoreApk
 import com.google.ar.core.Config
 import com.google.ar.core.Coordinates2d
@@ -309,7 +309,8 @@ private class EntryArRenderer(
                 .addOnSuccessListener { barcodes ->
                     barcodes.forEach { barcode ->
                         val raw = barcode.rawValue ?: return@forEach
-                        val parsed = EntryArQrCodeParser.parse(raw) ?: return@forEach
+                        // Entrada, caja o relación; lo demás (un gafete incluido) no se ancla ni se publica.
+                        val parsed = ArCodeResolver.resolve(raw)?.code ?: return@forEach
                         val bounds = barcode.boundingBox ?: return@forEach
                         val rawPoint = uprightToImagePoint(
                             bounds.exactCenterX(),
