@@ -58,6 +58,20 @@ class EntryArQrCodeParserTest {
     }
 
     @Test
+    fun `a gate box or a release is not an entry reference`() {
+        assertNull(EntryArQrCodeParser.parse("E-017846/26"))
+        assertNull(EntryArQrCodeParser.parse("01I26104546"))
+        assertNull(EntryArQrCodeParser.parse("01E17028336"))
+        assertNull(EntryArQrCodeParser.parse("PMMPR|7K2Q-4481"))
+        assertNull(EntryArQrCodeParser.parse("usuario;clave"))
+    }
+
+    @Test
+    fun `an old short reference is still read as an entry candidate`() {
+        assertEquals("PECE0511COL", EntryArQrCodeParser.parse("PECE0511COL")!!.reference)
+    }
+
+    @Test
     fun `normalize matches the comparison the server does over textoetiqueta`() {
         assertEquals("01C260000123 14-17", EntryArQrCodeParser.normalize(" 01c260000123   14-17 "))
         assertEquals("", EntryArQrCodeParser.normalize(null))

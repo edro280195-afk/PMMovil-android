@@ -1,5 +1,6 @@
 package com.example.pmmovil.data.entryar
 
+import com.example.pmmovil.data.scanner.LabelCodeShapes
 import java.util.Locale
 
 /**
@@ -47,6 +48,9 @@ object EntryArQrCodeParser {
     fun parse(raw: String?): EntryArQrCode? {
         val normalized = normalize(raw)
         if (normalized.isEmpty() || normalized.length > 120) return null
+        // Una caja o una relación tienen forma de referencia, pero no son una entrada: sin esto el AR las pedía al
+        // servidor como entradas y las rotulaba «No existe» aunque el código fuera válido.
+        if (LabelCodeShapes.noEsEntrada(normalized)) return null
         val match = bodyPattern.matchEntire(normalized) ?: return null
         val reference = match.groupValues[1]
         val ordinal = match.groupValues[2].toIntOrNull()
