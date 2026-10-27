@@ -364,6 +364,7 @@
     <string name="message_scan_accumulated">📦 Part %1$s · item %2$s · +%3$s → accumulated %4$s of %5$s</string>
     <string name="message_scan_accumulated_pieces">📦 Part %1$s · item %2$s · +%3$s → accumulated %4$s of %5$s pcs</string>
     <string name="message_tally_added">📦 %1$s · +%2$s → counted %3$s of %4$s pcs</string>
+    <string name="message_tally_added_kg">📦 %1$s · +%2$s → counted %3$s of %4$s kg</string>
     <string name="message_tally_already_counted">That package was already counted in %1$s. It was not added again.</string>
     <string name="message_tally_already_reviewed">Line item %1$s is already reviewed: nothing is counted on top.</string>
     <string name="message_tally_missing_quantity">The label for %1$s has no quantity in a barcode. Enter it by hand.</string>
@@ -371,7 +372,9 @@
     <string name="message_tally_several_partidas">There are %1$d line items with that key: pick one before counting.</string>
     <string name="message_tally_unsupported_unit">This line item is in %1$s: it is not counted by pieces.</string>
     <string name="message_tally_quantity_out_of_range">The label says %1$s pieces and the whole line item declares %2$s. Not counted: check the reading.</string>
-    <string name="message_tally_quantity_not_corroborated">The barcode says %1$s pieces, but that number is not printed on the label. Not counted: enter it yourself.</string>
+    <string name="message_tally_quantity_out_of_range_kg">The label says %1$s kg and the whole line item declares %2$s. Not counted: check the reading.</string>
+    <string name="message_tally_unit_not_confirmed">This line item is in kilos and the label does not clearly say KG (the unit is missing or it names another one). Not counted: check the label or enter the quantity yourself.</string>
+    <string name="message_tally_quantity_not_corroborated">The barcode says %1$s, but that number is not printed on the label. Not counted: enter it yourself.</string>
     <string name="message_tally_several_labels">More than one label in frame. Focus on a single one.</string>
     <string name="message_server_review_api">check the API</string>
     <string name="revision_read_label_photo">Read label with camera</string>

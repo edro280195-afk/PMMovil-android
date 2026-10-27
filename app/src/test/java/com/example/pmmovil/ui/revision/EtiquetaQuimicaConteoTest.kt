@@ -52,19 +52,29 @@ class EtiquetaQuimicaConteoTest {
     }
 
     @Test
-    fun `pero el conteo la rechaza porque su partida va en kilos`() {
-        // CountUnits solo sabe convertir a piezas PZA, CNT y MLL. Una partida en KG no tiene factor,
-        // así que el motor devuelve UnsupportedUnit y no cuenta nada.
+    fun `su partida va en kilos y se cuenta en kilos cuando la hoja imprime KG`() {
+        // Los kilos se cuentan desde el 27-oct-2026 (ver EtiquetaQuimicaKilosTest). Por piezas siguen sin contarse.
         assertNull(CountUnits.piecesPerUnit("KG"))
-        assertNull(PackageTally.expectedPieces(partidaEnKilos))
+        assertEquals(74.5, PackageTally.expectedQuantity(partidaEnKilos)!!, 0.0)
 
-        val lectura = PackageTally.read(camposDe(quimica), listOf(quimica), "QTY 200 PC  QTY 210  QTY 20000 PC  QTY 600  Q 73.500 KG  Batch 5003814158  Batch 5004029781  Lot 0031704192  Lot 2612012010  Part 75183644 75875114 75370203 49263333 49379668  1Y-00000050337428  S279239665  S279544448  NET WT KG 8  GROSS WT KG 9") as PackageTally.Reading.Ready
+        val lectura = PackageTally.read(
+            camposDe(quimica), listOf(quimica),
+            "CHEMICAL COMPOUND ART. NO (30S) 0049379668 QTY/Menge (Q) UNIT/ME 73.500 KG Batch No. 2612012010 Made in US"
+        ) as PackageTally.Reading.Ready
         val resultado = PackageTally.process(listOf(partidaEnKilos), PackageTally.Ledger(), lectura.label)
-        assertTrue(
-            "se esperaba que el conteo no soportara los kilos, salió $resultado",
-            resultado is PackageTally.Result.UnsupportedUnit
-        )
-        assertEquals("KG", (resultado as PackageTally.Result.UnsupportedUnit).unit)
+
+        assertTrue("se esperaba contar la caja, salió $resultado", resultado is PackageTally.Result.Added)
+        assertEquals(73.5, (resultado as PackageTally.Result.Added).totalAfter, 0.0)
+        assertEquals(PackageTally.State.PARTIAL, resultado.state)
+    }
+
+    @Test
+    fun `con el texto de otra etiqueta que tambien dice piezas no se cuenta`() {
+        // El texto genérico de las otras pruebas nombra PC y KG a la vez: la unidad de la Q no es clara.
+        val lectura = PackageTally.read(camposDe(quimica), listOf(quimica), "QTY 200 PC  Q 73.500 KG  Part 49379668") as PackageTally.Reading.Ready
+        val resultado = PackageTally.process(listOf(partidaEnKilos), PackageTally.Ledger(), lectura.label)
+
+        assertTrue("salió $resultado", resultado is PackageTally.Result.UnitNotConfirmed)
     }
 
     @Test

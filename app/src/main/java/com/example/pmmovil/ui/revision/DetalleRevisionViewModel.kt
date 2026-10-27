@@ -1442,9 +1442,12 @@ class DetalleRevisionViewModel @Inject constructor(
                 _toast.value = resource(R.string.message_tally_several_partidas, resultado.candidates.size)
             is PackageTally.Result.UnsupportedUnit ->
                 _toast.value = resource(R.string.message_tally_unsupported_unit, resultado.unit)
+            is PackageTally.Result.UnitNotConfirmed ->
+                _toast.value = resource(R.string.message_tally_unit_not_confirmed)
             is PackageTally.Result.QuantityOutOfRange ->
                 _toast.value = resource(
-                    R.string.message_tally_quantity_out_of_range,
+                    if (resultado.dimension == CountUnits.Dimension.KILOS) R.string.message_tally_quantity_out_of_range_kg
+                    else R.string.message_tally_quantity_out_of_range,
                     quantityText(resultado.perPackage),
                     quantityText(resultado.expected)
                 )
@@ -1467,7 +1470,8 @@ class DetalleRevisionViewModel @Inject constructor(
             cantidadPrevia = resultado.previousReceived ?: 0.0,
             cantidadEsperadaActual = resultado.totalAfter,
             mensaje = resource(
-                R.string.message_tally_added,
+                if (resultado.dimension == CountUnits.Dimension.KILOS) R.string.message_tally_added_kg
+                else R.string.message_tally_added,
                 resultado.partida.CnoParte.orEmpty(),
                 quantityText(resultado.counted.pieces),
                 quantityText(resultado.totalAfter),

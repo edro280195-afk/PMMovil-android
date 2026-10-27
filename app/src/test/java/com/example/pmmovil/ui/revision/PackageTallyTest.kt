@@ -312,12 +312,22 @@ class PackageTallyTest {
     }
 
     @Test
-    fun `una factura en kilos no se cuenta por piezas`() {
+    fun `una factura en kilos no se cuenta con una etiqueta que no dice kilos`() {
+        // La etiqueta de la caja de piezas no imprime la unidad de su Q: en una partida en KG no se cuenta sola.
         val kilos = partida(903, "49263333", cantidad = 49.2, unidad = "KG")
 
         val resultado = PackageTally.process(listOf(kilos), Ledger(), caja("S279239665"))
 
-        assertEquals(Result.UnsupportedUnit(kilos, "KG"), resultado)
+        assertEquals(Result.UnitNotConfirmed(kilos, emptySet()), resultado)
+    }
+
+    @Test
+    fun `una factura en litros no se cuenta por etiqueta`() {
+        val litros = partida(906, "49263333", cantidad = 49.2, unidad = "L")
+
+        val resultado = PackageTally.process(listOf(litros), Ledger(), caja("S279239665"))
+
+        assertEquals(Result.UnsupportedUnit(litros, "L"), resultado)
     }
 
     @Test
@@ -336,7 +346,7 @@ class PackageTallyTest {
             partida(2, "B", 1200.0, "PZA"),
             partida(3, "C", 1200.0, "PZA"),
             partida(4, "D", 1200.0, "PZA"),
-            partida(5, "E", 49.2, "KG"),
+            partida(5, "E", 49.2, "L"),
             partida(6, "F", 1200.0, "PZA", revisada = true)
         )
         val libro = Ledger(
@@ -357,11 +367,11 @@ class PackageTallyTest {
 
     @Test
     fun `los cientos y los millares se comparan en piezas`() {
-        assertEquals(State.COMPLETE, PackageTally.stateOf(210.0, PackageTally.expectedPieces(bolsaOrings)))
-        assertEquals(State.PARTIAL, PackageTally.stateOf(100.0, PackageTally.expectedPieces(bolsaOrings)))
+        assertEquals(State.COMPLETE, PackageTally.stateOf(210.0, PackageTally.expectedQuantity(bolsaOrings)))
+        assertEquals(State.PARTIAL, PackageTally.stateOf(100.0, PackageTally.expectedQuantity(bolsaOrings)))
         assertEquals(State.NOT_COMPARABLE, PackageTally.stateOf(5.0, null))
         val millar = partida(905, "M", cantidad = 1.5, unidad = "MLL")
-        assertEquals(1500.0, PackageTally.expectedPieces(millar)!!, 0.0)
+        assertEquals(1500.0, PackageTally.expectedQuantity(millar)!!, 0.0)
     }
 
     // ---- El libro en disco ----

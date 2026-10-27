@@ -369,6 +369,7 @@
     <string name="message_scan_accumulated">📦 Partida %1$s · artículo %2$s · +%3$s → acumulado %4$s de %5$s</string>
     <string name="message_scan_accumulated_pieces">📦 Partida %1$s · artículo %2$s · +%3$s → acumulado %4$s de %5$s pzas</string>
     <string name="message_tally_added">📦 %1$s · +%2$s → contado %3$s de %4$s pzas</string>
+    <string name="message_tally_added_kg">📦 %1$s · +%2$s → contado %3$s de %4$s kg</string>
     <string name="message_tally_already_counted">Ese empaque ya estaba contado en %1$s. No se sumó otra vez.</string>
     <string name="message_tally_already_reviewed">La partida %1$s ya está revisada: no se cuenta encima.</string>
     <string name="message_tally_missing_quantity">La etiqueta de %1$s no trae la cantidad en un código. Captúrala a mano.</string>
@@ -376,7 +377,9 @@
     <string name="message_tally_several_partidas">Hay %1$d partidas con esa clave: elige cuál antes de contar.</string>
     <string name="message_tally_unsupported_unit">Esta partida va en %1$s: no se cuenta por piezas.</string>
     <string name="message_tally_quantity_out_of_range">La etiqueta dice %1$s piezas y la partida entera declara %2$s. No se contó: revisa la lectura.</string>
-    <string name="message_tally_quantity_not_corroborated">El código dice %1$s piezas, pero ese número no aparece impreso en la etiqueta. No se contó: captúralo tú.</string>
+    <string name="message_tally_quantity_out_of_range_kg">La etiqueta dice %1$s kg y la partida entera declara %2$s. No se contó: revisa la lectura.</string>
+    <string name="message_tally_unit_not_confirmed">Esta partida va en kilos y la etiqueta no marca KG con claridad (falta la unidad o dice otra). No se contó: revisa la etiqueta o captura la cantidad tú.</string>
+    <string name="message_tally_quantity_not_corroborated">El código dice %1$s, pero ese número no aparece impreso en la etiqueta. No se contó: captúralo tú.</string>
     <string name="message_tally_several_labels">Hay más de una etiqueta en el cuadro. Enfoca una sola.</string>
     <string name="message_server_review_api">revisa el API</string>
     <string name="revision_read_label_photo">Leer etiqueta con la cámara</string>

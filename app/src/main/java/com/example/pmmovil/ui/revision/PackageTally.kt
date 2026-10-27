@@ -10,7 +10,7 @@ import com.example.pmmovil.data.ocr.PackageId
 import com.example.pmmovil.data.ocr.PartidaMatcher
 
 /**
- * Cuenta empaques leídos de sus etiquetas y los suma por partida, en piezas, sin contar dos veces el mismo.
+ * Cuenta empaques leídos de sus etiquetas y los suma por partida, en piezas o en kilos, sin contar dos veces el mismo.
  *
  * Es lógica pura, igual que [LabelCaptureCotejo]: no toca la pantalla, la red ni el disco. Quien la use escribe el
  * resultado donde corresponda (la cantidad recibida de la partida) y guarda el [Ledger].
@@ -19,7 +19,13 @@ import com.example.pmmovil.data.ocr.PartidaMatcher
  * llegan con la cantidad recibida precargada con la de la factura (medido: el 100 % de las no revisadas en PZA), y
  * sumarle encima daría 2.1 + 210 en una partida de cientos. Por eso el primer empaque de una partida **reemplaza**
  * ese valor ([Result.Added.previousReceived] guarda el anterior para poder restituirlo) y los siguientes se suman.
- * `ncantout` va en piezas aunque la factura vaya en cientos o millares: ver [CountUnits].
+ * `ncantout` va en piezas aunque la factura vaya en cientos o millares, y en kilos cuando la partida va en KG: ver
+ * [CountUnits]. (Los nombres `pieces` y `expected` de abajo son «la cantidad en la unidad base de la partida».)
+ *
+ * **Kilos.** Una partida en KG se cuenta sumando la `Q` de cada etiqueta, pero solo si la etiqueta imprime **KG y nada
+ * más** ([Label.printedUnits]): una etiqueta que también dice PC, o que dice LB, o que no dice la unidad, no se cuenta
+ * sola ([Result.UnitNotConfirmed]). La `Q` de un código sale igual que la de piezas; lo que cambia es que aquí un kilo
+ * mal entendido (libras leídas como kilos) no se descubre por el orden de magnitud.
  *
  * **Lo que sí cuenta.** Solo etiquetas cuya clave de parte salió de un código de barras y que trae su cantidad en
  * otro código ([read]): un dato leído por OCR nunca se suma solo. La clave tiene que ser exactamente la de una
@@ -44,7 +50,7 @@ object PackageTally {
         /** Se llevan más piezas que las que declara la factura. */
         OVER,
 
-        /** La unidad de la factura (kilos, litros…) no se cuenta por piezas. */
+        /** La unidad de la factura (litros, metros…) no se cuenta por etiqueta. */
         NOT_COMPARABLE
     }
 
@@ -64,7 +70,12 @@ object PackageTally {
          * Se normaliza a kilos porque la etiqueta los da así y `revdet.ncanttarifa` también; el peso
          * declarado de la partida vive en libras (`npeso`) y se convierte para comparar.
          */
-        val weightKg: Double? = null
+        val weightKg: Double? = null,
+        /**
+         * Las unidades que el texto impreso de la etiqueta nombra. Solo importa para partidas en kilos: la etiqueta
+         * tiene que decir KG y ninguna otra, porque la `Q` del código no trae su unidad.
+         */
+        val printedUnits: Set<CountUnits.PrintedUnit> = emptySet()
     )
 
     sealed interface Reading {
@@ -142,7 +153,9 @@ object PackageTally {
              * —30 empaques de 8 kg dan 240 contra los 242.4 declarados de la partida 3055981— y poner
              * una tolerancia sería inventarla. Se muestran los dos números y juzga el revisador.
              */
-            val expectedWeightKg: Double? = null
+            val expectedWeightKg: Double? = null,
+            /** En qué se contó: piezas o kilos. Decide las unidades de los avisos. */
+            val dimension: CountUnits.Dimension = CountUnits.Dimension.PIECES
         ) : Result
 
         /** Este empaque ya estaba en el [Ledger]; [where] es la partida a la que se sumó entonces. */
@@ -160,8 +173,17 @@ object PackageTally {
         /** Ninguna partida de esta entrada tiene esa clave (la etiqueta puede ser de otra entrada). */
         data class NotInEntry(val key: String) : Result
 
-        /** La factura de esta partida va en kilos, litros… y esta cuenta es por piezas. */
+        /** La factura de esta partida va en litros, metros… y esta cuenta no sabe de esa unidad. */
         data class UnsupportedUnit(val partida: PartidaRevisionDto, val unit: String) : Result
+
+        /**
+         * La partida va en kilos pero la etiqueta no dice **solo** KG: no dice ninguna unidad, también dice piezas, o dice
+         * libras. La `Q` del código no trae su unidad y contarla sería suponerla; lo decide el revisador.
+         */
+        data class UnitNotConfirmed(
+            val partida: PartidaRevisionDto,
+            val printed: Set<CountUnits.PrintedUnit>
+        ) : Result
 
         /**
          * Un solo empaque trae más piezas que toda la partida: casi seguro el decodificador se
@@ -177,7 +199,8 @@ object PackageTally {
         data class QuantityOutOfRange(
             val partida: PartidaRevisionDto,
             val perPackage: Double,
-            val expected: Double
+            val expected: Double,
+            val dimension: CountUnits.Dimension = CountUnits.Dimension.PIECES
         ) : Result
     }
 
@@ -225,7 +248,9 @@ object PackageTally {
         val expiry = fromBarcode.firstOrNull { it.campo == Campo.CADUCIDAD }?.valor?.trim().orEmpty()
         val fingerprint = listOf(withoutLeadingZeros(key), pieces?.let(LabelCaptureCotejo::numero).orEmpty(), batch, expiry)
             .joinToString("|")
-        return Reading.Ready(Label(key, pieces, packageId, fingerprint, weightKg(fields)))
+        return Reading.Ready(
+            Label(key, pieces, packageId, fingerprint, weightKg(fields), CountUnits.printedUnits(textoImpreso))
+        )
     }
 
     /**
@@ -255,19 +280,20 @@ object PackageTally {
     fun expectedWeightKg(partida: PartidaRevisionDto): Double? =
         partida.nPeso?.takeIf { it > 0.0 }?.let(RevisionWeightRules::kilosFromLibras)
 
-    fun expectedPieces(partida: PartidaRevisionDto): Double? =
-        CountUnits.toPieces(partida.nCantFactura, partida.UnidadFactura)
+    /** Lo que declara la factura de la partida, en la unidad base de su cuenta (piezas o kilos); null si no se cuenta. */
+    fun expectedQuantity(partida: PartidaRevisionDto): Double? =
+        CountUnits.countable(partida.UnidadFactura)?.let { partida.nCantFactura * it.factor }
 
-    fun stateOf(countedPieces: Double, expectedPieces: Double?): State = when {
-        expectedPieces == null -> State.NOT_COMPARABLE
-        countedPieces <= 0.0 -> State.UNCOUNTED
-        CountUnits.areEqual(countedPieces, expectedPieces) -> State.COMPLETE
-        countedPieces < expectedPieces -> State.PARTIAL
+    fun stateOf(counted: Double, expected: Double?): State = when {
+        expected == null -> State.NOT_COMPARABLE
+        counted <= 0.0 -> State.UNCOUNTED
+        CountUnits.areEqual(counted, expected) -> State.COMPLETE
+        counted < expected -> State.PARTIAL
         else -> State.OVER
     }
 
     fun stateOf(partida: PartidaRevisionDto, ledger: Ledger): State =
-        stateOf(ledger.total(partida.IdRevdet), expectedPieces(partida))
+        stateOf(ledger.total(partida.IdRevdet), expectedQuantity(partida))
 
     /**
      * Suma el empaque de [label] a su partida. No cambia nada por sí sola: devuelve qué pasó y, si [Result.Added],
@@ -290,11 +316,17 @@ object PackageTally {
             }
         }
         if (partida.Revisada) return Result.AlreadyReviewed(partida)
-        val expected = expectedPieces(partida) ?: return Result.UnsupportedUnit(partida, partida.UnidadFactura.orEmpty())
+        val countable = CountUnits.countable(partida.UnidadFactura)
+            ?: return Result.UnsupportedUnit(partida, partida.UnidadFactura.orEmpty())
+        val expected = partida.nCantFactura * countable.factor
         val perPackage = label.pieces ?: return Result.MissingQuantity(partida)
+        // La `Q` de un código no trae su unidad: en kilos la etiqueta tiene que decir KG y nada más.
+        if (countable.dimension == CountUnits.Dimension.KILOS && label.printedUnits != setOf(CountUnits.PrintedUnit.KILOS)) {
+            return Result.UnitNotConfirmed(partida, label.printedUnits)
+        }
         // Un empaque que por sí solo trae más que toda la partida es una lectura mala, no un sobrante.
         if (expected > 0.0 && perPackage * multiple > expected) {
-            return Result.QuantityOutOfRange(partida, perPackage * multiple, expected)
+            return Result.QuantityOutOfRange(partida, perPackage * multiple, expected, countable.dimension)
         }
 
         val counted = CountedPackage(
@@ -316,7 +348,8 @@ object PackageTally {
             previousReceived = partida.nCantOut,
             sameAsPrevious = sameAsPrevious,
             totalWeightKg = ledger.totalWeightKg(partida.IdRevdet) + counted.weightKg,
-            expectedWeightKg = expectedWeightKg(partida)
+            expectedWeightKg = expectedWeightKg(partida),
+            dimension = countable.dimension
         )
     }
 
