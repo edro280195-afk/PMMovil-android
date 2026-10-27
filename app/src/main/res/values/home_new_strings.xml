@@ -24,4 +24,12 @@
     <!-- Inicio nuevo: el resto de los módulos. -->
     <string name="home_new_more_title">Más</string>
     <string name="home_new_more_subtitle">otros módulos</string>
+
+    <!-- Inicio nuevo: «Último escaneo». -->
+    <string name="home_new_last_title">Último escaneo</string>
+    <string name="home_new_last_just_now">ahora</string>
+    <string name="home_new_last_minutes">hace %1$d min</string>
+    <string name="home_new_last_hours">hace %1$d h</string>
+    <string name="home_new_last_spoken">Último escaneo: %1$s %2$s, %3$s.</string>
+    <string name="home_new_last_spoken_open">Abre su ficha.</string>
 </resources>

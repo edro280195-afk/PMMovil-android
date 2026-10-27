@@ -59,6 +59,7 @@ import com.example.pmmovil.ui.components.SignalChip
 import com.example.pmmovil.ui.components.Skeleton
 import com.example.pmmovil.ui.components.Station
 import com.example.pmmovil.ui.home.BoardFigure
+import com.example.pmmovil.ui.home.HomeLastScanUi
 import com.example.pmmovil.ui.home.HomeModuleRouteKeys
 import com.example.pmmovil.ui.home.HomeSummaryUiState
 import com.example.pmmovil.ui.home.stationUnit
@@ -127,7 +128,9 @@ fun NewHomeContent(
     onModuleClick: (ModuleItem) -> Unit,
     onBlocked: (stationName: String) -> Unit,
     modifier: Modifier = Modifier,
-    summary: HomeSummaryUiState = HomeSummaryUiState()
+    summary: HomeSummaryUiState = HomeSummaryUiState(),
+    lastScan: HomeLastScanUi? = null,
+    onOpenLastScan: (code: String) -> Unit = {}
 ) {
     val rows = remember(modules, summary) {
         val byStation = Station.entries.associateWith { stationModule(it, modules) }
@@ -169,6 +172,11 @@ fun NewHomeContent(
         }
     }
 
+    // Bajo el visor, como en el mockup: es lo que se quiere a la mano justo después de escanear.
+    val lastScanPill: @Composable () -> Unit = {
+        lastScan?.let { HomeLastScanPill(state = it, onClick = { onOpenLastScan(it.scan.code) }) }
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -177,11 +185,17 @@ fun NewHomeContent(
     ) {
         if (wide) {
             Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                HomeScanViewer(onScan = onScan, modifier = Modifier.weight(0.9f))
+                Column(modifier = Modifier.weight(0.9f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    HomeScanViewer(onScan = onScan)
+                    lastScanPill()
+                }
                 Box(Modifier.weight(1.1f)) { board() }
             }
         } else {
-            HomeScanViewer(onScan = onScan)
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                HomeScanViewer(onScan = onScan)
+                lastScanPill()
+            }
             board()
         }
 

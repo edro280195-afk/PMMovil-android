@@ -41,6 +41,16 @@ class ScanActionsStateTest {
     }
 
     @Test
+    fun `only a card or a missing network leaves a last scan`() {
+        assertTrue(shouldRemember(TraceOutcome.Found(found)))
+        // Sin señal el guardia sigue trabajando: lo que acaba de leer debe poder reabrirse.
+        assertTrue(shouldRemember(TraceOutcome.Unavailable))
+        assertFalse(shouldRemember(TraceOutcome.NotFound))
+        assertFalse(shouldRemember(TraceOutcome.Rejected))
+        assertFalse(shouldRemember(TraceOutcome.Forbidden))
+    }
+
+    @Test
     fun `with a card the actions come from the state of the piece`() {
         val state = stateAfter(box, "E-17848/26", TraceOutcome.Found(found), everything)
 

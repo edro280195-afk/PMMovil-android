@@ -134,6 +134,7 @@ fun HomeScreen(
 ) {
     val state by homeViewModel.state.collectAsState()
     val summary by homeViewModel.summary.collectAsState()
+    val lastScan by homeViewModel.lastScan.collectAsState()
     val lifecycleOwner = LocalLifecycleOwner.current
     val haptic = LocalHapticFeedback.current
     val context = LocalContext.current
@@ -164,8 +165,11 @@ fun HomeScreen(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 homeViewModel.refreshNotificationUnreadCount()
-                // Las cifras del Tablero solo existen en el inicio nuevo; el viejo no las pide.
-                if (BuildConfig.USE_NEW_HOME) homeViewModel.refreshSummary()
+                // Las cifras del Tablero y el «Último escaneo» solo existen en el inicio nuevo; el viejo no los pide.
+                if (BuildConfig.USE_NEW_HOME) {
+                    homeViewModel.refreshSummary()
+                    homeViewModel.refreshLastScan()
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -331,6 +335,9 @@ fun HomeScreen(
                             NewHomeContent(
                                 modules = allActiveModules,
                                 summary = summary,
+                                lastScan = lastScan,
+                                // Mismo camino que una lectura: la ficha se pide de nuevo, la píldora solo recuerda qué era.
+                                onOpenLastScan = onScanned,
                                 wide = screenWidth >= 720,
                                 onScan = onNavigateToScanner,
                                 onModuleClick = onModuleClick,

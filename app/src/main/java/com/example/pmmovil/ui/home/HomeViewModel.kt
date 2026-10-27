@@ -5,9 +5,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.pmmovil.R
 import com.example.pmmovil.data.model.ModuloPermisoDto
+import com.example.pmmovil.data.preferences.LastScanStore
 import com.example.pmmovil.data.repository.AuthRepository
 import com.example.pmmovil.data.repository.HomeSummaryRepository
 import com.example.pmmovil.data.repository.NotificationInboxRepository
+import com.example.pmmovil.data.repository.TraceCompactRepository
+import com.example.pmmovil.data.scanner.LastScanKind
+import com.example.pmmovil.data.scanner.LastScanRules
+import com.example.pmmovil.ui.scanactions.signalKindOf
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -59,7 +64,9 @@ enum class HomeLoadPhase { Sesion, Permisos, Listo }
 class HomeViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val notificationInboxRepository: NotificationInboxRepository,
-    private val homeSummaryRepository: HomeSummaryRepository
+    private val homeSummaryRepository: HomeSummaryRepository,
+    private val lastScanStore: LastScanStore,
+    private val traceCompactRepository: TraceCompactRepository
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(HomeUiState())
@@ -70,6 +77,11 @@ class HomeViewModel @Inject constructor(
     val summary: StateFlow<HomeSummaryUiState> = _summary.asStateFlow()
     private var summaryJob: Job? = null
     private var lastSummaryRequestAt: Long? = null
+
+    // «Último escaneo»: lo guardado sale al instante; la señal fresca llega aparte y, si falla, la píldora sale sin ella.
+    private val _lastScan = MutableStateFlow<HomeLastScanUi?>(null)
+    val lastScan: StateFlow<HomeLastScanUi?> = _lastScan.asStateFlow()
+    private var lastScanSignalJob: Job? = null
 
     fun getUserName(): String? = authRepository.getName()
     fun getUserUsername(): String? = authRepository.getUsername()
@@ -110,6 +122,34 @@ class HomeViewModel @Inject constructor(
                         if (previous.loaded) previous else previous.copy(failed = true)
                     }
                 }
+        }
+    }
+
+    /**
+     * Lee el último escaneo del usuario y, para caja y relación, le pide al servidor su señal de ahora. Se llama cada vez
+     * que el inicio vuelve a primer plano: es la única forma de que aparezca tras escanear y regresar.
+     */
+    fun refreshLastScan() {
+        val now = System.currentTimeMillis()
+        val scan = LastScanRules.visibleTo(lastScanStore.read(), authRepository.getUsername(), now)
+        lastScanSignalJob?.cancel()
+        if (scan == null) {
+            _lastScan.value = null
+            return
+        }
+        // Mientras llega la señal fresca se conserva la de la misma pieza, para que la píldora no parpadee.
+        val previousSignal = _lastScan.value?.takeIf { it.scan.code == scan.code }?.signal
+        _lastScan.value = HomeLastScanUi(scan, LastScanRules.elapsed(scan, now), previousSignal)
+
+        // La ficha compacta solo cubre caja y relación; carpeta y bulto se quedan sin señal.
+        if (scan.kind != LastScanKind.Caja && scan.kind != LastScanKind.Relacion) return
+        lastScanSignalJob = viewModelScope.launch {
+            traceCompactRepository.get(listOf(scan.code)).onSuccess { items ->
+                val item = items[scan.code]?.takeIf { it.found } ?: return@onSuccess
+                _lastScan.value = _lastScan.value
+                    ?.takeIf { it.scan.code == scan.code }
+                    ?.copy(signal = signalKindOf(item.signal))
+            }
         }
     }
 

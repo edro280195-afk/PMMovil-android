@@ -24,4 +24,12 @@
     <!-- New home: the rest of the modules. -->
     <string name="home_new_more_title">More</string>
     <string name="home_new_more_subtitle">other modules</string>
+
+    <!-- New home: "Last scan". -->
+    <string name="home_new_last_title">Last scan</string>
+    <string name="home_new_last_just_now">just now</string>
+    <string name="home_new_last_minutes">%1$d min ago</string>
+    <string name="home_new_last_hours">%1$d h ago</string>
+    <string name="home_new_last_spoken">Last scan: %1$s %2$s, %3$s.</string>
+    <string name="home_new_last_spoken_open">Opens its card.</string>
 </resources>

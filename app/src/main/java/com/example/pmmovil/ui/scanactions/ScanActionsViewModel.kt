@@ -4,9 +4,11 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.pmmovil.data.model.TraceResultDto
+import com.example.pmmovil.data.preferences.LastScanStore
 import com.example.pmmovil.data.repository.AuthRepository
 import com.example.pmmovil.data.repository.TraceOutcome
 import com.example.pmmovil.data.repository.TraceRepository
+import com.example.pmmovil.data.scanner.LastScanRules
 import com.example.pmmovil.data.scanner.ScanAction
 import com.example.pmmovil.data.scanner.ScanActionResolver
 import com.example.pmmovil.data.scanner.ScanActionsRoute
@@ -62,6 +64,14 @@ internal fun hasTrace(code: ScannedCode): Boolean = when (code) {
 }
 
 /**
+ * Si esta lectura puede quedar como «Último escaneo»: cuando la ficha llegó, o cuando no se pudo consultar por falta de
+ * red (el guardia sigue trabajando sin señal y quiere volver a la caja que acaba de leer). Un código que el servidor dice
+ * que no existe no se guarda: nadie quiere reabrir un error de captura.
+ */
+internal fun shouldRemember(outcome: TraceOutcome): Boolean =
+    outcome is TraceOutcome.Found || outcome == TraceOutcome.Unavailable
+
+/**
  * El estado de la pantalla una vez que el servidor contestó. Con ficha, las acciones salen del estado de la pieza; sin
  * ella (sin red, sin permiso, código que el servidor no cubre) se cae a las acciones que se deducen del código, para que
  * una caída de la red no deje al guardia sin poder dar salida a una caja. Si el servidor dice que el código no existe, no
@@ -91,7 +101,8 @@ internal fun stateAfter(
 class ScanActionsViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val authRepository: AuthRepository,
-    private val traceRepository: TraceRepository
+    private val traceRepository: TraceRepository,
+    private val lastScanStore: LastScanStore
 ) : ViewModel() {
 
     // Sin código en la ruta es un gafete: ScanActionsRoute.forScan lo omite a propósito para que la credencial no
@@ -133,6 +144,11 @@ class ScanActionsViewModel @Inject constructor(
         loading = viewModelScope.launch {
             val outcome = withTimeoutOrNull(TRACE_TIMEOUT_MS) { traceRepository.resolve(rawCode) }
                 ?: TraceOutcome.Unavailable
+            if (shouldRemember(outcome)) {
+                // LastScanRules decide qué tipos se recuerdan: el gafete y el pre-registro nunca llegan a guardarse.
+                LastScanRules.remember(code, authRepository.getUsername(), System.currentTimeMillis())
+                    ?.let(lastScanStore::save)
+            }
             _state.value = stateAfter(code, rawCode, outcome, authRepository::hasPermission)
         }
     }
