@@ -22,13 +22,17 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.pmmovil.data.entryar.ArItemKind
@@ -46,6 +50,7 @@ import com.example.pmmovil.ui.components.SignalChip
 import com.example.pmmovil.ui.components.SignalKind
 import com.example.pmmovil.ui.components.StationNode
 import com.example.pmmovil.ui.components.StationState
+import com.example.pmmovil.ui.theme.LimitFontScale
 import com.example.pmmovil.ui.theme.PMMovilTheme
 import com.example.pmmovil.ui.theme.PmmBgPrimary
 import com.example.pmmovil.ui.theme.PmmTextPrimary
@@ -75,8 +80,35 @@ class ComponentGalleryActivity : ComponentActivity() {
     }
 }
 
+/**
+ * Marco de la galería: arriba, la escala de letra que se fuerza DENTRO de la app. No toca los ajustes del teléfono, así que
+ * sirve para ver cómo crecen las piezas con la letra grande sin cambiar nada en el aparato de nadie.
+ */
 @Composable
 private fun Gallery() {
+    var fontScale by remember { mutableFloatStateOf(1f) }
+    val density = LocalDensity.current
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Letra", fontWeight = FontWeight.Bold, color = PmmTextPrimary)
+            listOf(1f, 1.3f, 1.6f, 2f).forEach { scale ->
+                Button(onClick = { fontScale = scale }, enabled = fontScale != scale) { Text("${scale}x") }
+            }
+        }
+        Box(Modifier.weight(1f)) {
+            CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) { GalleryContent() }
+        }
+    }
+}
+
+@Composable
+private fun GalleryContent() {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -175,14 +207,16 @@ private fun Gallery() {
                     .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // Los dos anchos extremos que usa el AR: 156 dp (el mínimo) y 228 dp (el máximo).
-                EntryArFloatingCard(item = arSample("E-17840/26", ArItemKind.Caja, "AVISO", listOf("HECHA", "HECHA", "SIN_DATO", "EN_CURSO", "PENDIENTE"), listOf("HAZMAT")), offline = false, width = 156.dp, onClick = {})
-                EntryArFloatingCard(item = arSample("01I26104549", ArItemKind.Relacion, "LISTO", listOf("HECHA", "HECHA", "HECHA", "HECHA", "EN_CURSO"), emptyList(), primary = true), offline = false, width = 228.dp, onClick = {})
-                EntryArFloatingCard(item = arSample("E-17835/26", ArItemKind.Caja, "CERRADO", listOf("HECHA", "HECHA", "SIN_DATO", "HECHA", "HECHA"), emptyList()), offline = false, width = 156.dp, onClick = {})
-                EntryArFloatingCard(item = arSample("E-17848/26", ArItemKind.Caja, "ATENCION", listOf("HECHA", "SIN_DATO", "SIN_DATO", "PENDIENTE", "PENDIENTE"), listOf("SIN_ENTRADA_VINCULADA")), offline = false, width = 156.dp, onClick = {})
-                EntryArFloatingCard(item = arSample("E-99999/26", ArItemKind.Caja, "SIN_DATO", emptyList(), emptyList(), found = false), offline = false, width = 156.dp, onClick = {})
-                EntryArFloatingCard(item = arSample("E-17840/26", ArItemKind.Caja, "AVISO", emptyList(), emptyList(), withCompact = false), offline = false, width = 156.dp, onClick = {})
-                EntryArFloatingCard(item = arSample("01I26104549", ArItemKind.Relacion, "AVISO", emptyList(), emptyList(), withCompact = false), offline = true, width = 156.dp, onClick = {})
+                LimitFontScale {
+                    // Los dos anchos extremos que usa el AR: 156 dp (el mínimo) y 228 dp (el máximo).
+                    EntryArFloatingCard(item = arSample("E-17840/26", ArItemKind.Caja, "AVISO", listOf("HECHA", "HECHA", "SIN_DATO", "EN_CURSO", "PENDIENTE"), listOf("HAZMAT")), offline = false, width = 156.dp, onClick = {})
+                    EntryArFloatingCard(item = arSample("01I26104549", ArItemKind.Relacion, "LISTO", listOf("HECHA", "HECHA", "HECHA", "HECHA", "EN_CURSO"), emptyList(), primary = true), offline = false, width = 228.dp, onClick = {})
+                    EntryArFloatingCard(item = arSample("E-17835/26", ArItemKind.Caja, "CERRADO", listOf("HECHA", "HECHA", "SIN_DATO", "HECHA", "HECHA"), emptyList()), offline = false, width = 156.dp, onClick = {})
+                    EntryArFloatingCard(item = arSample("E-17848/26", ArItemKind.Caja, "ATENCION", listOf("HECHA", "SIN_DATO", "SIN_DATO", "PENDIENTE", "PENDIENTE"), listOf("SIN_ENTRADA_VINCULADA")), offline = false, width = 156.dp, onClick = {})
+                    EntryArFloatingCard(item = arSample("E-99999/26", ArItemKind.Caja, "SIN_DATO", emptyList(), emptyList(), found = false), offline = false, width = 156.dp, onClick = {})
+                    EntryArFloatingCard(item = arSample("E-17840/26", ArItemKind.Caja, "AVISO", emptyList(), emptyList(), withCompact = false), offline = false, width = 156.dp, onClick = {})
+                    EntryArFloatingCard(item = arSample("01I26104549", ArItemKind.Relacion, "AVISO", emptyList(), emptyList(), withCompact = false), offline = true, width = 156.dp, onClick = {})
+                }
             }
             Spacer(Modifier.height(6.dp))
             Text("Marcas sobre el QR", fontSize = 11.sp, color = PmmTextSecondary)
@@ -193,8 +227,10 @@ private fun Gallery() {
                     .padding(start = 30.dp, top = 44.dp, bottom = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(70.dp)
             ) {
-                EntryArQrMarker(item = arSample("E-17840/26", ArItemKind.Caja, "AVISO", listOf("HECHA"), emptyList()), onClick = {})
-                EntryArQrMarker(item = arSample("01I26104549", ArItemKind.Relacion, "LISTO", listOf("HECHA"), emptyList(), primary = true), onClick = {})
+                LimitFontScale {
+                    EntryArQrMarker(item = arSample("E-17840/26", ArItemKind.Caja, "AVISO", listOf("HECHA"), emptyList()), onClick = {})
+                    EntryArQrMarker(item = arSample("01I26104549", ArItemKind.Relacion, "LISTO", listOf("HECHA"), emptyList(), primary = true), onClick = {})
+                }
             }
             Spacer(Modifier.height(6.dp))
             Text("Hoja al tocar una marca", fontSize = 11.sp, color = PmmTextSecondary)

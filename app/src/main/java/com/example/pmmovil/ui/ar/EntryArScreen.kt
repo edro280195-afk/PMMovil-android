@@ -67,12 +67,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.pmmovil.ui.theme.LimitFontScale
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.pmmovil.data.entryar.ArItemKind
 import androidx.core.content.ContextCompat
@@ -285,14 +290,17 @@ fun EntryArScreen(
                         animationSpec = spring(dampingRatio = 0.92f, stiffness = 520f),
                         label = "posición de marca AR"
                     )
-                    EntryArQrMarker(
-                        item = item,
-                        onClick = {
-                            selectedItemSnapshot = item
-                            selectedItemKey = item.key
-                        },
-                        modifier = Modifier.offset { markerOffset }
-                    )
+                    // Las marcas y las tarjetas flotan sobre la cámara con tamaño fijo: no crecen con la letra grande.
+                    LimitFontScale {
+                        EntryArQrMarker(
+                            item = item,
+                            onClick = {
+                                selectedItemSnapshot = item
+                                selectedItemKey = item.key
+                            },
+                            modifier = Modifier.offset { markerOffset }
+                        )
+                    }
                 }
             }
 
@@ -303,16 +311,18 @@ fun EntryArScreen(
                         animationSpec = spring(dampingRatio = 0.92f, stiffness = 520f),
                         label = "posición de tarjeta AR"
                     )
-                    EntryArFloatingCard(
-                        item = item,
-                        offline = uiState.isOffline,
-                        width = cardWidth,
-                        onClick = {
-                            selectedItemSnapshot = item
-                            selectedItemKey = item.key
-                        },
-                        modifier = Modifier.offset { animatedOffset }
-                    )
+                    LimitFontScale {
+                        EntryArFloatingCard(
+                            item = item,
+                            offline = uiState.isOffline,
+                            width = cardWidth,
+                            onClick = {
+                                selectedItemSnapshot = item
+                                selectedItemKey = item.key
+                            },
+                            modifier = Modifier.offset { animatedOffset }
+                        )
+                    }
                 }
             }
         }
@@ -350,6 +360,8 @@ fun EntryArScreen(
                     text = uiState.message.orEmpty(),
                     modifier = Modifier
                         .fillMaxWidth()
+                        // Aparece y cambia solo: un lector de pantalla debe anunciarlo sin que se le pida.
+                        .semantics { liveRegion = LiveRegionMode.Polite }
                         .background(Color(0xDD374151))
                         .padding(horizontal = 14.dp, vertical = 8.dp),
                     color = Color.White,
@@ -439,7 +451,7 @@ internal fun EntryArFloatingCard(
                 color = borderColor,
                 shape = RoundedCornerShape(16.dp)
             )
-            .clickable(onClick = onClick),
+            .clickable(role = Role.Button, onClick = onClick),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = if (cached) Color(0xFFF1F5F9) else Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = if (item.isPrimary) 10.dp else 7.dp)
