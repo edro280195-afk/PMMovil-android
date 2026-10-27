@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -29,6 +30,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -89,12 +91,18 @@ fun SignalChip(
     val word = stringResource(kind.wordRes).uppercase()
 
     Row(
+        // Alto mínimo y no fijo: con la letra del sistema al máximo el detalle pasa a dos renglones y debe poder crecer.
         modifier = modifier
-            .height(height)
+            .heightIn(min = height)
             .clip(shape)
             .background(kind.container)
             .then(if (kind.outlined) Modifier.dashedBorder(kind.content) else Modifier)
-            .padding(start = if (large) 9.dp else 7.dp, end = if (large) 13.dp else 10.dp),
+            .padding(
+                start = if (large) 9.dp else 7.dp,
+                end = if (large) 13.dp else 10.dp,
+                top = 3.dp,
+                bottom = 3.dp
+            ),
         verticalAlignment = Alignment.CenterVertically
     ) {
         SignalShape(kind = kind, size = if (large) 18.dp else 15.dp)
@@ -116,10 +124,14 @@ fun SignalChip(
             Spacer(Modifier.width(7.dp))
             Text(
                 text = detail,
+                // Sin lineHeight propio el tema le pone 24 sp de alto de línea y el chip se ensancha de más.
+                modifier = Modifier.weight(1f, fill = false),
                 color = kind.content,
                 fontSize = if (large) 13.5.sp else 11.5.sp,
+                lineHeight = if (large) 16.sp else 14.sp,
                 fontWeight = FontWeight.Bold,
-                maxLines = 1
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
