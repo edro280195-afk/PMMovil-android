@@ -4,10 +4,12 @@
     <application
         android:usesCleartextTraffic="true"
         tools:replace="android:usesCleartextTraffic">
-        <!-- Solo debug: galería de las piezas de la señalética. No existe en release. -->
+        <!-- Solo debug: galería de las piezas de la señalética. No existe en release. Va exportada porque se abre con
+             `adb shell am start -n com.example.pmmovil/.debug.ComponentGalleryActivity`, que no puede con una no exportada;
+             solo muestra datos de mentira. -->
         <activity
             android:name=".debug.ComponentGalleryActivity"
-            android:exported="false"
+            android:exported="true"
             android:label="Galería de componentes"
             android:theme="@style/Theme.PMMovil" />
     </application>
