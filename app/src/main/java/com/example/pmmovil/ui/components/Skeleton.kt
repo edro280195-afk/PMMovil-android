@@ -25,6 +25,7 @@ import com.example.pmmovil.ui.theme.Motion
 import com.example.pmmovil.ui.theme.PmmBgCard
 import com.example.pmmovil.ui.theme.PmmNavyBorder
 import com.example.pmmovil.ui.theme.PmmNavyVariant
+import com.example.pmmovil.ui.theme.rememberAnimationsEnabled
 
 /**
  * Skeleton con shimmer animado. Reemplaza spinners: se siente más vivo
@@ -41,6 +42,17 @@ fun Skeleton(
     height: Dp = 14.dp,
     shape: Shape = RoundedCornerShape(8.dp)
 ) {
+    val sized = modifier
+        .then(if (width != null) Modifier.size(width = width, height = height)
+              else Modifier.fillMaxWidth().height(height))
+        .clip(shape)
+
+    // Con «Quitar animaciones» el brillo no corre: queda un bloque quieto del mismo color de fondo.
+    if (!rememberAnimationsEnabled()) {
+        Box(modifier = sized.background(PmmNavyVariant))
+        return
+    }
+
     val transition = rememberInfiniteTransition(label = "skeleton")
     val translate by transition.animateFloat(
         initialValue = 0f,
@@ -64,13 +76,7 @@ fun Skeleton(
         end = Offset(translate, 0f)
     )
 
-    Box(
-        modifier = modifier
-            .then(if (width != null) Modifier.size(width = width, height = height)
-                  else Modifier.fillMaxWidth().height(height))
-            .clip(shape)
-            .background(brush)
-    )
+    Box(modifier = sized.background(brush))
 }
 
 @Composable

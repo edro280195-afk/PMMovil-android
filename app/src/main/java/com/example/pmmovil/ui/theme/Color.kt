@@ -37,7 +37,7 @@ val PmmAmberDark  = Color(0xFFB45309)
 // ─── Texto (dark-on-light) ────────────────────────────────────────────────────
 val PmmTextPrimary   = Color(0xFF0F172A)  // casi negro, máximo contraste
 val PmmTextSecondary = Color(0xFF475569)  // slate gris medio
-val PmmTextMuted     = Color(0xFF94A3B8)  // gris claro para hints/labels
+val PmmTextMuted     = Color(0xFF94A3B8)  // gris claro: SOLO íconos, bordes y cosas deshabilitadas. Da 2.6:1 sobre blanco; el texto que se lee va en PmmTextSecondary (7.3:1)
 
 // ─── Scrim ────────────────────────────────────────────────────────────────────
 val PmmScrim      = Color(0xFF000000)

@@ -38,7 +38,6 @@ import com.example.pmmovil.ui.components.SkeletonLine
 import com.example.pmmovil.ui.components.StationNode
 import com.example.pmmovil.ui.theme.PmmAmberDark
 import com.example.pmmovil.ui.theme.PmmNavyBorder
-import com.example.pmmovil.ui.theme.PmmTextMuted
 import com.example.pmmovil.ui.theme.PmmTextPrimary
 import com.example.pmmovil.ui.theme.PmmTextSecondary
 import com.example.pmmovil.ui.theme.SignageType
@@ -55,7 +54,7 @@ internal fun TraceFields(result: TraceResultDto, modifier: Modifier = Modifier) 
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                 Text(
                     text = stringResource(field.label),
-                    color = PmmTextMuted,
+                    color = PmmTextSecondary,
                     fontSize = 12.sp,
                     modifier = Modifier.width(96.dp)
                 )
@@ -187,7 +186,7 @@ internal fun RelatedList(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(text = type.uppercase(), color = PmmTextMuted, style = SignageType.Caption)
+                        Text(text = type.uppercase(), color = PmmTextSecondary, style = SignageType.Caption)
                         Text(
                             text = row.code,
                             color = PmmTextPrimary,

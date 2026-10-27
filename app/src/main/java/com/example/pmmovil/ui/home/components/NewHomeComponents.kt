@@ -225,7 +225,7 @@ private fun SectionHeader(title: String, subtitle: String) {
             color = PmmTextPrimary,
             style = SignageType.Caption.copy(fontSize = 11.sp, letterSpacing = 1.5.sp)
         )
-        Text(text = subtitle, color = PmmTextMuted, fontSize = 11.sp)
+        Text(text = subtitle, color = PmmTextSecondary, fontSize = 11.sp)
     }
 }
 

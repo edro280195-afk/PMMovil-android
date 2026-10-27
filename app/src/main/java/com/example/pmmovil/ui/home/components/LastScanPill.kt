@@ -32,6 +32,7 @@ import com.example.pmmovil.data.scanner.LastScanElapsed
 import com.example.pmmovil.data.scanner.LastScanKind
 import com.example.pmmovil.ui.components.SignalChip
 import com.example.pmmovil.ui.home.HomeLastScanUi
+import com.example.pmmovil.ui.theme.PmmBlueDeep
 import com.example.pmmovil.ui.theme.PmmNavyBorder
 import com.example.pmmovil.ui.theme.PmmTextMuted
 import com.example.pmmovil.ui.theme.PmmTextPrimary
@@ -99,7 +100,7 @@ fun HomeLastScanPill(state: HomeLastScanUi, onClick: () -> Unit, modifier: Modif
                 Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
                         text = kind,
-                        color = PmmTextMuted,
+                        color = PmmBlueDeep,
                         style = SignageType.Caption.copy(fontSize = 9.5.sp),
                         maxLines = 1
                     )

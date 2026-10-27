@@ -53,7 +53,6 @@ import com.example.pmmovil.ui.theme.PmmBgPrimary
 import com.example.pmmovil.ui.theme.PmmBlueDeep
 import com.example.pmmovil.ui.theme.PmmNavyBorder
 import com.example.pmmovil.ui.theme.PmmNavyDark
-import com.example.pmmovil.ui.theme.PmmTextMuted
 import com.example.pmmovil.ui.theme.PmmTextPrimary
 import com.example.pmmovil.ui.theme.PmmTextSecondary
 import com.example.pmmovil.ui.theme.PmmYellow
@@ -169,7 +168,7 @@ fun ScanActionsScreen(
 
                 Text(
                     text = stringResource(R.string.scan_actions_read_only),
-                    color = PmmTextMuted,
+                    color = PmmTextSecondary,
                     fontSize = 12.sp
                 )
             }
