@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.pmmovil.data.model.BodegaEntradaDto
 import com.example.pmmovil.data.repository.BodegaRepository
+import com.example.pmmovil.data.scanner.OfficialQrParser
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -107,7 +108,7 @@ class BodegaListadoViewModel @Inject constructor(
     }
 
     fun onScannerInput(raw: String): String? {
-        val clean = raw.trim().split(" ", "\t").first()
+        val clean = OfficialQrParser.entradaOf(raw) ?: raw.trim().split(" ", "\t").first()
         val cref = if (clean.length >= 15 && clean.startsWith("01")) clean.take(15) else null
         if (cref != null) {
             _uiState.update { it.copy(isFromScanner = true) }

@@ -9,6 +9,7 @@ import com.example.pmmovil.data.model.CargarRelacionResponse
 import com.example.pmmovil.data.model.RelacionPendiente
 import com.example.pmmovil.data.repository.AuthRepository
 import com.example.pmmovil.data.repository.RelacionRepository
+import com.example.pmmovil.data.scanner.OfficialQrParser
 import com.example.pmmovil.data.scanner.PendingCode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -94,7 +95,9 @@ class RelacionViewModel @Inject constructor(
         }
     }
 
-    fun openDetail(relno: String) {
+    fun openDetail(scanned: String) {
+        // Lo que llega del lector puede ser la orden de carga (`01I26106418-1`) o la requisición de cruce: se abre la relación.
+        val relno = OfficialQrParser.relacionOf(scanned) ?: scanned
         if (relno.isBlank()) return
         if (_uiState.value.isLoading) {
             // Llegó mientras cargaba la lista (por ejemplo, abierta desde el escáner universal): se abre al terminar.

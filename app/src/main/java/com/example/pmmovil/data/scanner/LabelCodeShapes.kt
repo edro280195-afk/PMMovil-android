@@ -33,6 +33,31 @@ object LabelCodeShapes {
     /** Etiqueta de bulto: la referencia más ` posición-total`, p. ej. `01C263582800000 3-12`. */
     val conPosicion = Regex("^(\\S+)\\s+(\\d{1,6})-(\\d{1,6})$")
 
+    /**
+     * Orden de carga: el QR de la hoja que se escanea para iniciar una carga. Es la relación, un guion y la versión de
+     * la hoja (`01I26106418-1`, impresa como «01-I-26-106418 Versión 1»).
+     */
+    val ordenDeCarga = Regex("^(\\d{2}[IEC]\\d{8})-(\\d{1,3})$")
+
+    /**
+     * Requisición de cruce: el QR de la hoja que se escanea en caseta para dar la salida. Empieza con `R-`, sigue la
+     * relación y después trae más campos separados por espacios (`R-01I26106070  0000  101`). Lo único que se busca es la
+     * relación: no se interpretan los demás campos.
+     */
+    val requisicionDeCruce = Regex("^R-(\\d{2}[IEC]\\d{8})(?: .*)?$")
+
+    /**
+     * Etiqueta de carpeta de siempre: la referencia de entrada de 15 caracteres seguida de un campo de ancho fijo con el
+     * código del cliente (6 posiciones, rellenado con espacios) y un cierre `100`. Con un cliente corto queda un espacio
+     * (`01C2635628400001454  100`) y con uno de 6 caracteres no queda ninguno (`01C263605020000CL7480100`). Solo cuenta
+     * la entrada: son los primeros 15 caracteres, como los recorta desde siempre `Revision/buscar` en el API.
+     *
+     * La tercera posición es una letra en todas las entradas que existen (I, C, E, D, K, P, R), y eso evita tomar por
+     * carpeta un código GS1, que empieza con dos dígitos y sigue con 14 dígitos. Lo que sigue a la entrada lleva solo
+     * letras, dígitos y espacios: con un guion es la posición de un bulto (`… 3-12`), que se lee aparte.
+     */
+    val carpetaConCliente = Regex("^(\\d{2}[A-Z][A-Z0-9]{12})([A-Z0-9 ]{3,15})$")
+
     /** El QR del gafete trae `usuario;clave`: lleva una credencial y jamás se consulta, se guarda ni se registra. */
     fun esGafete(normalizado: String): Boolean = ';' in normalizado
 
@@ -41,5 +66,8 @@ object LabelCodeShapes {
         esGafete(normalizado) ||
             normalizado.startsWith(PRE_REGISTRO_PREFIX) ||
             caja.matches(normalizado) ||
-            relacion.matches(normalizado)
+            relacion.matches(normalizado) ||
+            // La orden de carga tiene forma de referencia (letras, dígitos y un guion): sin esto el AR la pedía como entrada.
+            ordenDeCarga.matches(normalizado) ||
+            requisicionDeCruce.matches(normalizado)
 }

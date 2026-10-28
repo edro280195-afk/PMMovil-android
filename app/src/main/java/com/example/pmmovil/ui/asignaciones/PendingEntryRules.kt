@@ -3,6 +3,7 @@ package com.example.pmmovil.ui.asignaciones
 import androidx.annotation.StringRes
 import com.example.pmmovil.R
 import com.example.pmmovil.data.model.EntradaPendienteDto
+import com.example.pmmovil.data.scanner.OfficialQrParser
 import kotlin.math.roundToInt
 
 enum class EntryLifecycle {
@@ -119,6 +120,9 @@ fun calculateEntryStatus(entry: EntradaPendienteDto): EntryStatusInfo {
 }
 
 fun normalizeScannedReference(rawValue: String): String? {
+    // La etiqueta de carpeta trae la entrada y el cliente pegados (`01C2635628400001454  100`): se busca la entrada.
+    OfficialQrParser.entradaOf(rawValue)?.let { return it }
+
     val firstToken = rawValue
         .trim()
         .split(Regex("[\\s\\r\\n\\t]+"))

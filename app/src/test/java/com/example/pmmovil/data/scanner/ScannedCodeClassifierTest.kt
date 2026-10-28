@@ -54,6 +54,27 @@ class ScannedCodeClassifierTest {
     }
 
     @Test
+    fun `the three official PMM codes classify by what they identify`() {
+        // Las lecturas son las de una carpeta, una orden de carga y una requisición de cruce reales.
+        assertEquals(ScannedCode.Carpeta("01C263562840000"), ScannedCodeClassifier.classify("01C2635628400001454  100"))
+        // La segunda carpeta real: el cliente llena su campo y no queda espacio. Antes salía como «referencia dudosa».
+        assertEquals(ScannedCode.Carpeta("01C263605020000"), ScannedCodeClassifier.classify("01C263605020000CL7480100"))
+        assertEquals(ScannedCode.Relacion("01I26106418"), ScannedCodeClassifier.classify("01I26106418-1"))
+        assertEquals(ScannedCode.Relacion("01I26106070"), ScannedCodeClassifier.classify("R-01I26106070  0000  101"))
+    }
+
+    @Test
+    fun `a load order is no longer a doubtful reference`() {
+        assertTrue(ScannedCodeClassifier.classify("01I26106418-1") !is ScannedCode.Candidato)
+    }
+
+    @Test
+    fun `a package label and a mutilated one keep their old reading next to the official folder`() {
+        assertEquals(ScannedCode.Bulto("01C263562840000", 3, 12), ScannedCodeClassifier.classify("01C263562840000 3-12"))
+        assertTrue(ScannedCodeClassifier.classify("01C263562840000 18-17") is ScannedCode.Desconocido)
+    }
+
+    @Test
     fun `a pre registration code keeps its prefix`() {
         assertEquals(
             ScannedCode.PreRegistro("PMMPR|7K2Q-4481"),

@@ -76,6 +76,14 @@ class PendingEntryRulesTest {
     }
 
     @Test
+    fun `la carpeta de siempre se busca por su entrada y no por el cliente pegado`() {
+        // El QR de la carpeta trae la entrada y el cliente pegados y un campo más: antes se buscaba el primer pedazo completo.
+        assertEquals("01C263562840000", normalizeScannedReference("01C2635628400001454  100"))
+        assertEquals("01C263562840000", normalizeScannedReference("01c2635628400001454  100\r\n"))
+        assertEquals("01C263605020000", normalizeScannedReference("01C263605020000CL7480100"))
+    }
+
+    @Test
     fun `filtra por referencia cliente supervisor nota y estado`() {
         val assigned = entry(
             crefAgrupada = "REF-900",

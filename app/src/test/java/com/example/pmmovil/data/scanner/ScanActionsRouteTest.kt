@@ -13,6 +13,20 @@ class ScanActionsRouteTest {
     }
 
     @Test
+    fun `an official code travels with its entry or release and never with the rest of its text`() {
+        assertEquals("acciones?code=01C263562840000", ScanActionsRoute.forScan("01C2635628400001454  100"))
+        assertEquals("acciones?code=01C263605020000", ScanActionsRoute.forScan("01C263605020000CL7480100"))
+        assertEquals("acciones?code=01I26106418", ScanActionsRoute.forScan("01I26106418-1"))
+        assertEquals("acciones?code=01I26106070", ScanActionsRoute.forScan("R-01I26106070  0000  101"))
+    }
+
+    @Test
+    fun `the other side classifies what an official code left in the route`() {
+        assertEquals(ScannedCode.Carpeta("01C263562840000"), ScanActionsRoute.codeFromArgument("01C263562840000"))
+        assertEquals(ScannedCode.Relacion("01I26106418"), ScanActionsRoute.codeFromArgument("01I26106418"))
+    }
+
+    @Test
     fun `a badge never travels in the route`() {
         val route = ScanActionsRoute.forScan("jperez;clave-secreta-123")
 

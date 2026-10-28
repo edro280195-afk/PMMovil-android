@@ -10,6 +10,7 @@ import com.example.pmmovil.data.model.SalidaPatioItem
 import com.example.pmmovil.data.repository.AuthRepository
 import com.example.pmmovil.data.repository.CasetaRepository
 import com.example.pmmovil.data.repository.SalidaCasetaRepository
+import com.example.pmmovil.data.scanner.OfficialQrParser
 import com.example.pmmovil.data.scanner.PendingCode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.File
@@ -239,7 +240,10 @@ class SalidaCasetaViewModel @Inject constructor(
 
     /** Lector de QR/código de barras: caja, relación, placas o id de caseta. */
     fun onScannerInput(raw: String) {
-        val code = raw.trim().split(Regex("\\s+")).firstOrNull().orEmpty().trim(',', ';')
+        // La requisición de cruce (`R-01I26106070  0000  101`) y la orden de carga (`01I26106418-1`) traen la relación
+        // con más texto alrededor: se busca la relación, no el primer pedazo del QR.
+        val code = OfficialQrParser.relacionOf(raw)
+            ?: raw.trim().split(Regex("\\s+")).firstOrNull().orEmpty().trim(',', ';')
         if (code.isBlank()) {
             _uiState.update {
                 it.copy(message = "⚠ Lectura vacía. Vuelve a escanear la caja.", feedbackSeq = it.feedbackSeq + 1)

@@ -1,6 +1,8 @@
 package com.example.pmmovil.data.entryar
 
 import com.example.pmmovil.data.scanner.LabelCodeShapes
+import com.example.pmmovil.data.scanner.OfficialQr
+import com.example.pmmovil.data.scanner.OfficialQrParser
 import java.util.Locale
 
 /**
@@ -51,6 +53,17 @@ object EntryArQrCodeParser {
         // Una caja o una relación tienen forma de referencia, pero no son una entrada: sin esto el AR las pedía al
         // servidor como entradas y las rotulaba «No existe» aunque el código fuera válido.
         if (LabelCodeShapes.noEsEntrada(normalized)) return null
+        // La etiqueta de carpeta de siempre trae la entrada y el cliente pegados: la entrada es lo único que se sigue.
+        (OfficialQrParser.parseNormalized(normalized) as? OfficialQr.Carpeta)?.let { carpeta ->
+            return EntryArQrCode(
+                normalized = carpeta.entrada,
+                raw = raw.orEmpty(),
+                reference = carpeta.entrada,
+                printedOrdinal = null,
+                declaredTotal = null,
+                isFolderLabel = true
+            )
+        }
         val match = bodyPattern.matchEntire(normalized) ?: return null
         val reference = match.groupValues[1]
         val ordinal = match.groupValues[2].toIntOrNull()

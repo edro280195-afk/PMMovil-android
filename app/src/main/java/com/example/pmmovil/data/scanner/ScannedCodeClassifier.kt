@@ -64,6 +64,15 @@ object ScannedCodeClassifier {
         if (esEstructurado(raw, normalized)) return ScannedCode.ProductoCliente(normalized)
         if (LabelCodeShapes.caja.matches(normalized)) return ScannedCode.Caja(normalized)
         if (LabelCodeShapes.relacion.matches(normalized)) return ScannedCode.Relacion(normalized)
+        // Los tres QR oficiales traen más texto que su entrada o relación: se reconocen completos y se queda lo que
+        // identifica la pieza. Va antes de la referencia genérica, que tomaba la orden de carga (`01I26106418-1`) por
+        // una referencia dudosa y dejaba la carpeta y la requisición como código desconocido.
+        when (val oficial = OfficialQrParser.parseNormalized(normalized)) {
+            is OfficialQr.Carpeta -> return ScannedCode.Carpeta(oficial.entrada)
+            is OfficialQr.OrdenDeCarga -> return ScannedCode.Relacion(oficial.relacion)
+            is OfficialQr.RequisicionDeCruce -> return ScannedCode.Relacion(oficial.relacion)
+            null -> Unit
+        }
 
         val partes = LabelCodeShapes.conPosicion.matchEntire(normalized)
         val referencia = partes?.groupValues?.get(1) ?: normalized

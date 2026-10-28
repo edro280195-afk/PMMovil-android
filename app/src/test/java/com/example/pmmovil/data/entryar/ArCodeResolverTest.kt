@@ -40,6 +40,45 @@ class ArCodeResolverTest {
     }
 
     @Test
+    fun `the folder label of always is followed by its entry`() {
+        val folder = ArCodeResolver.resolve("01C2635628400001454  100")
+
+        assertEquals(ArItemKind.Entry, folder?.kind)
+        assertEquals("01C263562840000", folder?.code?.normalized)
+        assertEquals("01C263562840000", folder?.code?.reference)
+        assertEquals(true, folder?.code?.isFolderLabel)
+        assertEquals(null, folder?.code?.printedOrdinal)
+    }
+
+    @Test
+    fun `a folder label whose client leaves no space is followed by its entry too`() {
+        val folder = ArCodeResolver.resolve("01C263605020000CL7480100")
+
+        assertEquals(ArItemKind.Entry, folder?.kind)
+        assertEquals("01C263605020000", folder?.code?.reference)
+        assertEquals(true, folder?.code?.isFolderLabel)
+    }
+
+    @Test
+    fun `the load order and the crossing requisition are followed as releases`() {
+        val orden = ArCodeResolver.resolve("01I26106418-1")
+        val requisicion = ArCodeResolver.resolve("R-01I26106070  0000  101")
+
+        assertEquals(ArItemKind.Relacion, orden?.kind)
+        assertEquals("01I26106418", orden?.code?.normalized)
+        assertEquals("01I26106418", orden?.code?.reference)
+        assertEquals(ArItemKind.Relacion, requisicion?.kind)
+        assertEquals("01I26106070", requisicion?.code?.normalized)
+    }
+
+    @Test
+    fun `the entry parser no longer takes a load order or a requisition for an entry`() {
+        // Antes la orden de carga pasaba por referencia de entrada y el AR la rotulaba «No existe».
+        assertNull(EntryArQrCodeParser.parse("01I26106418-1"))
+        assertNull(EntryArQrCodeParser.parse("R-01I26106070  0000  101"))
+    }
+
+    @Test
     fun `a badge never becomes an AR code`() {
         assertNull(ArCodeResolver.resolve("usuario;Secreto123"))
         // Ni aunque lo que sigue al punto y coma parezca una caja: el gafete se descarta antes de mirar nada más.

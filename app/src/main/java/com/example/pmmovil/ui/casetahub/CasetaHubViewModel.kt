@@ -17,6 +17,7 @@ import com.example.pmmovil.data.printing.ZebraPrinterPreferences
 import com.example.pmmovil.data.printing.ZebraPrinterService
 import com.example.pmmovil.data.repository.SalidaCasetaRepository
 import com.example.pmmovil.data.scanner.BarcodeValueNormalizer
+import com.example.pmmovil.data.scanner.OfficialQrParser
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -300,12 +301,14 @@ class CasetaHubViewModel @Inject constructor(
      * es para *encontrar* una caja, no para capturarla.
      */
     fun onScannerInput(raw: String) {
-        val clean = BarcodeValueNormalizer.normalize(raw)
-            .split(Regex("\\s+"))
-            .firstOrNull()
-            .orEmpty()
-            .trim(',', ';')
-            .uppercase(Locale.ROOT)
+        // Un QR oficial (carpeta, orden de carga, requisición de cruce) se busca por su entrada o relación.
+        val clean = OfficialQrParser.identityOf(raw)
+            ?: BarcodeValueNormalizer.normalize(raw)
+                .split(Regex("\\s+"))
+                .firstOrNull()
+                .orEmpty()
+                .trim(',', ';')
+                .uppercase(Locale.ROOT)
         if (clean.isBlank()) return
         setQuery(clean)
     }

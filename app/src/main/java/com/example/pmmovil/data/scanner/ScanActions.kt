@@ -179,7 +179,10 @@ object ScanActionsRoute {
 
     fun forScan(raw: String?): String {
         if (ScannedCodeClassifier.classify(raw) == ScannedCode.Gafete) return WITHOUT_CODE
-        return "$WITHOUT_CODE?$ARG_CODE=${ScanActionResolver.encode(raw.orEmpty().trim().take(MAX_CODE_LENGTH))}"
+        // Un QR oficial viaja solo con su entrada o relación: la pantalla de destino y el servidor buscan eso, no el
+        // texto completo de la etiqueta.
+        val value = OfficialQrParser.identityOf(raw) ?: raw.orEmpty().trim().take(MAX_CODE_LENGTH)
+        return "$WITHOUT_CODE?$ARG_CODE=${ScanActionResolver.encode(value)}"
     }
 
     /** Qué se leyó, según el argumento de la ruta. Sin argumento es un gafete: así lo deja [forScan]. */
