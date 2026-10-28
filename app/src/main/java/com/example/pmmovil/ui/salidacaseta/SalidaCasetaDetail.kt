@@ -300,6 +300,7 @@ private fun BannerCarril(item: SalidaPatioItem) {
             append("Relación ${item.relno} autorizada")
             if (item.usuAutoriza.isNotBlank()) append(" por ${item.usuAutoriza}")
             item.minutosEspera?.let { append(" hace ${formatoMinutos(it)}") }
+            if (item.sinCajaEnCaseta) append(". No hay una caja suya registrada en caseta: al confirmar solo se cierra la relación.")
         }
         SalidaCarril.MANUAL -> "SALIDA MANUAL · esta caja no tiene relación" to
             "Se registra como salida manual: no cierra ninguna relación ni avisa al cliente."
@@ -863,7 +864,8 @@ internal fun DialogoConfirmar(
 private fun resumenDe(item: SalidaPatioItem, observacion: String, fotos: Int): List<String> = when (item.carrilEnum) {
     SalidaCarril.LISTA -> buildList {
         add(
-            if (item.cajas.size > 1) "La relación ${item.relno} pasa a SALIDA con sus ${item.cajas.size} cajas (${item.cajas.joinToString(", ") { it.numCaja }})."
+            if (item.sinCajaEnCaseta) "La relación ${item.relno} pasa a SALIDA. No hay una caja suya registrada en caseta: solo se cierra la relación."
+            else if (item.cajas.size > 1) "La relación ${item.relno} pasa a SALIDA con sus ${item.cajas.size} cajas (${item.cajas.joinToString(", ") { it.numCaja }})."
             else "La relación ${item.relno} pasa a SALIDA · caja ${item.cajas.firstOrNull()?.numCaja.orEmpty()}."
         )
         add("Se avisa a: ${item.clientes.joinToString(", ").ifBlank { "los clientes de la relación" }}.")

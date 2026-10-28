@@ -749,6 +749,7 @@ private fun FilaPatio(item: SalidaPatioItem, seleccionada: Boolean, onClick: () 
                     )
                     if (item.tipoOp.isNotBlank()) PildoraTipoOp(item.tipoOp)
                     if (item.esTractocamion) Pildora("Tractocamión", Color(0xFFE2E8F0), PmmTextSecondary)
+                    if (item.sinCajaEnCaseta) Pildora("SIN CAJA EN CASETA", Color(0xFFFEF3C7), Color(0xFF92400E))
                 }
                 val clientes = when {
                     item.clientes.isEmpty() -> "Sin cliente"

@@ -107,4 +107,54 @@ class SalidaCasetaLogicTest {
         assertEquals("IMEX", nombrePlanta("1"))
         assertEquals(null, nombrePlanta(""))
     }
+
+    // Una relación autorizada cuya caja nunca se registró en caseta (01I26106352, caja 702466 en producción): la caja que
+    // trae es la que dice la relación y no tiene casetaId.
+    private val sinCaja = SalidaPatioItem(
+        id = "01I26106352",
+        carril = "LISTA",
+        relno = "01I26106352",
+        cajas = listOf(SalidaPatioCaja(casetaId = "", numCaja = "702466")),
+        minutosEspera = 7345,
+        sinCajaEnCaseta = true
+    )
+
+    @Test
+    fun `una relacion sin caja en caseta se lista, se cuenta y se busca por relacion o por la caja que dice`() {
+        val estado = patio.copy(items = patio.items + sinCaja)
+
+        assertTrue(estado.visibles().any { it.id == "01I26106352" })
+        assertEquals(3, estado.conteo(SalidaCarril.LISTA))
+        assertEquals(listOf("01I26106352"), estado.copy(query = "01I26106352").visibles().map { it.id })
+        assertEquals(listOf("01I26106352"), estado.copy(query = "702466").visibles().map { it.id })
+    }
+
+    @Test
+    fun `una relacion sin caja en caseta se puede dar de salida como cualquier relacion lista`() {
+        val estado = patio.copy(relModificar = true, manualModificar = false, items = patio.items + sinCaja)
+
+        assertTrue(estado.puedeActuar(sinCaja))
+        // Lleva más tiempo esperando que las demás listas: va primero entre ellas.
+        assertEquals("01I26106352", estado.visibles().first().id)
+    }
+
+    @Test
+    fun `el campo sinCajaEnCaseta se lee del API y un API viejo que no lo manda deja false`() {
+        val gson = com.google.gson.Gson()
+        val nuevo = gson.fromJson(
+            """{"id":"01I26106352","carril":"LISTA","relno":"01I26106352","sinCajaEnCaseta":true,
+               "cajas":[{"casetaId":"","numCaja":"702466"}]}""",
+            SalidaPatioItem::class.java
+        )
+        val viejo = gson.fromJson(
+            """{"id":"01I26106453","carril":"LISTA","relno":"01I26106453","cajas":[{"casetaId":"E-1","numCaja":"20073"}]}""",
+            SalidaPatioItem::class.java
+        )
+
+        assertTrue(nuevo.sinCajaEnCaseta)
+        assertEquals(SalidaCarril.LISTA, nuevo.carrilEnum)
+        assertEquals("702466", nuevo.cajas.single().numCaja)
+        assertEquals("", nuevo.cajas.single().casetaId)
+        assertFalse(viejo.sinCajaEnCaseta)
+    }
 }

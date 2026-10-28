@@ -105,7 +105,12 @@ data class SalidaPatioItem(
     val minutosCargando: Int? = null,
     val salidaCaseta: String? = null,
     val bultosCargados: Int = 0,
-    val bultosTotal: Int = 0
+    val bultosTotal: Int = 0,
+    /**
+     * La relación está autorizada pero no hay ninguna caja suya en el patio de caseta. La caja de [cajas] es la que dice
+     * la relación y no tiene registro de caseta (`casetaId` vacío). Un API que no manda el campo deja `false`.
+     */
+    val sinCajaEnCaseta: Boolean = false
 ) {
     val carrilEnum: SalidaCarril get() = SalidaCarril.desde(carril)
 }

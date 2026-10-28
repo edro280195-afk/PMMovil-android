@@ -213,7 +213,7 @@ class SalidaCasetaViewModel @Inject constructor(
     }
 
     private fun tituloCorto(item: SalidaPatioItem): String =
-        if (item.cajas.size > 1) "La relación ${item.relno}" else "La caja ${item.cajas.firstOrNull()?.numCaja.orEmpty()}"
+        if (item.cajas.size > 1 || item.sinCajaEnCaseta) "La relación ${item.relno}" else "La caja ${item.cajas.firstOrNull()?.numCaja.orEmpty()}"
 
     private fun nombreCarril(carril: SalidaCarril): String = when (carril) {
         SalidaCarril.LISTA -> "Listas"
