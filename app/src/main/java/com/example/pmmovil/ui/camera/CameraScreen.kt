@@ -10,7 +10,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraControl
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
-import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.AnimatedVisibility
@@ -106,6 +105,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
+import com.example.pmmovil.data.camera.SmartStillCapture
 import com.example.pmmovil.data.model.FotoRevisionDto
 import com.example.pmmovil.data.model.FotoSyncEntity
 import com.example.pmmovil.data.preferences.CameraPreferences
@@ -381,6 +381,9 @@ fun CameraScreen(
                                 isCapturing = true
                                 showCaptureFlash = true
                             },
+                            // La primera foto ya quedo; si sale blanda, el reintento invisible sigue unos instantes
+                            // con el obturador bloqueado pero sin tapar el visor.
+                            onFirstShot = { showCaptureFlash = false },
                             onSaved = { file ->
                                 showCaptureFlash = false
                                 isCapturing = false
@@ -1447,6 +1450,7 @@ private fun capturePhoto(
     context: Context,
     imageCapture: ImageCapture?,
     onCaptureStarted: () -> Unit,
+    onFirstShot: () -> Unit,
     onSaved: (File) -> Unit,
     onError: () -> Unit
 ) {
@@ -1455,27 +1459,19 @@ private fun capturePhoto(
         return
     }
     val file = createTempPictureFile(context)
-    val outputOptions = ImageCapture.OutputFileOptions.Builder(file).build()
     onCaptureStarted()
 
-    capture.takePicture(
-        outputOptions,
-        ContextCompat.getMainExecutor(context),
-        object : ImageCapture.OnImageSavedCallback {
-            override fun onImageSaved(
-                outputFileResults: ImageCapture.OutputFileResults
-            ) {
-                onSaved(file)
-            }
-
-            override fun onError(exception: ImageCaptureException) {
-                Log.e(
-                    "CameraScreen",
-                    "Error al tomar foto: ${exception.message}",
-                    exception
-                )
-                onError()
-            }
+    // Foto con reintento invisible: si sale movida o desenfocada, toma otra en el acto y entrega la mas nitida de
+    // la misma escena, con el nombre de archivo de siempre. El operador solo toca el obturador una vez.
+    SmartStillCapture.takeBest(
+        context = context,
+        imageCapture = capture,
+        target = file,
+        onFirstShot = onFirstShot,
+        onSaved = onSaved,
+        onError = {
+            Log.e("CameraScreen", "Error al tomar foto")
+            onError()
         }
     )
 }

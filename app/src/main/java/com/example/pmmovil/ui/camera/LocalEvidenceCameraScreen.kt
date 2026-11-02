@@ -12,7 +12,6 @@ import androidx.camera.core.CameraControl
 import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
-import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.BorderStroke
@@ -88,6 +87,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil.compose.AsyncImage
+import com.example.pmmovil.data.camera.SmartStillCapture
 import com.example.pmmovil.ui.theme.PmmBlueLight
 import com.example.pmmovil.ui.theme.PmmBlueDeep
 import com.example.pmmovil.ui.theme.PmmGreen
@@ -336,6 +336,9 @@ fun LocalEvidenceCameraScreen(
                                         isCapturing = true
                                         showCaptureFlash = true
                                     },
+                                    // La primera foto ya quedo; si sale blanda, el reintento invisible sigue unos instantes
+                                    // con el obturador bloqueado pero sin tapar el visor.
+                                    onFirstShot = { showCaptureFlash = false },
                                     onSaved = { file ->
                                         showCaptureFlash = false
                                         isCapturing = false
@@ -903,6 +906,7 @@ private fun captureLocalEvidencePhoto(
     directoryName: String,
     filePrefix: String,
     onCaptureStarted: () -> Unit,
+    onFirstShot: () -> Unit,
     onSaved: (File) -> Unit,
     onError: () -> Unit
 ) {
@@ -911,21 +915,19 @@ private fun captureLocalEvidencePhoto(
         return
     }
     val file = createLocalEvidenceFile(context, directoryName, filePrefix)
-    val outputOptions = ImageCapture.OutputFileOptions.Builder(file).build()
     onCaptureStarted()
 
-    capture.takePicture(
-        outputOptions,
-        ContextCompat.getMainExecutor(context),
-        object : ImageCapture.OnImageSavedCallback {
-            override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                onSaved(file)
-            }
-
-            override fun onError(exception: ImageCaptureException) {
-                Log.e(TAG, "Error al tomar foto local: ${exception.message}", exception)
-                onError()
-            }
+    // Foto con reintento invisible: si sale movida o desenfocada, toma otra en el acto y entrega la mas nitida de
+    // la misma escena, con el nombre de archivo de siempre. El operador solo toca el obturador una vez.
+    SmartStillCapture.takeBest(
+        context = context,
+        imageCapture = capture,
+        target = file,
+        onFirstShot = onFirstShot,
+        onSaved = onSaved,
+        onError = {
+            Log.e(TAG, "Error al tomar foto local")
+            onError()
         }
     )
 }

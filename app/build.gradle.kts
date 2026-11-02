@@ -79,6 +79,14 @@ android {
         .get()
         .toBoolean()
 
+    // Umbral de nitidez bajo el cual la camara de evidencia reintenta la foto (ver StillBurstPolicy). 200 esta calibrado
+    // con fotos reales de tableta (borrosas de 10 a 67, normales de 500 a 10,000). En un telefono con buena camara casi
+    // nada cae ahi, asi que para probar el reintento se sube con -PpmmStillRetryBelow=500 sin tocar el codigo.
+    val stillRetryBelow = providers.gradleProperty("pmmStillRetryBelow")
+        .orElse("200.0")
+        .get()
+        .toDouble()
+
     defaultConfig {
         applicationId = "com.example.pmmovil"
         minSdk = 28
@@ -96,6 +104,9 @@ android {
 
         // Inicio nuevo: visor de escaneo universal y Tablero de La Línea en lugar del Bento de módulos.
         buildConfigField("boolean", "USE_NEW_HOME", newHomeEnabled.toString())
+
+        // Reintento invisible de fotos de evidencia: umbral de nitidez (ver arriba).
+        buildConfigField("double", "STILL_RETRY_BELOW", stillRetryBelow.toString())
 
         // Las lecturas pueden contener datos operativos; la traza de red se
         // habilita explícitamente con -PpmmNetworkTrace=true cuando se requiere
