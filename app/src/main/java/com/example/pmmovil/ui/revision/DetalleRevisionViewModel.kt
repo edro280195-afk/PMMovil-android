@@ -91,6 +91,7 @@ data class DeshacerAcumulacion(
 @HiltViewModel
 class DetalleRevisionViewModel @Inject constructor(
     private val repository: RevisionRepository,
+    private val catalogos: com.example.pmmovil.data.catalog.CatalogoRepository,
     private val authRepository: AuthRepository,
     private val hubService: WarehouseHubService,
     private val unlockStore: UnlockStore,
@@ -459,9 +460,8 @@ class DetalleRevisionViewModel @Inject constructor(
     init {
         loadData()
         initializeReviewSession()
-        cargarPaises()
+        cargarCatalogosGuardados()
         cargarPaisesFrecuentes()
-        cargarUnidadesComerciales()
         cargarFotos()
         observeSignalR()
         verificarAccesoPrevio()
@@ -617,6 +617,40 @@ class DetalleRevisionViewModel @Inject constructor(
             hubService.registrarActividad(crefAgrupada, user, cnofact, actividad)
         }
     }
+
+    /**
+     * Paises y unidades comerciales casi no cambian: se pintan de inmediato desde la tableta y solo se baja lo que
+     * cambio de version. Los paises «frecuentes» (los 5 mas usados) si se piden en vivo, como siempre.
+     */
+    private fun cargarCatalogosGuardados() {
+        viewModelScope.launch {
+            val repo = com.example.pmmovil.data.catalog.CatalogoRepository
+            var paises = leerPaises()
+            var unidades = leerUnidades()
+            if (paises.isNotEmpty()) _paises.value = paises
+            if (unidades.isNotEmpty()) _unidadesComerciales.value = unidades
+
+            val sync = catalogos.sincronizar(repo.REVISION)
+            if (sync is com.example.pmmovil.data.catalog.ResultadoSync.Actualizado) {
+                if (repo.PAISES in sync.cambiados) paises = leerPaises().also { if (it.isNotEmpty()) _paises.value = it }
+                if (repo.UNIDADES_COMERCIALES in sync.cambiados) {
+                    unidades = leerUnidades().also { if (it.isNotEmpty()) _unidadesComerciales.value = it }
+                }
+            }
+
+            // Primera vez sin red, o servidor anterior sin catalogos maestros: el camino de siempre.
+            if (paises.isEmpty()) cargarPaises()
+            if (unidades.isEmpty()) cargarUnidadesComerciales()
+        }
+    }
+
+    private suspend fun leerPaises(): List<PaisDto> =
+        catalogos.items(com.example.pmmovil.data.catalog.CatalogoRepository.PAISES)
+            .map { PaisDto(codigo = it.id, descrip = it.nombre, cpais = null, cnombre = null) }
+
+    private suspend fun leerUnidades(): List<UnidadComercialDto> =
+        catalogos.items(com.example.pmmovil.data.catalog.CatalogoRepository.UNIDADES_COMERCIALES)
+            .map { UnidadComercialDto(codigo = it.id, nombre = it.nombre, codigoInterno = it.extra) }
 
     private fun cargarPaises() {
         viewModelScope.launch {

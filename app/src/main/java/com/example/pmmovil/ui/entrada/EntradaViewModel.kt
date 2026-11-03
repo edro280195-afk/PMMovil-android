@@ -7,6 +7,7 @@ import com.example.pmmovil.BuildConfig
 import com.example.pmmovil.data.db.EntradaPhotoSyncDao
 import com.example.pmmovil.data.model.CasetaPhotoInfo
 import com.example.pmmovil.data.model.CasetaScanResponse
+import com.example.pmmovil.data.model.EntradaCatalogItem
 import com.example.pmmovil.data.model.EntradaCatalogs
 import com.example.pmmovil.data.model.EntradaDetail
 import com.example.pmmovil.data.model.EntradaDraft
@@ -81,6 +82,8 @@ data class EntradaUiState(
     val puedeModificar: Boolean = false,
     val puedeBorrar: Boolean = false,
     val catalogs: EntradaCatalogs = EntradaCatalogs(),
+    // true cuando clientes y transportes se buscan en los catalogos guardados en la tableta, sin red.
+    val catalogosLocales: Boolean = false,
     val boxes: List<EntradaLookupItem> = emptyList(),
     val form: EntradaFormSnapshot = EntradaFormSnapshot(),
     val section: EntradaSection = EntradaSection.REFERENCE,
@@ -119,6 +122,7 @@ data class EntradaUiState(
 @HiltViewModel
 class EntradaViewModel @Inject constructor(
     private val repository: EntradaRepository,
+    private val catalogos: com.example.pmmovil.data.catalog.CatalogoRepository,
     private val draftStore: EntradaDraftStore,
     private val authRepository: AuthRepository,
     private val entradaPhotoSyncDao: EntradaPhotoSyncDao,
@@ -191,23 +195,65 @@ class EntradaViewModel @Inject constructor(
                 showDraftRecovery = drafts.isNotEmpty()
             )
 
-            val catalogsRequest = async { repository.getCatalogs() }
+            // Los catalogos que casi no cambian (clientes, transportes, clases, ubicaciones...) salen de la tableta: la
+            // pantalla abre al instante y solo se revisa su version. Las cajas disponibles SI cambian a cada rato y
+            // se piden en vivo.
+            var localCatalogs = readLocalCatalogs()
+            if (localCatalogs != null) {
+                _uiState.value = _uiState.value.copy(isLoading = false, catalogs = localCatalogs, catalogosLocales = true)
+            }
+
+            val syncRequest = async { catalogos.sincronizar(com.example.pmmovil.data.catalog.CatalogoRepository.ENTRADA) }
             val boxesRequest = async { repository.getAvailableBoxes() }
             val frequentCustomersRequest = async { repository.getFrequentItems("cliente") }
             val frequentTransportsRequest = async { repository.getFrequentItems("transporte") }
-            val catalogs = catalogsRequest.await()
+            if (syncRequest.await() is com.example.pmmovil.data.catalog.ResultadoSync.Actualizado) {
+                localCatalogs = readLocalCatalogs() ?: localCatalogs
+            }
+
+            // Primera vez sin red, o servidor anterior sin catalogos maestros: el camino de siempre.
+            val serverCatalogs = if (localCatalogs == null) repository.getCatalogs() else null
             val boxes = boxesRequest.await()
             val frequentCustomers = frequentCustomersRequest.await()
             val frequentTransports = frequentTransportsRequest.await()
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
-                catalogs = catalogs.getOrDefault(EntradaCatalogs()),
+                catalogs = localCatalogs ?: serverCatalogs?.getOrDefault(EntradaCatalogs()) ?: EntradaCatalogs(),
+                catalogosLocales = localCatalogs != null,
                 boxes = boxes.getOrDefault(emptyList()),
                 frequentCustomers = frequentCustomers.getOrDefault(emptyList()),
                 frequentTransports = frequentTransports.getOrDefault(emptyList()),
-                message = catalogs.exceptionOrNull()?.message
+                message = serverCatalogs?.exceptionOrNull()?.message
             )
         }
+    }
+
+    // Buscadores en memoria de clientes y transportes: se arman una vez al leer los catalogos guardados.
+    private var customerIndex = lookupIndex(emptyList())
+    private var transportIndex = lookupIndex(emptyList())
+
+    /** Los catalogos de Entrada tal como estan en la tableta, o null si todavia falta lo indispensable. */
+    private suspend fun readLocalCatalogs(): EntradaCatalogs? {
+        val repo = com.example.pmmovil.data.catalog.CatalogoRepository
+        val customers = catalogos.items(repo.CLIENTES)
+        val transports = catalogos.items(repo.LINEAS)
+        val warehouses = catalogos.items(repo.ENTRADA_BODEGAS)
+        if (customers.isEmpty() || transports.isEmpty() || warehouses.isEmpty()) return null
+
+        customerIndex = lookupIndex(customers.map { EntradaLookupItem(id = it.id, nombre = it.nombre) })
+        transportIndex = lookupIndex(transports.map { EntradaLookupItem(id = it.id, nombre = it.nombre) })
+
+        suspend fun items(name: String) = catalogos.items(name).let { list ->
+            list.map { EntradaCatalogItem(value = it.id, text = it.nombre) }
+        }
+        return EntradaCatalogs(
+            bodegas = items(repo.ENTRADA_BODEGAS),
+            clasesHazmat = items(repo.ENTRADA_HAZMAT),
+            manejos = items(repo.ENTRADA_MANEJOS),
+            recibidores = items(repo.ENTRADA_RECIBIDORES),
+            ubicaciones = items(repo.ENTRADA_UBICACIONES),
+            clases = items(repo.ENTRADA_CLASES)
+        )
     }
 
     fun updateForm(transform: (EntradaFormSnapshot) -> EntradaFormSnapshot) {
@@ -651,6 +697,12 @@ class EntradaViewModel @Inject constructor(
             return
         }
         lookupJob?.cancel()
+        if (_uiState.value.catalogosLocales) {
+            // Clientes y transportes estan en la tableta: se busca aqui, al instante y sin red.
+            val index = if (type == EntradaLookupType.CUSTOMER) customerIndex else transportIndex
+            _uiState.value = _uiState.value.copy(isLookupLoading = false, lookupItems = index.search(filter, 50))
+            return
+        }
         lookupJob = viewModelScope.launch {
             delay(250)
             _uiState.value = _uiState.value.copy(isLookupLoading = true)
@@ -1554,3 +1606,6 @@ private fun EntradaFormSnapshot.toRequest(photos: List<String>, photosDanio: Lis
     fotos = photos,
     fotosDanio = photosDanio
 )
+
+private fun lookupIndex(items: List<EntradaLookupItem>) =
+    com.example.pmmovil.data.catalog.CatalogIndex(items, { it.id }, { it.nombre })

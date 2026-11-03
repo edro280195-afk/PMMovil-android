@@ -728,7 +728,8 @@ fun CasetaEntradaScreen(
                     updateMode = editMode,
                     onNavigateBack = requestExit,
                     onRefresh = {
-                        viewModel.loadCatalogs()
+                        viewModel.loadCatalogs(force = true)
+                        viewModel.loadBoxTypes()
                         viewModel.loadFrequentCatalogs()
                     }
                 )
@@ -3530,15 +3531,24 @@ private fun EquipmentSection(
                     .focusRequester(focusChain.boxNumber)
             )
             Spacer(Modifier.height(10.dp))
-            CatalogChoiceGrid(
-                label = "Tipo caja",
-                selectedId = state.form.idBoxType,
-                selectedLabel = state.form.boxTypeDescription,
-                items = state.boxTypes,
-                onSelect = viewModel::selectBoxType,
-                error = state.fieldErrors["idBoxType"],
-                enabled = enabled
-            )
+            if (state.boxTypes.isNotEmpty()) {
+                CatalogChoiceGrid(
+                    label = "Tipo caja",
+                    selectedId = state.form.idBoxType,
+                    selectedLabel = state.form.boxTypeDescription,
+                    items = state.boxTypes,
+                    onSelect = viewModel::selectBoxType,
+                    error = state.fieldErrors["idBoxType"],
+                    enabled = enabled
+                )
+            } else {
+                BoxTypesUnavailable(
+                    selectedLabel = state.form.boxTypeDescription,
+                    loading = state.isLoadingBoxTypes || state.isLoadingCatalogs,
+                    error = state.fieldErrors["idBoxType"],
+                    onRetry = viewModel::loadBoxTypes
+                )
+            }
             Spacer(Modifier.height(10.dp))
         }
         LookupSearchField(
@@ -4611,6 +4621,54 @@ private fun EmptyLookupState() {
             Icon(Icons.Default.Search, contentDescription = null, tint = PmmTextMuted)
             Text("Sin resultados. Prueba con otro codigo o nombre.", color = PmmTextSecondary)
         }
+    }
+}
+
+/**
+ * Lo que se ve en lugar de las tarjetas de «Tipo caja» cuando todavia no hay tipos: cargando, o sin red con un boton
+ * para reintentar. Antes el selector quedaba en blanco, sin ningun aviso, y parecia que la pantalla no tenia ese campo.
+ */
+@Composable
+private fun BoxTypesUnavailable(
+    selectedLabel: String,
+    loading: Boolean,
+    error: String?,
+    onRetry: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Tipo caja", color = PmmTextSecondary, fontWeight = FontWeight.SemiBold)
+        if (selectedLabel.isNotBlank()) {
+            // Edicion de un registro: el tipo que ya tenia se sigue viendo aunque el catalogo no haya llegado.
+            DecisionCard(
+                title = selectedLabel,
+                subtitle = null,
+                selected = true,
+                onClick = {},
+                enabled = false,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        if (loading) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = PmmBlueDeep
+                )
+                Text("Cargando tipos de caja…", color = PmmTextSecondary)
+            }
+        } else {
+            Text(
+                "No se pudieron cargar los tipos de caja. Revisa la conexión e intenta de nuevo.",
+                color = PmmRed,
+                fontSize = 13.sp
+            )
+            OutlinedButton(onClick = onRetry) { Text("Reintentar") }
+        }
+        if (error != null) ErrorText(error)
     }
 }
 

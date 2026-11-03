@@ -422,6 +422,13 @@ interface PMMovilApi {
         @Body request: SalidaSinRelacionScanRequest
     ): Response<SalidaScanResponse>
 
+    // ── Catálogos maestros ────────────────────────────────────────────────────
+    @GET("Catalogos/versiones")
+    suspend fun getCatalogosVersiones(): Response<CatalogosVersionesResponse>
+
+    @GET("Catalogos")
+    suspend fun getCatalogos(@Query("nombres") nombres: String): Response<CatalogosResponse>
+
     // ── Supervisor de relaciones ──────────────────────────────────────────────
     // Entrada a caseta
     @GET("Caseta/entrada/catalogos")

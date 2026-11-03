@@ -352,4 +352,20 @@ class CasetaEntradaRulesTest {
         temperature = temperature,
         fuel = fuel
     )
+
+    @Test
+    fun cleanCatalogSelection_treats_the_combo_placeholder_as_empty() {
+        // Registros viejos guardaron el marcador del combo en lugar de dejar el tipo de caja vacio.
+        assertEquals("", CasetaEntradaRules.cleanCatalogSelection("0"))
+        assertEquals("", CasetaEntradaRules.cleanCatalogSelection("-- Selecciona --"))
+        assertEquals("", CasetaEntradaRules.cleanCatalogSelection("  -- selecciona tipo --  "))
+        assertEquals("", CasetaEntradaRules.cleanCatalogSelection(""))
+    }
+
+    @Test
+    fun cleanCatalogSelection_keeps_real_values() {
+        assertEquals("56", CasetaEntradaRules.cleanCatalogSelection(" 56 "))
+        assertEquals("CAJA CERRADA 53'", CasetaEntradaRules.cleanCatalogSelection("CAJA CERRADA 53'"))
+        assertEquals("OTROS", CasetaEntradaRules.cleanCatalogSelection("OTROS"))
+    }
 }

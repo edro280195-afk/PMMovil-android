@@ -28,6 +28,10 @@ import com.example.pmmovil.data.model.TipoRegistro
 import com.example.pmmovil.data.model.MobileModuleIds
 import com.example.pmmovil.data.repository.AuthRepository
 import com.example.pmmovil.di.ApplicationScope
+import com.example.pmmovil.data.catalog.CatalogIndex
+import com.example.pmmovil.data.catalog.CatalogoItem
+import com.example.pmmovil.data.catalog.CatalogoRepository
+import com.example.pmmovil.data.catalog.ResultadoSync
 import com.example.pmmovil.data.repository.CasetaEntradaRepository
 import com.example.pmmovil.data.signalr.WarehouseHubService
 import com.example.pmmovil.data.sync.OfflineSyncScheduler
@@ -270,6 +274,11 @@ data class CasetaEntradaUiState(
     val puedeModificar: Boolean = false,
     val puedeBorrar: Boolean = false,
     val isLoadingCatalogs: Boolean = true,
+    // true cuando clientes, lineas y tipos de caja salen de los catalogos guardados en la tableta: buscar ya no usa la red.
+    val catalogosLocales: Boolean = false,
+    // Los tipos de caja se piden aparte del catalogo grande: si estan vacios, la pantalla dice por que y deja reintentar.
+    val isLoadingBoxTypes: Boolean = false,
+    val boxTypesError: Boolean = false,
     val isSaving: Boolean = false,
     val isSearching: Boolean = false,
     val isLoadingRecord: Boolean = false,
@@ -343,6 +352,7 @@ data class CasetaEntradaUiState(
 @HiltViewModel
 class CasetaEntradaViewModel @Inject constructor(
     private val repository: CasetaEntradaRepository,
+    private val catalogos: CatalogoRepository,
     private val localTextOcr: LocalTextOcr,
     private val paddleOcrEngine: PaddleOcrEngine,
     private val warehouseHubService: WarehouseHubService,
@@ -364,12 +374,23 @@ class CasetaEntradaViewModel @Inject constructor(
             currentPlant = authRepository.getPlanta().orEmpty(),
             puedeAgregar = authRepository.hasPermission(MobileModuleIds.GATE, "Agregar"),
             puedeModificar = authRepository.hasPermission(MobileModuleIds.GATE, "Modificar"),
-            puedeBorrar = authRepository.hasPermission(MobileModuleIds.GATE, "Borrar")
+            puedeBorrar = authRepository.hasPermission(MobileModuleIds.GATE, "Borrar"),
+            // Los de la ultima vez que el servidor respondio: el selector nunca arranca vacio por una red lenta.
+            boxTypes = repository.tiposCajaGuardados()
         )
     )
     val uiState: StateFlow<CasetaEntradaUiState> = _uiState.asStateFlow()
 
     private var searchJob: Job? = null
+    private var boxTypesJob: Job? = null
+
+    // Buscadores en memoria: se arman una vez al recibir los catalogos (antes se normalizaba todo con cada letra tecleada).
+    private var customerIndex = emptyLookupIndex()
+    private var truckLineIndex = emptyLookupIndex()
+    private var boxLineIndex = emptyLookupIndex()
+    // La bodega por omision se asigna una sola vez: si los catalogos se aplican de nuevo (una revision de version que
+    // trajo cambios) no se le quita al guardia la bodega que ya eligio.
+    private var defaultWarehouseApplied = false
     private var historyJob: Job? = null
     private var captureJob: Job? = null
 
@@ -574,39 +595,136 @@ class CasetaEntradaViewModel @Inject constructor(
         }
     }
 
-    fun loadCatalogs() {
+    /**
+     * Pinta de inmediato los catalogos que la tableta ya tiene (clientes, lineas, tipos de caja...) y revisa su version en
+     * segundo plano: solo se baja lo que cambio. Asi ni abrir la pantalla ni GUARDAR esperan a la red. El camino de siempre
+     * (pedir todo al servidor) queda para la primera vez sin red o para un servidor anterior sin catalogos maestros.
+     */
+    fun loadCatalogs(force: Boolean = false) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoadingCatalogs = true) }
-            repository.getCatalogs()
-                .onSuccess { catalogs ->
-                    val selectedWarehouse = catalogs.bodegas.firstOrNull()
-                    _uiState.update { state ->
-                        state.copy(
-                            isLoadingCatalogs = false,
-                            bodegas = catalogs.bodegas,
-                            boxTypes = catalogs.tiposCaja,
-                            truckLines = catalogs.lineasCamion,
-                            boxLines = catalogs.lineasCaja,
-                            customers = catalogs.clientes,
-                            countries = catalogs.paises,
-                            customerResults = catalogs.clientes.take(25),
-                            truckLineResults = catalogs.lineasCamion.take(25),
-                            boxLineResults = catalogs.lineasCaja.take(25),
-                            form = selectedWarehouse?.takeIf { state.form.casetaId.isBlank() }?.let {
-                                state.form.copy(idBodega = it.id, bodega = it.nombre)
-                            } ?: state.form
-                        )
-                    }
+
+            var hayLocales = applyLocalCatalogs()
+            if (hayLocales) _uiState.update { it.copy(isLoadingCatalogs = false) }
+
+            val sync = catalogos.sincronizar(CatalogoRepository.CASETA, forzar = force)
+            if (sync is ResultadoSync.Actualizado) hayLocales = applyLocalCatalogs() || hayLocales
+
+            if (hayLocales) {
+                _uiState.update { it.copy(isLoadingCatalogs = false) }
+            } else {
+                loadCatalogsFromServer()
+            }
+        }
+    }
+
+    /** Aplica los catalogos guardados en la tableta. Devuelve false si todavia no hay lo indispensable. */
+    private suspend fun applyLocalCatalogs(): Boolean {
+        val customers = catalogos.items(CatalogoRepository.CLIENTES)
+            .filter { it.extra == CatalogoRepository.CLIENTE_DE_CASETA }
+            .map(::toCasetaCatalogItem)
+        val lines = catalogos.items(CatalogoRepository.LINEAS).map(::toCasetaCatalogItem)
+        val boxTypes = catalogos.items(CatalogoRepository.TIPOS_CAJA).map(::toCasetaCatalogItem)
+        if (customers.isEmpty() || lines.isEmpty() || boxTypes.isEmpty()) return false
+
+        applyCatalogs(
+            warehouses = catalogos.items(CatalogoRepository.BODEGAS_CASETA).map(::toCasetaCatalogItem),
+            boxTypes = boxTypes,
+            truckLines = lines,
+            boxLines = lines,
+            customers = customers,
+            countries = catalogos.items(CatalogoRepository.PAISES_CASETA).map(::toCasetaCatalogItem),
+            local = true
+        )
+        return true
+    }
+
+    private fun toCasetaCatalogItem(item: CatalogoItem) = CasetaEntradaCatalogItem(id = item.id, nombre = item.nombre)
+
+    private fun applyCatalogs(
+        warehouses: List<CasetaEntradaCatalogItem>,
+        boxTypes: List<CasetaEntradaCatalogItem>,
+        truckLines: List<CasetaEntradaCatalogItem>,
+        boxLines: List<CasetaEntradaCatalogItem>,
+        customers: List<CasetaEntradaCatalogItem>,
+        countries: List<CasetaEntradaCatalogItem>,
+        local: Boolean
+    ) {
+        customerIndex = lookupIndex(customers)
+        truckLineIndex = lookupIndex(truckLines)
+        boxLineIndex = if (boxLines == truckLines) truckLineIndex else lookupIndex(boxLines)
+
+        val selectedWarehouse = warehouses.firstOrNull()?.takeIf { !defaultWarehouseApplied }
+        if (selectedWarehouse != null) defaultWarehouseApplied = true
+        _uiState.update { state ->
+            state.copy(
+                catalogosLocales = local,
+                bodegas = warehouses,
+                boxTypes = boxTypes.ifEmpty { state.boxTypes },
+                boxTypesError = false,
+                truckLines = truckLines,
+                boxLines = boxLines,
+                customers = customers,
+                countries = countries,
+                customerResults = customers.take(25),
+                truckLineResults = truckLines.take(25),
+                boxLineResults = boxLines.take(25),
+                form = selectedWarehouse?.takeIf { state.form.casetaId.isBlank() }?.let {
+                    state.form.copy(idBodega = it.id, bodega = it.nombre)
+                } ?: state.form
+            )
+        }
+    }
+
+    /** El camino de siempre: todo el catalogo desde el servidor. Solo si la tableta no tiene nada guardado. */
+    private suspend fun loadCatalogsFromServer() {
+        loadBoxTypes()
+        repository.getCatalogs()
+            .onSuccess { catalogs ->
+                applyCatalogs(
+                    warehouses = catalogs.bodegas,
+                    boxTypes = catalogs.tiposCaja,
+                    truckLines = catalogs.lineasCamion,
+                    boxLines = catalogs.lineasCaja,
+                    customers = catalogs.clientes,
+                    countries = catalogs.paises,
+                    local = false
+                )
+                _uiState.update { it.copy(isLoadingCatalogs = false) }
+            }
+            .onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        isLoadingCatalogs = false,
+                        message = error.message ?: "No se pudieron cargar los catalogos.",
+                        feedbackSeq = it.feedbackSeq + 1
+                    )
                 }
-                .onFailure { error ->
-                    _uiState.update {
-                        it.copy(
-                            isLoadingCatalogs = false,
-                            message = error.message ?: "No se pudieron cargar los catalogos.",
-                            feedbackSeq = it.feedbackSeq + 1
-                        )
-                    }
+            }
+    }
+
+    /**
+     * Pide solo los tipos de caja (ocho renglones) sin esperar al catalogo completo, y reintenta solo: antes un fallo
+     * del catalogo grande dejaba el selector de «Tipo caja» vacío y el guardia no podía registrar la entrada. Si no hay
+     * manera de traerlos se queda con los últimos conocidos; sin ninguno, la pantalla ofrece reintentar.
+     */
+    fun loadBoxTypes() {
+        if (boxTypesJob?.isActive == true) return
+        // Con los catalogos guardados en la tableta los tipos de caja ya estan: no hay nada que pedir.
+        if (_uiState.value.catalogosLocales && _uiState.value.boxTypes.isNotEmpty()) return
+        boxTypesJob = viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingBoxTypes = true, boxTypesError = false) }
+            repeat(BOX_TYPES_ATTEMPTS) { attempt ->
+                val result = repository.getBoxTypes()
+                val tipos = result.getOrNull()
+                if (tipos != null) {
+                    _uiState.update { it.copy(boxTypes = tipos, isLoadingBoxTypes = false, boxTypesError = false) }
+                    return@launch
                 }
+                Log.w("CasetaEntradaViewModel", "Tipos de caja: intento ${attempt + 1}/$BOX_TYPES_ATTEMPTS fallo (${result.exceptionOrNull()?.message})")
+                if (attempt < BOX_TYPES_ATTEMPTS - 1) delay(BOX_TYPES_RETRY_MS * (attempt + 1))
+            }
+            _uiState.update { it.copy(isLoadingBoxTypes = false, boxTypesError = it.boxTypes.isEmpty()) }
         }
     }
 
@@ -840,11 +958,30 @@ class CasetaEntradaViewModel @Inject constructor(
         }
     }
 
+    private fun lookupIndexFor(type: CasetaEntradaLookupType) = when (type) {
+        CasetaEntradaLookupType.Customer -> customerIndex
+        CasetaEntradaLookupType.TruckLine -> truckLineIndex
+        CasetaEntradaLookupType.BoxLine -> boxLineIndex
+    }
+
     fun searchLookup(type: CasetaEntradaLookupType, query: String) {
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
             val cleanQuery = query.trim()
-            val localMatches = localLookupMatches(_uiState.value, type, cleanQuery, limit = 25)
+            if (_uiState.value.catalogosLocales) {
+                // Todo el catalogo esta en la tableta: se busca aqui, al instante y sin red.
+                val matches = lookupIndexFor(type).search(cleanQuery, 50)
+                _uiState.update {
+                    when (type) {
+                        CasetaEntradaLookupType.Customer -> it.copy(customerResults = matches, isSearching = false)
+                        CasetaEntradaLookupType.TruckLine -> it.copy(truckLineResults = matches, isSearching = false)
+                        CasetaEntradaLookupType.BoxLine -> it.copy(boxLineResults = matches, isSearching = false)
+                    }
+                }
+                return@launch
+            }
+
+            val localMatches = lookupIndexFor(type).search(cleanQuery, 25)
             _uiState.update {
                 when (type) {
                     CasetaEntradaLookupType.Customer -> it.copy(customerResults = localMatches, isSearching = true)
@@ -2316,6 +2453,8 @@ class CasetaEntradaViewModel @Inject constructor(
         private const val MAX_SUGGESTIONS = 4
         private const val MAX_REMOTE_PHOTOS = 15
         private const val MAX_DRAFTS = 10
+        private const val BOX_TYPES_ATTEMPTS = 3
+        private const val BOX_TYPES_RETRY_MS = 1_500L
         // Alineados con [PhotoPipeline]. La foto de OCR conserva su propio
         // juego porque ahi el destinatario es un motor de texto y no una
         // persona, pero ya no baja de 2048 px: la placa suele ocupar una franja
@@ -2359,6 +2498,15 @@ object CasetaEntradaRules {
 
     fun isRefrigerated(boxType: String): Boolean =
         boxType.equals("CAJA REFRIGERADA 53'", ignoreCase = true)
+
+    /**
+     * Registros guardados cuando el combo aun decia «-- Selecciona --» traen ese texto (y el id 0) en lugar de un tipo:
+     * al abrirlos para editar se veian como si ya tuvieran uno y la validacion los dejaba pasar sin tipo de caja.
+     */
+    fun cleanCatalogSelection(value: String): String {
+        val text = value.trim()
+        return if (text == "0" || text.startsWith("-- Selecciona", ignoreCase = true)) "" else text
+    }
 
     fun normalizePlateCandidate(value: String): String {
         val compact = value.uppercase()
@@ -2451,9 +2599,9 @@ private fun CasetaEntradaDetalle.toForm(remotePhotos: List<CasetaEntradaRemotePh
         operation = tipoOp,
         movement = tipoMov,
         tipoRegistro = tipoRegistro.ifBlank { TipoRegistro.CAJA },
-        idBoxType = idUnidad,
-        boxType = idUnidad,
-        boxTypeDescription = tipouni,
+        idBoxType = CasetaEntradaRules.cleanCatalogSelection(idUnidad),
+        boxType = CasetaEntradaRules.cleanCatalogSelection(idUnidad),
+        boxTypeDescription = CasetaEntradaRules.cleanCatalogSelection(tipouni),
         truckNumber = numUnidad,
         idTruckLine = idTransporteTractor,
         truckLineName = transpor,
@@ -2556,29 +2704,9 @@ private fun buildCatalogLabel(id: String, name: String): String {
         .joinToString(" - ")
 }
 
-private fun localLookupMatches(
-    state: CasetaEntradaUiState,
-    type: CasetaEntradaLookupType,
-    query: String,
-    limit: Int
-): List<CasetaEntradaCatalogItem> {
-    val source = when (type) {
-        CasetaEntradaLookupType.Customer -> state.customers
-        CasetaEntradaLookupType.TruckLine -> state.truckLines
-        CasetaEntradaLookupType.BoxLine -> state.boxLines
-    }
-    val normalizedQuery = normalizeLookupText(query)
-    if (normalizedQuery.isBlank()) return source.take(limit)
-    val tokens = normalizedQuery.split(Regex("\\s+")).filter(String::isNotBlank)
-    return source
-        .asSequence()
-        .filter { item ->
-            val haystack = normalizeLookupText("${item.id} ${item.nombre} ${item.label}")
-            tokens.all { token -> haystack.contains(token) }
-        }
-        .take(limit)
-        .toList()
-}
+private fun lookupIndex(items: List<CasetaEntradaCatalogItem>) = CatalogIndex(items, { it.id }, { it.nombre })
+
+private fun emptyLookupIndex() = lookupIndex(emptyList())
 
 private fun mergeCatalogItems(
     primary: List<CasetaEntradaCatalogItem>,
@@ -2589,11 +2717,6 @@ private fun mergeCatalogItems(
         val key = "${item.id.trim().uppercase()}|${item.nombre.trim().uppercase()}"
         key !in seen && seen.add(key)
     }
-}
-
-private fun normalizeLookupText(value: String): String {
-    val decomposed = java.text.Normalizer.normalize(value.uppercase(), java.text.Normalizer.Form.NFD)
-    return decomposed.replace(Regex("\\p{M}+"), "")
 }
 
 private fun bestPlateCandidateFromText(value: String): String =

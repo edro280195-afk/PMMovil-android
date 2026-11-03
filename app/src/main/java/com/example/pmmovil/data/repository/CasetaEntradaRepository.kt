@@ -28,12 +28,14 @@ import retrofit2.Response
 
 @Singleton
 class CasetaEntradaRepository @Inject constructor(
-    private val api: PMMovilApi
+    private val api: PMMovilApi,
+    private val tiposCajaCache: TiposCajaCache
 ) {
     suspend fun getCatalogs(): Result<CasetaEntradaCatalogosResponse> = io {
         val response = api.getCasetaEntradaCatalogos()
         val body = response.body()
         if (response.isSuccessful && body?.success == true) {
+            tiposCajaCache.guardar(body.tiposCaja)
             body
         } else {
             throw apiFailure(response, body?.message, "No se pudieron cargar los catalogos de caseta.")
@@ -74,10 +76,18 @@ class CasetaEntradaRepository @Inject constructor(
         }
     }
 
+    /** Los tipos de caja que la tableta conoce de la ultima vez que el servidor respondio (vacio si nunca respondio). */
+    fun tiposCajaGuardados(): List<CasetaEntradaCatalogItem> = tiposCajaCache.leer()
+
+    /**
+     * Pide solo los tipos de caja (una respuesta de ocho renglones), sin depender del catalogo completo. Una lista
+     * vacia cuenta como falla: un catalogo sin tipos de caja es una respuesta anomala, no un dato.
+     */
     suspend fun getBoxTypes(): Result<List<CasetaEntradaCatalogItem>> = io {
         val response = api.getCasetaEntradaTiposCaja()
         val body = response.body()
-        if (response.isSuccessful && body?.success == true) {
+        if (response.isSuccessful && body?.success == true && body.items.isNotEmpty()) {
+            tiposCajaCache.guardar(body.items)
             body.items
         } else {
             throw apiFailure(response, body?.message, "No se pudieron cargar los tipos de caja.")

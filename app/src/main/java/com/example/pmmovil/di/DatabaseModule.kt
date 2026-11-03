@@ -7,6 +7,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.pmmovil.data.db.AppDatabase
 import com.example.pmmovil.data.db.AsignacionDao
 import com.example.pmmovil.data.db.CasetaEntradaDraftDao
+import com.example.pmmovil.data.db.CatalogoDao
 import com.example.pmmovil.data.db.CasetaEntradaPhotoSyncDao
 import com.example.pmmovil.data.db.PdfAnnotationDraftDao
 import com.example.pmmovil.data.db.EntradaPhotoSyncDao
@@ -234,7 +235,8 @@ object DatabaseModule {
             migration13To14,
             migration14To15,
             migration15To16,
-            migration16To17
+            migration16To17,
+            migration17To18
         )
         .build()
     }
@@ -281,6 +283,9 @@ object DatabaseModule {
     @Provides
     fun provideEntryArCacheDao(database: AppDatabase): EntryArCacheDao = database.entryArCacheDao()
 
+    @Provides
+    fun provideCatalogoDao(database: AppDatabase): CatalogoDao = database.catalogoDao()
+
     // Conserva la ruta de actualizacion de bases que ya pasaron por la version 14.
     // El censo de racks se retiró; su limpieza local se ejecuta en 16->17.
     private val migration14To15 = object : Migration(14, 15) {
@@ -318,6 +323,34 @@ object DatabaseModule {
                     reference TEXT NOT NULL PRIMARY KEY,
                     payloadJson TEXT NOT NULL,
                     fetchedAtMillis INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+        }
+    }
+
+    // Catálogos maestros (clientes, líneas, tipos de caja…) guardados en la tableta con su versión.
+    private val migration17To18 = object : Migration(17, 18) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS catalogo_items (
+                    catalogo TEXT NOT NULL,
+                    id TEXT NOT NULL,
+                    nombre TEXT NOT NULL,
+                    extra TEXT NOT NULL,
+                    orden INTEGER NOT NULL,
+                    PRIMARY KEY (catalogo, id)
+                )
+                """.trimIndent()
+            )
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_catalogo_items_catalogo ON catalogo_items (catalogo)")
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS catalogo_versiones (
+                    catalogo TEXT NOT NULL PRIMARY KEY,
+                    version TEXT NOT NULL,
+                    sincronizadoMs INTEGER NOT NULL
                 )
                 """.trimIndent()
             )
