@@ -154,6 +154,7 @@ import com.example.pmmovil.data.model.ZebraPrinterDto
 import com.example.pmmovil.di.NetworkModule
 import com.example.pmmovil.ui.camera.LocalEvidenceCameraScreen
 import com.example.pmmovil.ui.camera.LocalEvidencePhoto
+import com.example.pmmovil.ui.components.UnsavedChangesDialog
 import com.example.pmmovil.ui.components.PmmSnackbarHost
 import com.example.pmmovil.ui.scanner.HardwareScannerListener
 import com.example.pmmovil.ui.theme.PmmAmber
@@ -2977,38 +2978,6 @@ private fun EmptyState(title: String, subtitle: String) {
         Text(title, fontWeight = FontWeight.Bold, color = PmmTextPrimary)
         Text(subtitle, color = PmmTextSecondary, fontSize = 11.sp)
     }
-}
-
-/**
- * Pregunta antes de tirar lo capturado. «Seguir capturando» es el botón principal (y lo que hace tocar fuera o el
- * gesto de atrás): descartar es la opción que hay que elegir a propósito, porque no tiene vuelta.
- */
-@Composable
-private fun UnsavedChangesDialog(
-    title: String,
-    message: String,
-    discardLabel: String,
-    onDiscard: () -> Unit,
-    onStay: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onStay,
-        title = { Text(title, fontWeight = FontWeight.Black) },
-        text = { Text(message, color = PmmTextSecondary) },
-        confirmButton = {
-            Button(
-                onClick = onStay,
-                colors = ButtonDefaults.buttonColors(containerColor = PmmBlueDeep)
-            ) {
-                Text("Seguir capturando", fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDiscard) {
-                Text(discardLabel, color = PmmRed, fontWeight = FontWeight.Bold)
-            }
-        }
-    )
 }
 
 @Composable

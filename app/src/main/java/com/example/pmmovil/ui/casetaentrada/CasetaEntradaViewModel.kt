@@ -378,6 +378,13 @@ class CasetaEntradaViewModel @Inject constructor(
     private var draftId = UUID.randomUUID().toString()
     private var draftCreatedAt = System.currentTimeMillis()
 
+    // Con lo que arrancó la captura, o lo último que se guardó (un registro cargado, una entrada recién guardada).
+    // Sirve para saber si hay cambios sin guardar; ver isUnsaved.
+    private var baselineForm = CasetaEntradaForm()
+
+    // El usuario confirmó que descarta lo capturado: ni el autoguardado ni onCleared deben revivir su borrador.
+    private var draftDiscarded = false
+
     fun canAdd(): Boolean = authRepository.hasPermission(MobileModuleIds.GATE, "Agregar")
 
     fun canModify(): Boolean = authRepository.hasPermission(MobileModuleIds.GATE, "Modificar")
@@ -447,7 +454,13 @@ class CasetaEntradaViewModel @Inject constructor(
     }
 
     private suspend fun persistDraft(form: CasetaEntradaForm) {
-        if (!hasMeaningfulDraftData(form)) return
+        if (draftDiscarded) return
+        if (!isUnsaved(form)) {
+            // Quedó igual a lo guardado (o nunca hubo nada): no hay qué recuperar, y un borrador viejo de esta misma
+            // captura ya sobra. Antes bastaba con abrir un registro para que dejara un «pendiente» sin editarlo.
+            draftDao.deleteById(draftId)
+            return
+        }
         val now = System.currentTimeMillis()
         draftDao.upsert(
             form.toDraftEntity(id = draftId, createdAt = draftCreatedAt, lastEditAt = now)
@@ -473,14 +486,30 @@ class CasetaEntradaViewModel @Inject constructor(
         }
     }
 
-    private fun hasMeaningfulDraftData(form: CasetaEntradaForm): Boolean =
-        form.boxNumber.isNotBlank() ||
-            form.plates.isNotBlank() ||
-            form.truckNumber.isNotBlank() ||
-            form.operatorName.isNotBlank() ||
-            form.idCustomer.isNotBlank() ||
-            form.customerName.isNotBlank() ||
-            form.localPhotoPaths.isNotEmpty()
+    /** Hay cambios que todavía no se guardan (la regla está en [CasetaEntradaDraftRules]). */
+    private fun isUnsaved(form: CasetaEntradaForm): Boolean =
+        CasetaEntradaDraftRules.isUnsaved(form, baselineForm)
+
+    /** Salir (o empezar otra captura) debe preguntar antes: hay algo capturado que se perdería. */
+    fun hasUnsavedChanges(): Boolean = isUnsaved(_uiState.value.form)
+
+    /**
+     * El usuario confirmó que descarta lo que llevaba: se borra su borrador y las fotos locales que aún no se encolan,
+     * para que el aviso de «capturas sin terminar» no vuelva a salir por algo que él mismo descartó. Ese aviso queda
+     * para cuando la app se cerró sola con la captura a medias, que es cuando el borrador sobrevive. Va en
+     * `applicationScope` porque quien llama navega enseguida y `viewModelScope` se cancelaría a medio borrar.
+     */
+    fun discardCurrentDraft() {
+        draftDiscarded = true
+        val id = draftId
+        val photoPaths = _uiState.value.form.localPhotoPaths
+        applicationScope.launch {
+            withContext(Dispatchers.IO) {
+                photoPaths.forEach { path -> runCatching { File(path).delete() } }
+            }
+            draftDao.deleteById(id)
+        }
+    }
 
     fun resumeDraft(draft: CasetaEntradaDraftEntity) {
         if (!(if (draft.isExisting) canModify() else canAdd())) {
@@ -489,6 +518,9 @@ class CasetaEntradaViewModel @Inject constructor(
         }
         draftId = draft.id
         draftCreatedAt = draft.createdAt
+        draftDiscarded = false
+        // Lo recuperado no se ha guardado: su línea base es una captura vacía, así que salir pregunta.
+        baselineForm = CasetaEntradaForm()
         _uiState.update {
             it.copy(
                 form = draft.toForm(),
@@ -1246,12 +1278,16 @@ class CasetaEntradaViewModel @Inject constructor(
                     // de cualquier captura nueva que se haya estado llenando antes.
                     draftId = UUID.randomUUID().toString()
                     draftCreatedAt = System.currentTimeMillis()
+                    draftDiscarded = false
                     _uiState.update { state ->
+                        // El registro tal como llegó es la línea base: abrirlo y salir no cuenta como cambio.
+                        val loadedForm = data?.toForm(remotePhotos) ?: state.form
+                        baselineForm = loadedForm
                         state.copy(
                             isLoadingRecord = false,
                             recordLoadError = null,
                             recordLoadingHint = "",
-                            form = data?.toForm(remotePhotos) ?: state.form,
+                            form = loadedForm,
                             templateSource = "",
                             message = "Registro cargado para edicion.",
                             feedbackSeq = state.feedbackSeq + 1
@@ -1516,6 +1552,8 @@ class CasetaEntradaViewModel @Inject constructor(
                     draftDao.deleteById(draftId)
                     draftId = UUID.randomUUID().toString()
                     draftCreatedAt = System.currentTimeMillis()
+                    draftDiscarded = false
+                    baselineForm = CasetaEntradaForm()
 
                     _uiState.update { st ->
                         st.copy(
@@ -1584,14 +1622,21 @@ class CasetaEntradaViewModel @Inject constructor(
             denyPermission("limpiar una captura de caseta")
             return
         }
-        // El usuario decidio empezar de cero: el borrador viejo ya no aplica.
-        // Las fotos NO se borran del disco aqui: `resetForm` tambien es el boton
-        // "Limpiar" del formulario, y las fotos ya capturadas siguen colgando del
-        // form actual hasta que el usuario descarte el borrador explicitamente.
+        // El usuario decidio empezar de cero: el borrador viejo ya no aplica. Sus fotos locales tampoco: el aviso de
+        // «Limpiar» ya dice que se quitan, y sin borrarlas quedaban en el disco para siempre sin dueño. Va en
+        // `applicationScope` para que termine aunque la pantalla se cierre enseguida.
         val abandoned = draftId
-        viewModelScope.launch { draftDao.deleteById(abandoned) }
+        val abandonedPhotos = _uiState.value.form.localPhotoPaths
+        applicationScope.launch {
+            withContext(Dispatchers.IO) {
+                abandonedPhotos.forEach { path -> runCatching { File(path).delete() } }
+            }
+            draftDao.deleteById(abandoned)
+        }
         draftId = UUID.randomUUID().toString()
         draftCreatedAt = System.currentTimeMillis()
+        draftDiscarded = false
+        baselineForm = CasetaEntradaForm()
         _uiState.update {
             it.copy(
                 form = CasetaEntradaForm(),
@@ -2250,7 +2295,9 @@ class CasetaEntradaViewModel @Inject constructor(
         val form = _uiState.value.form
         val id = draftId
         val createdAt = draftCreatedAt
-        if (!hasMeaningfulDraftData(form)) return
+        // Solo se conserva el borrador si hay algo sin guardar y el usuario no lo descartó a propósito. Si la app se
+        // cierra de golpe esto ni siquiera corre, y es justo el borrador que se autoguardó el que se ofrece después.
+        if (draftDiscarded || !isUnsaved(form)) return
         applicationScope.launch {
             draftDao.upsert(
                 form.toDraftEntity(

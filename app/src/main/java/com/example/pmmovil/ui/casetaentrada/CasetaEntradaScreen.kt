@@ -151,6 +151,7 @@ import com.example.pmmovil.data.model.CasetaPreregistroValidarResponse
 import com.example.pmmovil.data.model.TipoRegistro
 import com.example.pmmovil.ui.camera.LocalEvidenceCameraScreen
 import com.example.pmmovil.ui.camera.LocalEvidencePhoto
+import com.example.pmmovil.ui.components.UnsavedChangesDialog
 import com.example.pmmovil.ui.components.PmmSnackbarHost
 import com.example.pmmovil.ui.scanner.HardwareScannerListener
 import com.example.pmmovil.ui.theme.PmmAmber
@@ -201,11 +202,19 @@ fun CasetaEntradaScreen(
     var pendingDeletePhoto by remember { mutableStateOf<CasetaEntradaPreviewPhoto?>(null) }
     var showHistorySheet by rememberSaveable { mutableStateOf(false) }
     var showClearConfirm by rememberSaveable { mutableStateOf(false) }
+    var showExitConfirm by rememberSaveable { mutableStateOf(false) }
     var showPrintDialog by rememberSaveable { mutableStateOf(false) }
     var autoHistoryMode by rememberSaveable { mutableStateOf<CasetaEntradaCameraMode?>(null) }
     var lastAutoPhotoPath by remember { mutableStateOf<String?>(null) }
     var liveCaptureMode by rememberSaveable { mutableStateOf<CasetaEntradaCaptureMode?>(if (startWithCamera && state.puedeAgregar) CasetaEntradaCaptureMode.Plate else null) }
     val editMode = !casetaId.isNullOrBlank()
+
+    // Volver atrás (gesto, botón o flecha) no tira lo capturado: si hay cambios sin guardar, pregunta primero. Los
+    // visores y diálogos de arriba registran su propio «atrás» después de este, así que ellos van primero.
+    val requestExit = {
+        if (viewModel.hasUnsavedChanges()) showExitConfirm = true else onNavigateBack()
+    }
+    BackHandler(onBack = requestExit)
 
     if (!editMode) {
         HardwareScannerListener(viewModel::onScannerInput)
@@ -474,6 +483,24 @@ fun CasetaEntradaScreen(
         )
     }
 
+    if (showExitConfirm) {
+        UnsavedChangesDialog(
+            title = "¿Seguro que quieres salir?",
+            message = if (editMode) {
+                "Los cambios que hiciste a este registro todavía no se han guardado. Si sales ahora, se pierden."
+            } else {
+                "Lo que llevas capturado todavía no se ha guardado. Si sales ahora, se pierde."
+            },
+            discardLabel = "Salir sin guardar",
+            onDiscard = {
+                showExitConfirm = false
+                viewModel.discardCurrentDraft()
+                onNavigateBack()
+            },
+            onStay = { showExitConfirm = false }
+        )
+    }
+
     // No se muestra en modo edicion: ahi ya se esta trabajando un casetaId
     // puntual y este aviso de "capturas sin terminar" solo confundiria.
     if (!editMode && state.showDraftRecovery) {
@@ -699,7 +726,7 @@ fun CasetaEntradaScreen(
                 CasetaEntradaHeader(
                     state = state,
                     updateMode = editMode,
-                    onNavigateBack = onNavigateBack,
+                    onNavigateBack = requestExit,
                     onRefresh = {
                         viewModel.loadCatalogs()
                         viewModel.loadFrequentCatalogs()
@@ -762,7 +789,7 @@ fun CasetaEntradaScreen(
                             state = state,
                             viewModel = viewModel,
                             onRequestClear = { showClearConfirm = true },
-                            onCancel = onNavigateBack,
+                            onCancel = requestExit,
                             updateMode = true
                         )
                     }
@@ -5088,9 +5115,10 @@ private fun CasetaEntradaDraftRecoveryDialog(
 ) {
     Dialog(onDismissRequest = onDismiss) {
         Surface(
+            // Mide lo que pidan sus borradores (con tope): con uno solo ya no ocupa media pantalla vacía.
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.82f),
+                .heightIn(max = 560.dp),
             color = PmmBgSurface,
             shape = RoundedCornerShape(24.dp)
         ) {
@@ -5099,19 +5127,20 @@ private fun CasetaEntradaDraftRecoveryDialog(
                 Spacer(Modifier.height(8.dp))
                 Text("Continúa donde te quedaste", fontSize = 22.sp, fontWeight = FontWeight.Black)
                 Text(
-                    "Encontramos capturas de entrada a caseta sin terminar. Incluyen datos y fotografías.",
+                    "Estas capturas de entrada a caseta se quedaron a medias. Incluyen datos y fotografías.",
                     color = PmmTextSecondary,
                     fontSize = 12.sp
                 )
                 Spacer(Modifier.height(14.dp))
                 LazyColumn(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f, fill = false),
                     verticalArrangement = Arrangement.spacedBy(9.dp)
                 ) {
                     items(drafts, key = { it.id }) { draft ->
                         CasetaEntradaDraftCard(draft, onResume, onDelete)
                     }
                 }
+                Spacer(Modifier.height(14.dp))
                 Button(
                     onClick = onNew,
                     modifier = Modifier.fillMaxWidth(),
