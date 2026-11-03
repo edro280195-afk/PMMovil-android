@@ -62,11 +62,24 @@ class StillBurstTest {
         }
     }
 
+    /** Camara que avisa del obturador en cada disparo, como la real; la pantalla solo debe enterarse del primero. */
+    private class ShutterShooter(private val marks: List<String>) : StillShooter {
+        var calls = 0
+        override fun shoot(target: File, onResult: (Boolean) -> Unit) = shoot(target, {}, onResult)
+        override fun shoot(target: File, onShutter: () -> Unit, onResult: (Boolean) -> Unit) {
+            val i = calls++
+            onShutter()
+            target.writeText(marks.getOrElse(i) { "?" })
+            onResult(true)
+        }
+    }
+
     private class Outcome {
         var saved: File? = null
         var savedCount = 0
         var errors = 0
         var firstShots = 0
+        var shutters = 0
         val log = mutableListOf<String>()
     }
 
@@ -78,7 +91,8 @@ class StillBurstTest {
             extraFile = { n -> File(tmp.root, "foto.jpg.r$n.tmp") },
             onFirstShot = { out.firstShots++ },
             onSaved = { out.saved = it; out.savedCount++ },
-            onError = { out.errors++ }
+            onError = { out.errors++ },
+            onShutter = { out.shutters++ }
         )
         return out
     }
@@ -99,6 +113,46 @@ class StillBurstTest {
         assertEquals(1, out.firstShots)
         assertEquals("A", content())
         assertEquals(listOf("foto.jpg"), filesLeft())
+    }
+
+    @Test
+    fun `el obturador avisa una sola vez aunque haya disparo extra`() {
+        val shooter = ShutterShooter(listOf("A", "B"))
+        val out = run(shooter, FakeAnalyzer(mapOf("A" to { sample(100.0) }, "B" to { sample(900.0) })))
+
+        assertEquals(2, shooter.calls)
+        assertEquals(1, out.shutters)
+        assertEquals(1, out.savedCount)
+    }
+
+    @Test
+    fun `una camara que no avisa del obturador no rompe la captura`() {
+        val shooter = FakeShooter(listOf("A"))
+        val out = run(shooter, FakeAnalyzer(mapOf("A" to { sample(900.0) })))
+
+        assertEquals(0, out.shutters)
+        assertEquals(1, out.savedCount)
+    }
+
+    @Test
+    fun `el log trae la linea de tiempo de la foto`() {
+        var clock = 0L
+        val shooter = object : StillShooter {
+            override fun shoot(target: File, onResult: (Boolean) -> Unit) = shoot(target, {}, onResult)
+            override fun shoot(target: File, onShutter: () -> Unit, onResult: (Boolean) -> Unit) {
+                clock += 300
+                onShutter()
+                clock += 500
+                target.writeText("A")
+                onResult(true)
+            }
+        }
+        val out = run(shooter, FakeAnalyzer(mapOf("A" to { clock += 150; sample(900.0) })), now = { clock })
+
+        val line = out.log.single()
+        assertTrue(line, line.contains("obturador=300 ms"))
+        assertTrue(line, line.contains("guardada=800 ms"))
+        assertTrue(line, line.contains("analizada=950 ms"))
     }
 
     @Test

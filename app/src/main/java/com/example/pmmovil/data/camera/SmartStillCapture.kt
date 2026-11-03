@@ -2,6 +2,8 @@ package com.example.pmmovil.data.camera
 
 import android.content.Context
 import android.graphics.BitmapFactory
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import androidx.camera.core.ImageCapture
@@ -36,24 +38,31 @@ object SmartStillCapture {
     }
 
     /**
-     * @param onFirstShot la primera foto ya quedo guardada: la pantalla puede quitar el destello blanco. El obturador
-     * debe seguir bloqueado hasta [onSaved] porque un reintento puede seguir en curso.
+     * @param onShutter el obturador ya disparo (la escena quedo expuesta): ahi va el destello de la pantalla, un pulso
+     * corto. Antes se cubria la pantalla desde el toque hasta guardar el JPEG y el operador veia un velo blanco mientras la
+     * camara enfocaba y procesaba.
+     * @param onFirstShot la primera foto ya quedo guardada. El obturador debe seguir bloqueado hasta [onSaved] porque un
+     * reintento puede seguir en curso.
      * @param onSaved la foto elegida quedo en [target].
      * @param onError el primer disparo fallo.
+     * @param afState ultimo estado de enfoque del visor (null si no hay dato fresco). Antes de cada disparo se espera,
+     * con tope, a que el lente deje de buscar (ver [FocusGate]); sin dato se dispara en el acto.
      */
     fun takeBest(
         context: Context,
         imageCapture: ImageCapture,
         target: File,
+        afState: () -> Int? = { null },
+        onShutter: () -> Unit = {},
         onFirstShot: () -> Unit = {},
         onSaved: (File) -> Unit,
         onError: () -> Unit
     ) {
         val main = ContextCompat.getMainExecutor(context)
-        val shooter = CameraXStillShooter(imageCapture, main)
+        val shooter = CameraXStillShooter(imageCapture, main, afState)
 
         if (!StillBurstPolicy.ENABLED) {
-            shooter.shoot(target) { ok ->
+            shooter.shoot(target, onShutter) { ok ->
                 if (ok) {
                     onFirstShot()
                     onSaved(target)
@@ -81,7 +90,8 @@ object SmartStillCapture {
             extraFile = { n -> File(folder, "${target.name}.r$n.tmp") },
             onFirstShot = onFirstShot,
             onSaved = onSaved,
-            onError = onError
+            onError = onError,
+            onShutter = onShutter
         )
     }
 
@@ -103,14 +113,33 @@ object SmartStillCapture {
 
 private class CameraXStillShooter(
     private val imageCapture: ImageCapture,
-    private val executor: Executor
+    private val executor: Executor,
+    afState: () -> Int?
 ) : StillShooter {
-    override fun shoot(target: File, onResult: (Boolean) -> Unit) {
+    private val handler = Handler(Looper.getMainLooper())
+    private val focusGate = FocusGate(
+        afState = afState,
+        now = SystemClock::elapsedRealtime,
+        postDelayed = { delayMs, action -> handler.postDelayed({ action() }, delayMs) },
+        log = { Log.i("PMM-STILL", it) }
+    )
+
+    override fun shoot(target: File, onResult: (Boolean) -> Unit) = shoot(target, {}, onResult)
+
+    override fun shoot(target: File, onShutter: () -> Unit, onResult: (Boolean) -> Unit) {
+        focusGate.awaitSettled { fire(target, onShutter, onResult) }
+    }
+
+    private fun fire(target: File, onShutter: () -> Unit, onResult: (Boolean) -> Unit) {
         try {
             imageCapture.takePicture(
                 ImageCapture.OutputFileOptions.Builder(target).build(),
                 executor,
                 object : ImageCapture.OnImageSavedCallback {
+                    override fun onCaptureStarted() {
+                        onShutter()
+                    }
+
                     override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
                         onResult(true)
                     }

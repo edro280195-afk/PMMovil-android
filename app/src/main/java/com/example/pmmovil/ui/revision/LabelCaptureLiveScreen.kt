@@ -308,8 +308,9 @@ fun LabelCaptureLiveScreen(
             // MINIMIZE_LATENCY, no MAXIMIZE_QUALITY, y es a proposito.
             //
             // Esta es la unica pantalla que enlaza TRES flujos (preview +
-            // analisis + foto). La camara de evidencias pide MAXIMIZE_QUALITY
-            // pero solo enlaza dos, y Entrada Caseta enlaza tres con
+            // analisis + foto). La camara de evidencias solo enlaza dos (y desde
+            // el 3-nov-2026 tambien usa MINIMIZE_LATENCY, ver StillCaptureMode),
+            // y Entrada Caseta enlaza tres con
             // MINIMIZE_LATENCY. Con tres flujos y MAXIMIZE_QUALITY el HAL del
             // Pixel 9 Pro XL se queda sin memoria para buffers y tira cuadros
             // del preview -- ver la nota de RESOLUCION_ANALISIS con el log.

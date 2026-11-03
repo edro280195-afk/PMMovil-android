@@ -105,7 +105,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
+import com.example.pmmovil.data.camera.FocusGatePolicy
 import com.example.pmmovil.data.camera.SmartStillCapture
+import com.example.pmmovil.data.camera.StillCaptureMode
 import com.example.pmmovil.data.model.FotoRevisionDto
 import com.example.pmmovil.data.model.FotoSyncEntity
 import com.example.pmmovil.data.preferences.CameraPreferences
@@ -264,6 +266,14 @@ fun CameraScreen(
         }
     }
 
+    // El destello es un pulso corto, no un velo que dura lo que tarde la camara en procesar.
+    LaunchedEffect(showCaptureFlash) {
+        if (showCaptureFlash) {
+            delay(CAPTURE_FLASH_MS)
+            showCaptureFlash = false
+        }
+    }
+
     // La cámara física solo permanece encendida en modo CAMERA. Al pasar a
     // "Mis fotos" se libera (unbind) para no gastar batería ni bloquear el
     // sensor mientras el usuario solo está revisando lo ya tomado. Se
@@ -275,18 +285,15 @@ fun CameraScreen(
                     .also { warmup.attachTo(it) }
                     .build()
                     .also { it.surfaceProvider = previewView.surfaceProvider }
-                // La foto es evidencia de aduana, así que la captura se pide
-                // buena de origen: MINIMIZE_LATENCY le decía al HAL que
-                // recortara procesamiento -- menos reducción de ruido y menos
-                // nitidez -- para soltar el disparo antes. Aquí el cuello de
-                // botella nunca fue el obturador.
+                // El modo de captura sale de StillCaptureMode (ahí se explica qué
+                // hace cada uno y cómo forzarlo en debug para medir).
                 //
                 // La calidad JPEG se fija explícitamente en vez de dejar el
                 // default: es el primero de dos pasos de compresión (el segundo
                 // es PhotoPipeline al subir), y cada uno hornea sus artefactos
                 // en el siguiente.
                 val capture = ImageCapture.Builder()
-                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                    .setCaptureMode(StillCaptureMode.resolve(context))
                     .setJpegQuality(97)
                     .build()
                 val camera = CameraOwner.bind(
@@ -302,6 +309,7 @@ fun CameraScreen(
                     }
                 )
                 if (camera != null) {
+                    StillCaptureMode.logSupport(camera.cameraInfo)
                     cameraControl = camera.cameraControl
                     // El zoom de CameraX persiste entre pantallas: se parte de 1x.
                     camera.cameraControl.setZoomRatio(1f)
@@ -377,13 +385,11 @@ fun CameraScreen(
                         capturePhoto(
                             context = context,
                             imageCapture = imageCapture,
-                            onCaptureStarted = {
-                                isCapturing = true
-                                showCaptureFlash = true
-                            },
-                            // La primera foto ya quedo; si sale blanda, el reintento invisible sigue unos instantes
-                            // con el obturador bloqueado pero sin tapar el visor.
-                            onFirstShot = { showCaptureFlash = false },
+                            afState = { warmup.currentAfState(FocusGatePolicy.MAX_STATE_AGE_MS) },
+                            // Al tocar solo se bloquea el boton; el destello llega con el obturador real y dura un
+                            // instante (antes cubria el visor hasta guardar el JPEG).
+                            onCaptureStarted = { isCapturing = true },
+                            onShutter = { showCaptureFlash = true },
                             onSaved = { file ->
                                 showCaptureFlash = false
                                 isCapturing = false
@@ -1449,8 +1455,9 @@ fun ZoomablePage(
 private fun capturePhoto(
     context: Context,
     imageCapture: ImageCapture?,
+    afState: () -> Int?,
     onCaptureStarted: () -> Unit,
-    onFirstShot: () -> Unit,
+    onShutter: () -> Unit,
     onSaved: (File) -> Unit,
     onError: () -> Unit
 ) {
@@ -1467,7 +1474,8 @@ private fun capturePhoto(
         context = context,
         imageCapture = capture,
         target = file,
-        onFirstShot = onFirstShot,
+        afState = afState,
+        onShutter = onShutter,
         onSaved = onSaved,
         onError = {
             Log.e("CameraScreen", "Error al tomar foto")
@@ -1489,3 +1497,6 @@ private fun createTempPictureFile(context: Context): File {
 
 /** Cadencia con la que se vencen los plazos del arranque de camara. */
 private const val CAMERA_WARMUP_TICK_MS = 200L
+
+/** Cuanto dura el destello blanco al disparar. */
+private const val CAPTURE_FLASH_MS = 140L

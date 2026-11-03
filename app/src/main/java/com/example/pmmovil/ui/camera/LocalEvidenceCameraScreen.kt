@@ -87,7 +87,9 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil.compose.AsyncImage
+import com.example.pmmovil.data.camera.FocusGatePolicy
 import com.example.pmmovil.data.camera.SmartStillCapture
+import com.example.pmmovil.data.camera.StillCaptureMode
 import com.example.pmmovil.ui.theme.PmmBlueLight
 import com.example.pmmovil.ui.theme.PmmBlueDeep
 import com.example.pmmovil.ui.theme.PmmGreen
@@ -193,16 +195,25 @@ fun LocalEvidenceCameraScreen(
         }
     }
 
+    // El destello es un pulso corto, no un velo que dura lo que tarde la camara en procesar.
+    LaunchedEffect(showCaptureFlash) {
+        if (showCaptureFlash) {
+            delay(CAPTURE_FLASH_MS)
+            showCaptureFlash = false
+        }
+    }
+
     LaunchedEffect(cameraRetry.attempt) {
         try {
             val preview = Preview.Builder()
                 .also { warmup.attachTo(it) }
                 .build()
                 .also { it.surfaceProvider = previewView.surfaceProvider }
-            // Evidencia: la tableta está quieta apuntando a lo que se debe
-            // documentar, así que conviene priorizar calidad de captura.
+            // El modo sale de StillCaptureMode: por omisión captura rápida con espera de enfoque, que en
+            // la prueba de cerca salió más nítida y más veloz que MAXIMIZE_QUALITY. En debug se puede
+            // forzar otro para medir.
             val capture = ImageCapture.Builder()
-                .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                .setCaptureMode(StillCaptureMode.resolve(context))
                 .setJpegQuality(LOCAL_EVIDENCE_JPEG_QUALITY)
                 .build()
             val camera = CameraOwner.bind(
@@ -218,6 +229,7 @@ fun LocalEvidenceCameraScreen(
                 }
             )
             if (camera != null) {
+                StillCaptureMode.logSupport(camera.cameraInfo)
                 imageCapture = capture
                 cameraControl = camera.cameraControl
                 cameraInfo = camera.cameraInfo
@@ -332,13 +344,12 @@ fun LocalEvidenceCameraScreen(
                                     imageCapture = imageCapture,
                                     directoryName = directoryName,
                                     filePrefix = filePrefix,
-                                    onCaptureStarted = {
-                                        isCapturing = true
-                                        showCaptureFlash = true
-                                    },
-                                    // La primera foto ya quedo; si sale blanda, el reintento invisible sigue unos instantes
-                                    // con el obturador bloqueado pero sin tapar el visor.
-                                    onFirstShot = { showCaptureFlash = false },
+                                    afState = { warmup.currentAfState(FocusGatePolicy.MAX_STATE_AGE_MS) },
+                                    // Al tocar solo se bloquea el boton (gira el circulo). El destello llega con el
+                                    // obturador real y dura un instante: antes el velo blanco cubria el visor desde el
+                                    // toque hasta guardar el JPEG y parecia que la app se quedaba pensando.
+                                    onCaptureStarted = { isCapturing = true },
+                                    onShutter = { showCaptureFlash = true },
                                     onSaved = { file ->
                                         showCaptureFlash = false
                                         isCapturing = false
@@ -905,8 +916,9 @@ private fun captureLocalEvidencePhoto(
     imageCapture: ImageCapture?,
     directoryName: String,
     filePrefix: String,
+    afState: () -> Int?,
     onCaptureStarted: () -> Unit,
-    onFirstShot: () -> Unit,
+    onShutter: () -> Unit,
     onSaved: (File) -> Unit,
     onError: () -> Unit
 ) {
@@ -923,7 +935,8 @@ private fun captureLocalEvidencePhoto(
         context = context,
         imageCapture = capture,
         target = file,
-        onFirstShot = onFirstShot,
+        afState = afState,
+        onShutter = onShutter,
         onSaved = onSaved,
         onError = {
             Log.e(TAG, "Error al tomar foto local")
@@ -956,3 +969,6 @@ private const val LOCAL_EVIDENCE_JPEG_QUALITY = 95
 
 /** Cadencia con la que se vencen los plazos del arranque de camara. */
 private const val WARMUP_TICK_MS = 200L
+
+/** Cuanto dura el destello blanco al disparar. */
+private const val CAPTURE_FLASH_MS = 140L

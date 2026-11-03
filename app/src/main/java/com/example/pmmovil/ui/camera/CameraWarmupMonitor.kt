@@ -57,6 +57,18 @@ class CameraWarmupMonitor(
 
     private var lastLuminance: Double = Double.NaN
 
+    // Ultimo estado de enfoque del visor y cuando llego. Lo lee la captura de evidencia (FocusGate) para no disparar con
+    // el lente todavia buscando. Se escribe desde el hilo de la camara y se lee desde el principal.
+    @Volatile private var lastAfState: Int? = null
+    @Volatile private var lastAfAtMs: Long = Long.MIN_VALUE
+
+    /**
+     * Estado de enfoque (CONTROL_AF_STATE) del ultimo cuadro del visor, o null si no hay dato o es mas viejo que
+     * [maxAgeMs]: un visor atorado no dice nada del lente de ahora.
+     */
+    fun currentAfState(maxAgeMs: Long): Int? =
+        if (lastAfAtMs != Long.MIN_VALUE && clock() - lastAfAtMs <= maxAgeMs) lastAfState else null
+
     val captureCallback: CameraCaptureSession.CaptureCallback =
         object : CameraCaptureSession.CaptureCallback() {
             override fun onCaptureCompleted(
@@ -127,6 +139,8 @@ class CameraWarmupMonitor(
         val sensitivity = result.get(CaptureResult.SENSOR_SENSITIVITY)
         val aeLock = result.get(CaptureResult.CONTROL_AE_LOCK)
         val now = clock()
+        lastAfState = afState
+        lastAfAtMs = now
 
         val changed: Boolean
         val frame: Int

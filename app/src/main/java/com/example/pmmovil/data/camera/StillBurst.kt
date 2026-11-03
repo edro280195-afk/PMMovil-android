@@ -12,6 +12,13 @@ data class StillSample(val sharpness: Double, val thumbnail: GrayPlane)
 /** Toma una foto en [target]. [onResult] se llama una vez, en el hilo principal: true si quedo guardada. */
 interface StillShooter {
     fun shoot(target: File, onResult: (Boolean) -> Unit)
+
+    /**
+     * Igual que [shoot], pero avisa en [onShutter] (hilo principal) cuando el obturador ya disparo: la escena quedo
+     * expuesta aunque falte procesar y guardar el JPEG. Es el momento en que el operador ya puede mover la tableta.
+     * Por omision no avisa.
+     */
+    fun shoot(target: File, onShutter: () -> Unit, onResult: (Boolean) -> Unit) = shoot(target, onResult)
 }
 
 /** Mide una foto ya guardada. Bloqueante: se llama siempre fuera del hilo principal. Null si no se pudo leer. */
@@ -86,35 +93,48 @@ class StillBurst(
         val extraFile: (Int) -> File,
         val onSaved: (File) -> Unit,
         val startedAt: Long,
-        val first: StillSample
+        val first: StillSample,
+        val timeline: String
     ) {
         var best = Candidate(target, first.sharpness, 1.0)
         val extras = mutableListOf<Candidate>()
         var stop = false
     }
 
+    /**
+     * [onShutter] avisa cuando la PRIMERA foto ya se expuso (los disparos extra no lo avisan): ahi va el destello de la
+     * pantalla, no al tocar, para que el operador no vea un velo blanco mientras la camara enfoca y procesa.
+     */
     fun capture(
         target: File,
         extraFile: (Int) -> File,
         onFirstShot: () -> Unit,
         onSaved: (File) -> Unit,
-        onError: () -> Unit
+        onError: () -> Unit,
+        onShutter: () -> Unit = {}
     ) {
         val startedAt = now()
-        shooter.shoot(target) { ok ->
+        // Linea de tiempo de la foto, en ms desde el toque: -1 si ese hito nunca llego.
+        var shutterMs = -1L
+        shooter.shoot(target, onShutter = {
+            shutterMs = now() - startedAt
+            onShutter()
+        }) { ok ->
             if (!ok) {
                 onError()
                 return@shoot
             }
+            val savedMs = now() - startedAt
             onFirstShot()
             work.execute {
                 val first = safeAnalyze(target)
                 main.execute {
+                    val timeline = "obturador=$shutterMs ms, guardada=$savedMs ms, analizada=${now() - startedAt} ms"
                     if (first == null || !StillBurstPolicy.needsRetry(first.sharpness, retryBelow)) {
-                        log("sin reintento: nitidez=${first?.sharpness?.roundToInt()}")
+                        log("sin reintento: nitidez=${first?.sharpness?.roundToInt()} ($timeline)")
                         onSaved(target)
                     } else {
-                        nextShot(Run(target, extraFile, onSaved, startedAt, first))
+                        nextShot(Run(target, extraFile, onSaved, startedAt, first, timeline))
                     }
                 }
             }
@@ -170,7 +190,8 @@ class StillBurst(
                 val extras = run.extras.joinToString(",") { "${it.sharpness.roundToInt()}@${(it.similarity * 100).roundToInt()}%" }
                 log(
                     "reintento: primera=${run.first.sharpness.roundToInt()} extras=[$extras] " +
-                        "elegida=${if (winner == run.target) "primera" else "extra"} en ${now() - run.startedAt} ms"
+                        "elegida=${if (winner == run.target) "primera" else "extra"} en ${now() - run.startedAt} ms " +
+                        "(primera: ${run.timeline})"
                 )
                 run.onSaved(run.target)
             }
