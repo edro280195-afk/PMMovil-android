@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -105,6 +106,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -187,6 +189,8 @@ fun EntradaScreen(
     barcodeScanResult: String?,
     onBarcodeScanConsumed: () -> Unit,
     crefToLoad: String? = null,
+    // true cuando en el modal del listado se eligió «Escanear QR de caseta»: la captura abre directo el lector.
+    startWithScan: Boolean = false,
     // Tras guardar una entrada nueva e imprimir/cancelar las etiquetas del picker automático,
     // se dispara este callback (ver EntradaUiState.navigateToListEvent). Default = onNavigateBack
     // para que las rutas que no lo personalizan (p. ej. entrada_editar) no queden sin manejar.
@@ -198,15 +202,31 @@ fun EntradaScreen(
     val shareContext = androidx.compose.ui.platform.LocalContext.current
     var showCamera by remember { mutableStateOf(false) }
     var showDamageCamera by remember { mutableStateOf(false) }
-    // Todo el aparato de arranque (pantalla de elección + talón/chip de caseta) es exclusivo
-    // de una captura nueva. crefToLoad != null es señal explícita de "vengo a editar" — se
-    // excluye aquí y no solo vía isEditMode/form.isExisting porque loadEntradaExistente() es
-    // async: sin este guard, el arranque parpadea un frame antes de que la carga resuelva
-    // (bug reportado en QA al abrir una entrada existente desde la lista/mapa).
+    // Confirmaciones cuando hay algo capturado que todavía no se guarda: al volver atrás o al empezar otra entrada.
+    var showExitConfirm by rememberSaveable { mutableStateOf(false) }
+    var showNewEntryConfirm by rememberSaveable { mutableStateOf(false) }
+    val requestExit = {
+        if (viewModel.hasUnsavedChanges()) showExitConfirm = true else onNavigateBack()
+    }
+    val requestNewEntry = {
+        if (viewModel.hasUnsavedChanges()) showNewEntryConfirm = true else viewModel.startNewEntry()
+    }
+    // El talón/chip de caseta es exclusivo de una captura nueva. crefToLoad != null es señal
+    // explícita de "vengo a editar" — se excluye aquí y no solo vía isEditMode/form.isExisting
+    // porque loadEntradaExistente() es async: sin este guard, el arranque parpadea un frame
+    // antes de que la carga resuelva (bug reportado en QA al abrir una entrada existente).
     val isNewEntryFlow = crefToLoad.isNullOrBlank() && !state.form.isExisting && !state.isEditMode
-    val showChoosing = isNewEntryFlow && state.entryStartMode == EntradaEntryMode.CHOOSING
 
     HardwareScannerListener(viewModel::processGateScan)
+
+    // rememberSaveable (y no remember) para que, al volver del lector con el código, no se abra otra vez.
+    var pendingAutoScan by rememberSaveable { mutableStateOf(startWithScan) }
+    LaunchedEffect(pendingAutoScan) {
+        if (pendingAutoScan) {
+            pendingAutoScan = false
+            onNavigateToScanner()
+        }
+    }
 
     LaunchedEffect(crefToLoad) {
         crefToLoad?.takeIf(String::isNotBlank)?.let { viewModel.loadEntradaExistente(it) }
@@ -292,6 +312,9 @@ fun EntradaScreen(
         )
     }
 
+    // Atrás (gesto, botón o flecha) no tira lo capturado: si hay cambios sin guardar, pregunta primero.
+    BackHandler(onBack = requestExit)
+
     Scaffold(
         containerColor = PmmBgPrimary,
         topBar = {
@@ -311,7 +334,7 @@ fun EntradaScreen(
                         }
                     },
                     navigationIcon = {
-                        IconButton(onClick = onNavigateBack) {
+                        IconButton(onClick = requestExit) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, "Volver")
                         }
                     },
@@ -331,7 +354,7 @@ fun EntradaScreen(
                                 }
                             }
                         }
-                        IconButton(onClick = viewModel::startNewEntry, enabled = state.puedeAgregar) {
+                        IconButton(onClick = requestNewEntry, enabled = state.puedeAgregar) {
                             Icon(Icons.Default.Refresh, "Nueva entrada")
                         }
                     },
@@ -345,13 +368,11 @@ fun EntradaScreen(
             }
         },
         bottomBar = {
-            if (!showChoosing) {
-                EntradaBottomBar(
-                    state = state,
-                    onPrimary = viewModel::executePrimaryAction,
-                    onPrint = viewModel::requestPrint
-                )
-            }
+            EntradaBottomBar(
+                state = state,
+                onPrimary = viewModel::executePrimaryAction,
+                onPrint = viewModel::requestPrint
+            )
         },
         snackbarHost = { PmmSnackbarHost(snackbar) }
     ) { padding ->
@@ -359,6 +380,9 @@ fun EntradaScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                // El Scaffold ya reservó la barra de abajo en `padding`. Sin esto, el imePadding del formulario
+                // vuelve a sumarla encima del teclado y queda un bloque en blanco tapando parte de la pantalla.
+                .consumeWindowInsets(padding)
         ) {
             val tabletLandscape = maxWidth >= 840.dp
             if (tabletLandscape) {
@@ -367,7 +391,6 @@ fun EntradaScreen(
                         state = state,
                         isNewEntryFlow = isNewEntryFlow,
                         onScanCamera = onNavigateToScanner,
-                        onChooseManual = viewModel::beginManualEntry,
                         modifier = Modifier
                             .width(320.dp)
                             .fillMaxHeight()
@@ -376,6 +399,8 @@ fun EntradaScreen(
                         state = state,
                         viewModel = viewModel,
                         showScanHeader = false,
+                        // El panel lateral ya lista los pasos con sus palomitas: no se repite la barra de pasos.
+                        showStepBar = false,
                         isNewEntryFlow = isNewEntryFlow,
                         onScanCamera = onNavigateToScanner,
                         onTakePhoto = { showCamera = true },
@@ -383,13 +408,6 @@ fun EntradaScreen(
                         modifier = Modifier.weight(1f)
                     )
                 }
-            } else if (showChoosing) {
-                EntradaStartChoiceScreen(
-                    state = state,
-                    onChooseScan = onNavigateToScanner,
-                    onChooseManual = viewModel::beginManualEntry,
-                    modifier = Modifier.fillMaxSize()
-                )
             } else {
                 EntradaFormContent(
                     state = state,
@@ -412,6 +430,32 @@ fun EntradaScreen(
             onDelete = viewModel::deleteDraft,
             onNew = viewModel::startNewEntry,
             onDismiss = viewModel::closeDraftRecovery
+        )
+    }
+    if (showExitConfirm) {
+        UnsavedChangesDialog(
+            title = "¿Seguro que quieres salir?",
+            message = "Lo que llevas capturado todavía no se ha guardado. Si sales ahora, se pierde.",
+            discardLabel = "Salir sin guardar",
+            onDiscard = {
+                showExitConfirm = false
+                viewModel.discardCurrentDraft()
+                onNavigateBack()
+            },
+            onStay = { showExitConfirm = false }
+        )
+    }
+    if (showNewEntryConfirm) {
+        UnsavedChangesDialog(
+            title = "¿Empezar una entrada nueva?",
+            message = "Lo que llevas capturado todavía no se ha guardado. Si empiezas otra, se pierde.",
+            discardLabel = "Empezar de nuevo",
+            onDiscard = {
+                showNewEntryConfirm = false
+                viewModel.discardCurrentDraft()
+                viewModel.startNewEntry()
+            },
+            onStay = { showNewEntryConfirm = false }
         )
     }
     state.printerPicker?.let { picker ->
@@ -440,129 +484,6 @@ fun EntradaScreen(
                 startIndex = startIndex.coerceIn(0, damageGalleryItems.lastIndex),
                 onClose = viewModel::closeDamageGallery
             )
-        }
-    }
-}
-
-/**
- * Estado #1 — pantalla de arranque de "Nueva Entrada". Dos caminos al mismo nivel de jerarquía:
- * escanear el QR de caseta o capturar el formulario a mano. Ver README del handoff de diseño.
- */
-@Composable
-private fun EntradaStartChoiceScreen(
-    state: EntradaUiState,
-    onChooseScan: () -> Unit,
-    onChooseManual: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val scanning = state.scanStatus == EntradaScanStatus.SCANNING
-    val hasIssue = state.scanStatus == EntradaScanStatus.ERROR || state.scanStatus == EntradaScanStatus.DUPLICATE
-    Column(
-        modifier = modifier
-            .background(Brush.verticalGradient(0f to PmmNavyVariant, 0.4f to PmmBgPrimary))
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp, vertical = 20.dp)
-            .imePadding(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(Modifier.weight(1f))
-        Text(
-            "¿Cómo quieres empezar?",
-            color = PmmTextPrimary,
-            fontSize = 21.sp,
-            fontWeight = FontWeight.Black,
-            textAlign = TextAlign.Center
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "Elige una forma de capturar la entrada",
-            color = PmmTextSecondary,
-            fontSize = 13.sp,
-            textAlign = TextAlign.Center
-        )
-        Spacer(Modifier.height(22.dp))
-        if (scanning || hasIssue) {
-            StatusBanner(
-                color = if (hasIssue) PmmRed else PmmAmber,
-                text = state.scanMessage
-            )
-            Spacer(Modifier.height(13.dp))
-        }
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(13.dp)
-        ) {
-            StartOptionCard(
-                icon = Icons.Default.QrCodeScanner,
-                title = "Escanear QR de caseta",
-                description = "Carga cliente, transporte, caja y planta",
-                enabled = !state.isBusy,
-                loading = scanning,
-                onClick = onChooseScan
-            )
-            StartOptionCard(
-                icon = Icons.Default.Keyboard,
-                title = "Capturar manual",
-                description = "Llena la entrada desde cero",
-                enabled = !state.isBusy,
-                onClick = onChooseManual
-            )
-        }
-        Spacer(Modifier.weight(1.4f))
-    }
-}
-
-@Composable
-private fun StartOptionCard(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    description: String,
-    enabled: Boolean,
-    loading: Boolean = false,
-    onClick: () -> Unit
-) {
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        color = PmmBgSurface,
-        shape = RoundedCornerShape(18.dp),
-        border = BorderStroke(1.5.dp, PmmNavyBorder),
-        shadowElevation = 3.dp,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(13.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(PmmNavyVariant),
-                contentAlignment = Alignment.Center
-            ) {
-                if (loading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        strokeWidth = 2.5.dp,
-                        color = PmmNavyDark
-                    )
-                } else {
-                    Icon(icon, null, tint = PmmNavyDark, modifier = Modifier.size(30.dp))
-                }
-            }
-            Column(Modifier.weight(1f)) {
-                Text(title, color = PmmTextPrimary, fontWeight = FontWeight.Black, fontSize = 14.5.sp)
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    description,
-                    color = PmmTextSecondary,
-                    fontSize = 11.sp,
-                    lineHeight = 14.8.sp
-                )
-            }
-            Text("›", color = PmmTextMuted, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -738,11 +659,10 @@ private fun EntradaSidePanel(
     state: EntradaUiState,
     isNewEntryFlow: Boolean,
     onScanCamera: () -> Unit,
-    onChooseManual: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Mismo modelo que en teléfono: arranque (dos opciones) → talón verde o chip discreto,
-    // según si ya se leyó una caseta. En edición/entrada existente no aplica ninguno.
+    // Mismo modelo que en teléfono: talón verde o chip discreto, según si ya se leyó una caseta.
+    // En edición/entrada existente no aplica ninguno.
     Column(
         modifier = modifier
             .background(
@@ -753,14 +673,10 @@ private fun EntradaSidePanel(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         if (isNewEntryFlow) {
-            when {
-                state.entryStartMode == EntradaEntryMode.CHOOSING -> SidePanelStartChoice(
-                    state = state,
-                    onScanCamera = onScanCamera,
-                    onChooseManual = onChooseManual
-                )
-                state.form.casetaId != null -> GateLoadedTicket(state = state, onRescan = onScanCamera)
-                else -> GateScanChip(state = state, onScan = onScanCamera)
+            if (state.form.casetaId != null) {
+                GateLoadedTicket(state = state, onRescan = onScanCamera)
+            } else {
+                GateScanChip(state = state, onScan = onScanCamera)
             }
         }
         ContextSummary(state.form, state)
@@ -776,93 +692,6 @@ private fun EntradaSidePanel(
                 section = section,
                 complete = sectionComplete(section, state.form)
             )
-        }
-    }
-}
-
-/** Panel lateral (tablet) — dos opciones de arranque, versión compacta sobre fondo navy. */
-@Composable
-private fun SidePanelStartChoice(
-    state: EntradaUiState,
-    onScanCamera: () -> Unit,
-    onChooseManual: () -> Unit
-) {
-    val scanning = state.scanStatus == EntradaScanStatus.SCANNING
-    val hasIssue = state.scanStatus == EntradaScanStatus.ERROR || state.scanStatus == EntradaScanStatus.DUPLICATE
-    Surface(
-        color = Color.White.copy(alpha = 0.11f),
-        shape = RoundedCornerShape(18.dp),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f))
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Text("¿Cómo quieres empezar?", color = Color.White, fontWeight = FontWeight.Black, fontSize = 14.sp)
-            Text(
-                "Elige una forma de capturar la entrada",
-                color = Color.White.copy(alpha = 0.7f),
-                fontSize = 11.sp
-            )
-            if (scanning || hasIssue) {
-                Text(
-                    state.scanMessage,
-                    color = if (hasIssue) Color(0xFFFCA5A5) else PmmYellow,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            SidePanelOptionButton(
-                icon = Icons.Default.QrCodeScanner,
-                label = "Escanear QR de caseta",
-                loading = scanning,
-                enabled = !state.isBusy,
-                onClick = onScanCamera
-            )
-            SidePanelOptionButton(
-                icon = Icons.Default.Keyboard,
-                label = "Capturar manual",
-                enabled = !state.isBusy,
-                onClick = onChooseManual
-            )
-        }
-    }
-}
-
-@Composable
-private fun SidePanelOptionButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    loading: Boolean = false,
-    enabled: Boolean = true,
-    onClick: () -> Unit
-) {
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        color = Color.White.copy(alpha = 0.1f),
-        shape = RoundedCornerShape(13.dp),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            if (loading) {
-                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = PmmYellow)
-            } else {
-                Icon(icon, null, tint = PmmYellow, modifier = Modifier.size(18.dp))
-            }
-            Text(
-                label,
-                modifier = Modifier.weight(1f),
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                fontSize = 12.5.sp
-            )
-            Text("›", color = Color.White.copy(alpha = 0.6f), fontSize = 16.sp)
         }
     }
 }
@@ -1059,7 +888,8 @@ private fun EntradaFormContent(
     onScanCamera: () -> Unit,
     onTakePhoto: () -> Unit,
     onTakeDamagePhoto: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showStepBar: Boolean = true
 ) {
     val formEditable = if (state.form.isExisting || state.isEditMode) {
         state.puedeModificar
@@ -1067,56 +897,170 @@ private fun EntradaFormContent(
         state.puedeAgregar
     }
     val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     // El talón/chip de caseta solo aplica al capturar una entrada nueva (no en edición/existente).
     val showHeaderItem = showScanHeader && isNewEntryFlow
+    val headerOffset = if (showHeaderItem) 1 else 0
+    // La primera sección se muestra desde arriba del todo, con el talón/chip de caseta a la vista: antes se
+    // saltaba directo a la sección y el chip quedaba cortado bajo la barra.
+    fun listIndexOf(section: EntradaSection) = if (section.ordinal == 0) 0 else section.ordinal + headerOffset
     LaunchedEffect(state.section, showHeaderItem) {
-        val headerOffset = if (showHeaderItem) 1 else 0
-        listState.animateScrollToItem(state.section.ordinal + headerOffset)
+        listState.animateScrollToItem(listIndexOf(state.section))
+    }
+    // La sección que se está viendo, para resaltarla en la barra de pasos.
+    val currentSection by remember {
+        derivedStateOf {
+            if (!listState.canScrollForward) {
+                EntradaSection.entries.last()
+            } else {
+                val index = (listState.firstVisibleItemIndex - headerOffset).coerceIn(0, EntradaSection.entries.lastIndex)
+                EntradaSection.entries[index]
+            }
+        }
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .fillMaxSize()
-                .imePadding(),
-            contentPadding = PaddingValues(18.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            if (showHeaderItem) {
-                item(key = "gate-status") {
-                    if (state.form.casetaId != null) {
-                        GateLoadedTicket(state = state, onRescan = onScanCamera)
-                    } else {
-                        GateScanChip(state = state, onScan = onScanCamera)
-                    }
+    Column(modifier = modifier.fillMaxSize()) {
+        if (showStepBar) {
+            EntradaStepBar(
+                form = state.form,
+                current = currentSection,
+                onSelect = { section ->
+                    viewModel.setSection(section)
+                    scope.launch { listState.animateScrollToItem(listIndexOf(section)) }
                 }
-            }
-            items(EntradaSection.entries, key = { it.name }) { section ->
-                FlowSection(
-                    section = section,
-                    complete = sectionComplete(section, state.form),
-                    last = section == EntradaSection.CLOSE
-                ) {
-                    when (section) {
-                        EntradaSection.REFERENCE -> ReferenceSection(state, viewModel, formEditable)
-                        EntradaSection.ARRIVAL -> ArrivalSection(state, viewModel, onTakeDamagePhoto, formEditable)
-                        EntradaSection.MERCHANDISE -> MerchandiseSection(state, viewModel, formEditable)
-                        EntradaSection.CLOSE -> CloseSection(state, viewModel, onTakePhoto, formEditable)
-                    }
-                }
-            }
-            item { Spacer(Modifier.height(20.dp)) }
+            )
         }
-        if (state.isLoading || state.isBusy) {
-            Box(
-                Modifier
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+        ) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.White.copy(alpha = 0.58f)),
-                contentAlignment = Alignment.Center
+                    .imePadding(),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                CircularProgressIndicator(color = PmmBlueDeep)
+                if (showHeaderItem) {
+                    item(key = "gate-status") {
+                        if (state.form.casetaId != null) {
+                            GateLoadedTicket(state = state, onRescan = onScanCamera)
+                        } else {
+                            GateScanChip(state = state, onScan = onScanCamera)
+                        }
+                    }
+                }
+                items(EntradaSection.entries, key = { it.name }) { section ->
+                    FlowSection(
+                        section = section,
+                        complete = sectionComplete(section, state.form),
+                        last = section == EntradaSection.CLOSE
+                    ) {
+                        when (section) {
+                            EntradaSection.REFERENCE -> ReferenceSection(state, viewModel, formEditable)
+                            EntradaSection.ARRIVAL -> ArrivalSection(state, viewModel, onTakeDamagePhoto, formEditable)
+                            EntradaSection.MERCHANDISE -> MerchandiseSection(state, viewModel, formEditable)
+                            EntradaSection.CLOSE -> CloseSection(state, viewModel, onTakePhoto, formEditable)
+                        }
+                    }
+                }
+                item { Spacer(Modifier.height(20.dp)) }
             }
+            if (state.isLoading || state.isBusy) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(Color.White.copy(alpha = 0.58f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = PmmBlueDeep)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Barra de pasos fija arriba del formulario (teléfono y tableta de pie): los cuatro pasos de la captura en una sola
+ * fila, con palomita verde en los completos y el actual resaltado; tocar uno salta a esa sección. Sustituye al hilo
+ * azul que corría por la izquierda del formulario y le quitaba ancho al contenido.
+ */
+@Composable
+private fun EntradaStepBar(
+    form: EntradaFormSnapshot,
+    current: EntradaSection,
+    onSelect: (EntradaSection) -> Unit
+) {
+    val last = EntradaSection.entries.lastIndex
+    Surface(color = PmmBgSurface, shadowElevation = 3.dp) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 6.dp)
+        ) {
+            EntradaSection.entries.forEachIndexed { index, section ->
+                val complete = sectionComplete(section, form)
+                val isCurrent = section == current
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { onSelect(section) }
+                        .padding(vertical = 2.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(30.dp)
+                            .drawBehind {
+                                // El hilo une los círculos pasando por detrás de cada uno, sin tocarlos.
+                                val y = size.height / 2
+                                val gap = 17.dp.toPx()
+                                val stroke = 2.dp.toPx()
+                                val color = PmmBlueLight.copy(alpha = 0.45f)
+                                if (index > 0) drawLine(color, Offset(0f, y), Offset(size.width / 2 - gap, y), stroke)
+                                if (index < last) drawLine(color, Offset(size.width / 2 + gap, y), Offset(size.width, y), stroke)
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        StepBadge(number = section.ordinal + 1, complete = complete, highlighted = isCurrent, size = 28.dp)
+                    }
+                    Text(
+                        section.label,
+                        color = if (isCurrent) PmmBlueDeep else PmmTextSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = if (isCurrent) FontWeight.Black else FontWeight.SemiBold,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Círculo de un paso: palomita verde si está completo, su número en azul si no (más fuerte si es el actual). */
+@Composable
+private fun StepBadge(number: Int, complete: Boolean, size: Dp, highlighted: Boolean = false) {
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(
+                when {
+                    complete -> PmmGreen
+                    highlighted -> PmmBlueDeep
+                    else -> PmmBlueDeep.copy(alpha = 0.55f)
+                }
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        if (complete) {
+            Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(size * 0.58f))
+        } else {
+            Text("$number", color = Color.White, fontWeight = FontWeight.Black, fontSize = (size.value * 0.42f).sp)
         }
     }
 }
@@ -1128,75 +1072,44 @@ private fun FlowSection(
     last: Boolean,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .drawBehind {
-                if (!last) {
-                    val x = 17.dp.toPx()
-                    drawLine(
-                        color = PmmBlueLight.copy(alpha = 0.38f),
-                        start = Offset(x, 34.dp.toPx()),
-                        end = Offset(x, size.height),
-                        strokeWidth = 3.dp.toPx()
-                    )
-                }
-            }
+            .padding(bottom = if (last) 0.dp else 20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Column(
-            modifier = Modifier.width(46.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(34.dp)
-                    .clip(CircleShape)
-                    .background(if (complete) PmmGreen else PmmBlueDeep),
-                contentAlignment = Alignment.Center
-            ) {
-                if (complete) {
-                    Icon(
-                        Icons.Default.Check,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(19.dp)
-                    )
-                } else {
-                    Text(
-                        "${section.ordinal + 1}",
-                        color = Color.White,
-                        fontWeight = FontWeight.Black
-                    )
-                }
-            }
-        }
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(bottom = if (last) 0.dp else 24.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
+        // El número (o la palomita) va en línea con el título: ya no hay un riel a la izquierda que le reste ancho
+        // al contenido. La barra de pasos de arriba (o el panel lateral) da la vista de conjunto.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            StepBadge(number = section.ordinal + 1, complete = complete, size = 32.dp, highlighted = true)
+            Spacer(Modifier.width(12.dp))
             Column {
                 Text(
                     section.label,
                     color = PmmTextPrimary,
-                    fontSize = 24.sp,
+                    fontSize = 22.sp,
                     fontWeight = FontWeight.Black
                 )
                 Text(
-                    when (section) {
-                        EntradaSection.REFERENCE -> "Genera la referencia de la nueva entrada."
-                        EntradaSection.ARRIVAL -> "Identifica cliente, transporte y condiciones de arribo."
-                        EntradaSection.MERCHANDISE -> "Captura cada concepto sin abandonar este flujo."
-                        EntradaSection.CLOSE -> "Confirma pesos, madera y evidencia fotográfica."
-                    },
+                    sectionSubtitle(section),
                     color = PmmTextSecondary,
                     fontSize = 13.sp
                 )
             }
-            content()
         }
+        content()
     }
+}
+
+/** «01-C-26-····-00-00»: los seis tramos de la referencia, con puntos donde falta el consecutivo. */
+private fun referencePreview(form: EntradaFormSnapshot): String =
+    listOf(form.ref1, form.ref2, form.ref3, form.ref4.ifBlank { "····" }, form.ref5, form.ref6).joinToString("-")
+
+private fun sectionSubtitle(section: EntradaSection): String = when (section) {
+    EntradaSection.REFERENCE -> "Genera la referencia de la nueva entrada."
+    EntradaSection.ARRIVAL -> "Identifica cliente, transporte y condiciones de arribo."
+    EntradaSection.MERCHANDISE -> "Captura cada concepto sin abandonar este flujo."
+    EntradaSection.CLOSE -> "Confirma pesos, madera y evidencia fotográfica."
 }
 
 @Composable
@@ -1207,25 +1120,27 @@ private fun ReferenceSection(state: EntradaUiState, viewModel: EntradaViewModel,
             state.form.ref4.isBlank() &&
             !state.form.isExisting
     FormCard(title = "Referencia PMM", icon = Icons.Default.AutoAwesome) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StaticReferencePart(state.form.ref1, Modifier.weight(0.8f))
-            StaticReferencePart(state.form.ref2, Modifier.weight(0.6f))
-            StaticReferencePart(state.form.ref3, Modifier.weight(0.8f))
-            OutlinedTextField(
-                value = state.form.ref4,
-                enabled = enabled,
-                onValueChange = { value ->
-                    viewModel.updateForm { it.copy(ref4 = value.filter(Char::isDigit), isExisting = false) }
-                },
-                label = { Text("Consecutivo") },
-                isError = "ref4" in state.invalidFields,
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.weight(1.5f)
-            )
-            StaticReferencePart(state.form.ref5, Modifier.weight(0.8f))
-            StaticReferencePart(state.form.ref6, Modifier.weight(0.8f))
-        }
+        // La referencia son seis tramos pero solo el consecutivo se teclea; los demás ya vienen puestos. Se muestran como
+        // una vista previa debajo del campo, en lugar de seis cajitas que en una pantalla angosta partían la etiqueta.
+        OutlinedTextField(
+            value = state.form.ref4,
+            enabled = enabled,
+            onValueChange = { value ->
+                viewModel.updateForm { it.copy(ref4 = value.filter(Char::isDigit), isExisting = false) }
+            },
+            label = { Text("Consecutivo") },
+            supportingText = {
+                Text(
+                    "Referencia ${referencePreview(state.form)}",
+                    color = PmmTextSecondary,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            isError = "ref4" in state.invalidFields,
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth()
+        )
         Button(
             onClick = viewModel::generateConsecutive,
             enabled = canGenerate,
@@ -1578,22 +1493,24 @@ private fun DamagePhotoSection(
     enabled: Boolean
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        Text(
+            "${state.form.localDamagePhotoPaths.size} por guardar · " +
+                "${state.queuedDamagePhotos.size} en cola · ${state.remoteDamagePhotos.size} guardadas",
+            fontSize = 12.sp,
+            color = PmmTextSecondary
+        )
+        OutlinedButton(
+            onClick = onTakePhoto,
+            enabled = enabled,
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.5.dp, PmmRed),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
         ) {
-            Text(
-                "${state.form.localDamagePhotoPaths.size} por guardar · " +
-                    "${state.queuedDamagePhotos.size} en cola · ${state.remoteDamagePhotos.size} guardadas",
-                fontSize = 11.sp,
-                color = PmmTextSecondary
-            )
-            OutlinedButton(onClick = onTakePhoto, enabled = enabled) {
-                Icon(Icons.Default.CameraAlt, null, tint = PmmRed, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Foto del daño", fontWeight = FontWeight.Black, color = PmmRed)
-            }
+            Icon(Icons.Default.CameraAlt, null, tint = PmmRed, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Foto del daño", fontWeight = FontWeight.Black, color = PmmRed)
         }
         DamagePhotoStrip(state, viewModel)
     }
@@ -1911,38 +1828,38 @@ private fun CloseSection(
         }
     }
     FormCard(title = "Evidencia fotográfica", icon = Icons.Default.CameraAlt) {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
+        // El resumen arriba y el botón debajo, a todo el ancho. Antes iban en una fila: el texto no cedía ancho y
+        // el botón quedaba apretado en una píldora amarilla altísima en pantallas angostas.
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                "${state.form.localPhotoPaths.size} por guardar · " +
+                    "${state.queuedPhotos.size} en cola · ${state.remotePhotos.size} guardadas",
+                fontSize = 13.sp,
+                color = PmmTextSecondary
+            )
+            if (state.gatePhotos.isNotEmpty()) {
                 Text(
-                    "${state.form.localPhotoPaths.size} por guardar · " +
-                        "${state.queuedPhotos.size} en cola · ${state.remotePhotos.size} guardadas",
+                    "${state.gatePhotos.size} fotos provenientes de caseta",
                     fontSize = 12.sp,
-                    color = PmmTextSecondary
+                    color = PmmBlueDeep
                 )
-                if (state.gatePhotos.isNotEmpty()) {
-                    Text(
-                        "${state.gatePhotos.size} fotos provenientes de caseta",
-                        fontSize = 11.sp,
-                        color = PmmBlueDeep
-                    )
-                }
             }
-            Button(
-                onClick = onTakePhoto,
-                enabled = enabled,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = PmmYellow,
-                    contentColor = PmmNavyDark
-                )
-            ) {
-                Icon(Icons.Default.CameraAlt, null)
-                Spacer(Modifier.width(6.dp))
-                Text("Tomar foto", fontWeight = FontWeight.Black)
-            }
+        }
+        Button(
+            onClick = onTakePhoto,
+            enabled = enabled,
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = PmmYellow,
+                contentColor = PmmNavyDark
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 52.dp)
+        ) {
+            Icon(Icons.Default.CameraAlt, null)
+            Spacer(Modifier.width(8.dp))
+            Text("Tomar foto", fontWeight = FontWeight.Black, fontSize = 16.sp)
         }
         PhotoStrip(state, viewModel)
     }
@@ -2353,20 +2270,6 @@ private fun FormCard(
             }
             HorizontalDivider(color = PmmNavyBorder)
             content()
-        }
-    }
-}
-
-@Composable
-private fun StaticReferencePart(value: String, modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier.height(56.dp),
-        color = PmmBgCard,
-        shape = RoundedCornerShape(10.dp),
-        border = BorderStroke(1.dp, PmmNavyBorder)
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(value, color = PmmTextSecondary, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -3076,6 +2979,38 @@ private fun EmptyState(title: String, subtitle: String) {
     }
 }
 
+/**
+ * Pregunta antes de tirar lo capturado. «Seguir capturando» es el botón principal (y lo que hace tocar fuera o el
+ * gesto de atrás): descartar es la opción que hay que elegir a propósito, porque no tiene vuelta.
+ */
+@Composable
+private fun UnsavedChangesDialog(
+    title: String,
+    message: String,
+    discardLabel: String,
+    onDiscard: () -> Unit,
+    onStay: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onStay,
+        title = { Text(title, fontWeight = FontWeight.Black) },
+        text = { Text(message, color = PmmTextSecondary) },
+        confirmButton = {
+            Button(
+                onClick = onStay,
+                colors = ButtonDefaults.buttonColors(containerColor = PmmBlueDeep)
+            ) {
+                Text("Seguir capturando", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDiscard) {
+                Text(discardLabel, color = PmmRed, fontWeight = FontWeight.Bold)
+            }
+        }
+    )
+}
+
 @Composable
 private fun DraftRecoveryDialog(
     drafts: List<EntradaDraft>,
@@ -3086,9 +3021,10 @@ private fun DraftRecoveryDialog(
 ) {
     Dialog(onDismissRequest = onDismiss) {
         Surface(
+            // Mide lo que pidan sus borradores (con tope): con uno solo ya no ocupa media pantalla vacía.
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.82f),
+                .heightIn(max = 560.dp),
             color = PmmBgSurface,
             shape = RoundedCornerShape(24.dp)
         ) {
@@ -3097,19 +3033,20 @@ private fun DraftRecoveryDialog(
                 Spacer(Modifier.height(8.dp))
                 Text("Continúa donde te quedaste", fontSize = 22.sp, fontWeight = FontWeight.Black)
                 Text(
-                    "Encontramos capturas sin finalizar. Incluyen mercancía y fotografías.",
+                    "Estas capturas se quedaron a medias. Incluyen mercancía y fotografías.",
                     color = PmmTextSecondary,
                     fontSize = 12.sp
                 )
                 Spacer(Modifier.height(14.dp))
                 LazyColumn(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f, fill = false),
                     verticalArrangement = Arrangement.spacedBy(9.dp)
                 ) {
                     items(drafts, key = { it.id }) { draft ->
                         DraftCard(draft, onResume, onDelete)
                     }
                 }
+                Spacer(Modifier.height(14.dp))
                 Button(
                     onClick = onNew,
                     modifier = Modifier.fillMaxWidth(),

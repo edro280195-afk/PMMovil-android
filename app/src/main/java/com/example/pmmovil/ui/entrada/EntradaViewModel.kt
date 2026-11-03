@@ -58,8 +58,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 enum class EntradaLookupType { CUSTOMER, TRANSPORT, BOX }
 enum class EntradaScanStatus { READY, SCANNING, SUCCESS, ERROR, DUPLICATE }
 
-/** Camino elegido en la pantalla de arranque de Nueva Entrada (ver EntradaStartChoiceScreen). */
-enum class EntradaEntryMode { CHOOSING, SCAN, MANUAL }
+/** Cómo arrancó la captura: con el QR de caseta ya leído, o a mano. La elección se hace en el modal del listado. */
+enum class EntradaEntryMode { SCAN, MANUAL }
 
 data class EntradaPrinterPickerState(
     val form: EntradaFormSnapshot,
@@ -92,7 +92,7 @@ data class EntradaUiState(
     val isLookupLoading: Boolean = false,
     val scanStatus: EntradaScanStatus = EntradaScanStatus.READY,
     val scanMessage: String = "Listo para escanear",
-    val entryStartMode: EntradaEntryMode = EntradaEntryMode.CHOOSING,
+    val entryStartMode: EntradaEntryMode = EntradaEntryMode.MANUAL,
     val gatePhotos: List<CasetaPhotoInfo> = emptyList(),
     val remotePhotos: List<EntradaPhotoInfo> = emptyList(),
     val queuedPhotos: List<EntradaPhotoSyncEntity> = emptyList(),
@@ -141,6 +141,12 @@ class EntradaViewModel @Inject constructor(
         )
     )
     val uiState: StateFlow<EntradaUiState> = _uiState.asStateFlow()
+
+    // Con lo que arrancó la pantalla, o lo último que se guardó: si el formulario ya es otro, hay cambios sin guardar.
+    private var baselineForm: EntradaFormSnapshot = _uiState.value.form
+
+    // El usuario confirmó que descarta lo capturado: al limpiarse el ViewModel no se vuelve a guardar su borrador.
+    private var draftDiscarded = false
 
     private var draftId = UUID.randomUUID().toString()
     private var draftCreatedAt = System.currentTimeMillis()
@@ -266,8 +272,11 @@ class EntradaViewModel @Inject constructor(
         queuedPhotosJob?.cancel()
         draftId = UUID.randomUUID().toString()
         draftCreatedAt = System.currentTimeMillis()
+        draftDiscarded = false
+        val freshForm = emptyForm()
+        baselineForm = freshForm
         _uiState.value = _uiState.value.copy(
-            form = emptyForm(),
+            form = freshForm,
             section = EntradaSection.REFERENCE,
             invalidFields = emptySet(),
             showDraftRecovery = false,
@@ -278,7 +287,7 @@ class EntradaViewModel @Inject constructor(
             gatePhotos = emptyList(),
             scanStatus = EntradaScanStatus.READY,
             scanMessage = "Listo para escanear",
-            entryStartMode = EntradaEntryMode.CHOOSING,
+            entryStartMode = EntradaEntryMode.MANUAL,
             lookupType = null,
             lookupItems = emptyList(),
             printerPicker = null,
@@ -288,15 +297,12 @@ class EntradaViewModel @Inject constructor(
         )
     }
 
-    /** Camino "Capturar manual" de la pantalla de arranque: formulario limpio, sin lanzar cámara. */
-    fun beginManualEntry() {
-        startNewEntry()
-        _uiState.value = _uiState.value.copy(entryStartMode = EntradaEntryMode.MANUAL)
-    }
-
     fun resumeDraft(draft: EntradaDraft) {
         draftId = draft.id
         draftCreatedAt = draft.createdAt
+        draftDiscarded = false
+        // Lo recuperado no se ha guardado: su línea base es una captura vacía, así que salir pregunta.
+        baselineForm = emptyForm()
         _uiState.value = _uiState.value.copy(
             form = draft.form,
             showDraftRecovery = false,
@@ -337,6 +343,24 @@ class EntradaViewModel @Inject constructor(
 
     fun closeDraftRecovery() {
         _uiState.value = _uiState.value.copy(showDraftRecovery = false)
+    }
+
+    /** Hay algo capturado que todavía no se guardó: salir (o empezar otra entrada) debe preguntar antes. */
+    fun hasUnsavedChanges(): Boolean = _uiState.value.form != baselineForm
+
+    /**
+     * El usuario confirmó que descarta lo que llevaba: se borra su borrador (y las fotos locales que aún no se
+     * encolaron) para que el aviso de «capturas sin finalizar» no vuelva a salir por algo que él mismo descartó. Ese
+     * aviso queda solo para cuando la app se cerró sola con la captura a medias, que es cuando el borrador sobrevive.
+     * No pide el permiso de Borrar: es un borrador local suyo, no una entrada del servidor.
+     */
+    fun discardCurrentDraft() {
+        draftJob?.cancel()
+        draftDiscarded = true
+        val form = _uiState.value.form
+        form.localPhotoPaths.forEach { path -> runCatching { File(path).delete() } }
+        form.localDamagePhotoPaths.forEach { path -> runCatching { File(path).delete() } }
+        draftStore.delete(draftId)
     }
 
     fun generateConsecutive() {
@@ -463,6 +487,8 @@ class EntradaViewModel @Inject constructor(
         )
         draftId = UUID.randomUUID().toString()
         draftCreatedAt = System.currentTimeMillis()
+        // Una entrada recién cargada del servidor es la línea base: abrirla y salir no cuenta como cambio.
+        baselineForm = form
         _uiState.value = _uiState.value.copy(
             isBusy = false,
             form = form,
@@ -927,6 +953,8 @@ class EntradaViewModel @Inject constructor(
                 ""
             }
             val saveMessage = response.message.ifBlank { "Recepción guardada correctamente." } + photoMessage
+            // Ya está guardada: salir ahora no debe preguntar nada.
+            baselineForm = savedForm
             _uiState.value = _uiState.value.copy(
                 isBusy = false,
                 form = savedForm,
@@ -1001,12 +1029,17 @@ class EntradaViewModel @Inject constructor(
                     if (queuedEvidence + queuedDamage > 0) {
                         syncScheduler.scheduleEntradaPhotos()
                     }
+                    val updatedSavedForm = updatedForm.copy(
+                        localPhotoPaths = emptyList(),
+                        localDamagePhotoPaths = emptyList()
+                    )
+                    baselineForm = updatedSavedForm
+                    // Guardado: el borrador de esta edición ya no es «pendiente» (antes quedaba y volvía a salir).
+                    draftJob?.cancel()
+                    draftStore.delete(draftId)
                     _uiState.value = _uiState.value.copy(
                         isBusy = false,
-                        form = updatedForm.copy(
-                            localPhotoPaths = emptyList(),
-                            localDamagePhotoPaths = emptyList()
-                        ),
+                        form = updatedSavedForm,
                         message = response.message.ifBlank { "Entrada actualizada correctamente." } +
                             if (queuedEvidence + queuedDamage > 0) {
                                 " Las fotos quedaron en cola para sincronizar."
@@ -1190,7 +1223,11 @@ class EntradaViewModel @Inject constructor(
                 ),
                 invalidFields = emptySet()
             )
-            scheduleDraftSave()
+            // Las fotos ya van en la cola de sincronización: lo que quedaba por guardar quedó guardado, y el borrador
+            // con esas fotos locales ya no es «pendiente» (antes quedaba y volvía a salir).
+            baselineForm = _uiState.value.form
+            draftJob?.cancel()
+            draftStore.delete(draftId)
             observeQueuedPhotos(reference)
             _uiState.value = _uiState.value.copy(
                 isBusy = false,
@@ -1461,7 +1498,9 @@ class EntradaViewModel @Inject constructor(
 
     override fun onCleared() {
         draftJob?.cancel()
-        persistDraft()
+        // Solo se conserva el borrador si hay algo sin guardar y el usuario no lo descartó a propósito. Si la app se
+        // cierra de golpe esto ni siquiera corre, y es justo el borrador que se guardó solo el que se ofrece después.
+        if (!draftDiscarded && hasUnsavedChanges()) persistDraft()
         super.onCleared()
     }
 }

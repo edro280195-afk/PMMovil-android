@@ -123,7 +123,9 @@ import androidx.compose.material.icons.filled.Edit
 @Composable
 fun BodegaListadoScreen(
     onNavigateBack: () -> Unit,
-    onNuevaEntrada: () -> Unit,
+    // El botón «Registrar nueva entrada» abre un modal que pregunta cómo empezar; estos dos son sus caminos.
+    onNuevaEntradaManual: () -> Unit,
+    onNuevaEntradaConQr: () -> Unit,
     onEntradaSeleccionada: (String) -> Unit,
     onNavigateToScanner: () -> Unit = {},
     barcodeScanResult: String? = null,
@@ -138,6 +140,7 @@ fun BodegaListadoScreen(
     var selectedCref by rememberSaveable { mutableStateOf<String?>(null) }
     var showBottomSheet by remember { mutableStateOf(false) }
     var activeDetailItem by remember { mutableStateOf<BodegaEntradaDto?>(null) }
+    var showNuevaEntrada by rememberSaveable { mutableStateOf(false) }
 
     HardwareScannerListener(onBarcodeScanned = viewModel::onScannerInput)
 
@@ -188,7 +191,7 @@ fun BodegaListadoScreen(
                         border = BorderStroke(1.dp, PmmNavyBorder)
                     ) {
                         Button(
-                            onClick = onNuevaEntrada,
+                            onClick = { showNuevaEntrada = true },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .navigationBarsPadding()
@@ -360,7 +363,7 @@ fun BodegaListadoScreen(
                                 .navigationBarsPadding()
                         ) {
                             Button(
-                                onClick = onNuevaEntrada,
+                                onClick = { showNuevaEntrada = true },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 16.dp, vertical = 10.dp)
@@ -403,6 +406,21 @@ fun BodegaListadoScreen(
                 ScanSearchOverlay(query = state.query)
             }
         }
+    }
+
+    // Modal de «Registrar nueva entrada»: elegir cómo empezar sin pasar por una pantalla aparte.
+    if (showNuevaEntrada) {
+        NuevaEntradaSheet(
+            onScan = {
+                showNuevaEntrada = false
+                onNuevaEntradaConQr()
+            },
+            onManual = {
+                showNuevaEntrada = false
+                onNuevaEntradaManual()
+            },
+            onDismiss = { showNuevaEntrada = false }
+        )
     }
 
     // Bottom Sheet para detalle de entrada (móvil y tableta vertical)

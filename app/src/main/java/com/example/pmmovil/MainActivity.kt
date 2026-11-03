@@ -13,6 +13,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -70,6 +71,7 @@ import com.example.pmmovil.data.security.SessionEventBus
 import com.example.pmmovil.data.scanner.HardwareScannerIntents
 import com.example.pmmovil.data.nfc.NfcBadgeManager
 import javax.inject.Inject
+import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
@@ -89,6 +91,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (authRepository.hasActiveSession()) {
+            lifecycleScope.launch { fcmTokenRepository.registerCurrentToken() }
+        }
         // El modo lector pertenece a la actividad completa, no a LoginScreen.
         // De esta forma sigue interceptando etiquetas al navegar a Home y
         // Android nunca recupera el gafete para mostrar su diálogo genérico.
@@ -247,10 +252,6 @@ class MainActivity : AppCompatActivity() {
                     LaunchedEffect(Unit) {
                         if (authRepository.hasActiveSession()) {
                             warehouseHubService.startConnection()
-                            // Cubre a quien ya tenía sesión activa antes de este
-                            // cambio (el registro normal ocurre en el login) --
-                            // idempotente, el backend hace upsert por token.
-                            fcmTokenRepository.registerCurrentToken()
                         }
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                             ContextCompat.checkSelfPermission(
@@ -410,7 +411,8 @@ class MainActivity : AppCompatActivity() {
                                 .collectAsState()
                             com.example.pmmovil.ui.bodega.BodegaListadoScreen(
                                 onNavigateBack = { navController.popBackStack() },
-                                onNuevaEntrada = { navController.navigate("entrada_nueva") },
+                                onNuevaEntradaManual = { navController.navigate("entrada_nueva") },
+                                onNuevaEntradaConQr = { navController.navigate("entrada_nueva?start=scan") },
                                 onEntradaSeleccionada = { cref ->
                                     navController.navigate("entrada_editar/$cref")
                                 },
@@ -427,11 +429,20 @@ class MainActivity : AppCompatActivity() {
                         }
 
                         composable(
-                            "entrada_nueva?barcode={barcode}",
-                            arguments = listOf(optionalBarcodeArgument)
+                            "entrada_nueva?barcode={barcode}&start={start}",
+                            arguments = listOf(
+                                optionalBarcodeArgument,
+                                // start=scan: se eligió «Escanear QR de caseta» en el modal del listado.
+                                navArgument("start") {
+                                    type = NavType.StringType
+                                    nullable = true
+                                    defaultValue = null
+                                }
+                            )
                         ) { backStackEntry ->
                             val barcodeResult by backStackEntry.rememberBarcodeResult()
                             com.example.pmmovil.ui.entrada.EntradaScreen(
+                                startWithScan = backStackEntry.arguments?.getString("start") == "scan",
                                 onNavigateBack = { navController.popBackStack() },
                                 onNavigateToScanner = {
                                     // Perfil QR-only + zoom inicial 1.8x para
