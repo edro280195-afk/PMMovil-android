@@ -164,7 +164,16 @@ class SalidaViewModel @Inject constructor(
     // ── Cargar relación (modo normal) ──────────────────────────────────────────
 
     private fun loadRelacion(raw: String) {
-        val value = raw.trim()
+        val lectura = leerRelacion(raw)
+        val value = when (lectura) {
+            is LecturaDeRelacion.Relacion -> lectura.relno
+            is LecturaDeRelacion.Texto -> lectura.valor
+            is LecturaDeRelacion.Carpeta -> {
+                toast("✗ Ese QR es de la carpeta ${lectura.entrada}. Aquí se escanea la relación (orden de carga o requisición).")
+                _state.update { it.copy(relnoInput = "") }
+                return
+            }
+        }
         if (value.length < 5) return
         if (_state.value.isLoadingRelacion) return
         if (looksLikeCasetaQr(value)) {
@@ -188,7 +197,7 @@ class SalidaViewModel @Inject constructor(
 
         val parts = value.split("-")
         val relno = parts[0]
-        val version = parts.getOrNull(1) ?: "1"
+        val version = (lectura as? LecturaDeRelacion.Relacion)?.version ?: parts.getOrNull(1) ?: VERSION_POR_OMISION
 
         _state.update { it.copy(relnoInput = value, stage = SalidaStage.LOADING, isLoadingRelacion = true, estatusMsg = "") }
         viewModelScope.launch {
@@ -357,7 +366,8 @@ class SalidaViewModel @Inject constructor(
     // ── Cargar sin relación (entrada directa / transbordo) ─────────────────────
 
     private fun loadEntrada(raw: String) {
-        val value = raw.trim()
+        // La carpeta trae la entrada seguida del cliente: se busca solo la entrada.
+        val value = leerEntrada(raw)
         if (value.length < 5) return
         if (_state.value.isLoadingRelacion) return
         if (value.getOrNull(2)?.uppercaseChar() != 'C') {
