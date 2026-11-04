@@ -7,6 +7,7 @@ import com.example.pmmovil.data.model.SalidaEtiqueta
 import com.example.pmmovil.data.model.SalidaRelacion
 import com.example.pmmovil.data.repository.AuthRepository
 import com.example.pmmovil.data.repository.SalidaRepository
+import com.example.pmmovil.data.signalr.WarehouseHubService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -93,7 +94,8 @@ data class SalidaUiState(
 @HiltViewModel
 class SalidaViewModel @Inject constructor(
     private val repository: SalidaRepository,
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val hubService: WarehouseHubService
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SalidaUiState())
@@ -110,6 +112,17 @@ class SalidaViewModel @Inject constructor(
             ?: authRepository.getName()
             ?: ""
         _state.update { it.copy(usuario = usuario) }
+
+        // Un supervisor desbloqueó la relación que este cargador tiene bloqueada: se le avisa en vivo.
+        viewModelScope.launch {
+            hubService.salidaDesbloqueadaFlow.collect { aviso ->
+                val bloqueo = _state.value.bloqueo
+                if (_state.value.stage == SalidaStage.BLOCKED && bloqueo != null && bloqueo.relno == aviso.relno) {
+                    limpiar()
+                    toast("✓ El supervisor desbloqueó la relación ${aviso.relno}. Escanéala de nuevo para continuar.")
+                }
+            }
+        }
     }
 
     // ── Configuración ────────────────────────────────────────────────────────
@@ -281,9 +294,23 @@ class SalidaViewModel @Inject constructor(
         val rel = res.relacion
         val estatusCarga = rel?.estatusCarga?.takeIf(String::isNotBlank) ?: res.estatusCarga.orEmpty()
 
-        if (rel?.estatus != "COMPLETA") {
-            activarCapturaCarga(null, 0)
-            _state.update { it.copy(estatusMsg = rel?.estatus ?: "ESTADO DESCONOCIDO") }
+        if (rel == null) {
+            limpiar()
+            toast("✗ No se pudo leer la relación.")
+            return
+        }
+        val estatusMercancia = rel.estatus
+        if (estatusMercancia != "COMPLETA") {
+            if (estatusMercancia in ESTATUS_QUE_PERMITEN_CAPTURA) {
+                // Igual que el legacy: con diferencia de bultos se puede escanear, y sin etiquetas se puede pedir autorización.
+                activarCapturaCarga(null, 0)
+                _state.update { it.copy(estatusMsg = estatusMercancia) }
+            } else {
+                // Cualquier otro estado ("INFORMACION INCORRECTA…", "EN PROCESO", "ERROR…"): el legacy esconde el escáner
+                // y el servidor ya no dejó la relación tomada. Solo se muestra el motivo.
+                limpiar()
+                toast("✗ ${estatusMercancia.ifBlank { "Estado de la relación desconocido." }}")
+            }
             return
         }
 
@@ -313,7 +340,7 @@ class SalidaViewModel @Inject constructor(
                                 it.copy(
                                     etiquetasDescarga = d.etiquetas,
                                     stage = SalidaStage.DESCARGA,
-                                    message = "⚠ Relación pausada con ${d.etiquetas.size} bulto(s) previos. Re-escanea para continuar."
+                                    message = "⚠ Hay ${d.etiquetas.size} bulto(s) que ya no pertenecen a la relación. Bájalos del camión y escanéalos para continuar."
                                 )
                             }
                         } else {
@@ -364,8 +391,9 @@ class SalidaViewModel @Inject constructor(
                     val rel = res.relacion
                     when {
                         rel?.estatus != "COMPLETA" -> {
-                            activarCapturaCarga(null, 0)
-                            _state.update { it.copy(estatusMsg = rel?.estatus ?: "NO DISPONIBLE") }
+                            // El legacy esconde el escáner de «sin relación» cuando la entrada no está lista.
+                            limpiar()
+                            toast("✗ ${rel?.estatus?.ifBlank { null } ?: "La entrada no está disponible."}")
                         }
                         rel.estatusCarga == "BLOQUEO" ->
                             activarBloqueo(rel, "Escaneo rápido detectado. Contacta al supervisor.", 0)
@@ -605,6 +633,12 @@ class SalidaViewModel @Inject constructor(
 
     fun attemptFinalize() {
         val rel = _state.value.relacion ?: return
+        val sinRelacion = _state.value.mode == SalidaMode.SIN_RELACION
+        if (_state.value.pendientes > 0 && sinRelacion) {
+            // Una entrada directa/transbordo no tiene supervisor que autorice: hay que escanear todo (legacy).
+            toast("⚠ Faltan ${_state.value.pendientes} bulto(s) por escanear.")
+            return
+        }
         if (_state.value.pendientes > 0) {
             _state.update {
                 it.copy(
@@ -636,7 +670,9 @@ class SalidaViewModel @Inject constructor(
 
         _state.update { it.copy(isProcessingAction = true) }
         viewModelScope.launch {
-            repository.finalizar(rel.relno)
+            // La entrada de «sin relación» no es una relación: tiene su propio cierre en el servidor.
+            val resultado = if (sinRelacion) repository.finalizarSinRelacion(rel.relno) else repository.finalizar(rel.relno)
+            resultado
                 .onSuccess { res ->
                     _state.update { it.copy(isProcessingAction = false) }
                     if (res.success) {
@@ -762,7 +798,8 @@ class SalidaViewModel @Inject constructor(
         val rel = _state.value.relacion ?: return
         _state.update { it.copy(isProcessingAction = true) }
         viewModelScope.launch {
-            repository.cancelar(rel.relno)
+            // Si la relación llegó pausada (EN ESPERA) se le devuelve ese estado, como hacía el legacy al cancelar.
+            repository.cancelar(rel.relno, rel.estatusCarga.takeIf { it == "EN ESPERA" })
                 .onSuccess {
                     _state.update { it.copy(isProcessingAction = false, message = "Operación cancelada.") }
                     limpiar()
@@ -874,6 +911,11 @@ class SalidaViewModel @Inject constructor(
 
     private fun networkMessage(error: Throwable, fallback: String): String =
         if (error is IOException) "✗ Sin conexión con el servidor." else "✗ ${error.message ?: fallback}"
+
+    private companion object {
+        /** Estados de mercancía con los que el legacy deja trabajar al cargador además de COMPLETA. */
+        val ESTATUS_QUE_PERMITEN_CAPTURA = setOf("DIFERENCIA EN BULTOS-ETIQUETAS", "NO DISP ETIQUETAS EN MCIA")
+    }
 
     override fun onCleared() {
         flashJob?.cancel()

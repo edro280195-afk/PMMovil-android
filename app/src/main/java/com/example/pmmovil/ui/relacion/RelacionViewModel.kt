@@ -11,6 +11,7 @@ import com.example.pmmovil.data.repository.AuthRepository
 import com.example.pmmovil.data.repository.RelacionRepository
 import com.example.pmmovil.data.scanner.OfficialQrParser
 import com.example.pmmovil.data.scanner.PendingCode
+import com.example.pmmovil.data.signalr.WarehouseHubService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -52,6 +53,7 @@ data class RelacionUiState(
 class RelacionViewModel @Inject constructor(
     private val repository: RelacionRepository,
     private val authRepository: AuthRepository,
+    private val hubService: WarehouseHubService,
     @ApplicationContext context: Context
 ) : ViewModel() {
     private val preferences = context.getSharedPreferences("PMMovilRelation", Context.MODE_PRIVATE)
@@ -67,6 +69,32 @@ class RelacionViewModel @Inject constructor(
 
     init {
         loadPending()
+        observeSalidaEvents()
+    }
+
+    /** Avisos en vivo de la carga: una relación se bloqueó o un supervisor la desbloqueó. Se refresca la lista. */
+    private fun observeSalidaEvents() {
+        viewModelScope.launch {
+            hubService.salidaBloqueadaFlow.collect { aviso ->
+                val caja = if (aviso.caja.isNotBlank()) " (caja ${aviso.caja})" else ""
+                _uiState.update {
+                    it.copy(
+                        message = "⚠ ${aviso.relno} bloqueada$caja: ${aviso.motivo}",
+                        feedbackSeq = it.feedbackSeq + 1
+                    )
+                }
+                if (_uiState.value.tab == RelacionTab.AUTHORIZATION && _uiState.value.detail == null) {
+                    loadPending(_uiState.value.query)
+                }
+            }
+        }
+        viewModelScope.launch {
+            hubService.salidaDesbloqueadaFlow.collect {
+                if (_uiState.value.tab == RelacionTab.AUTHORIZATION && _uiState.value.detail == null) {
+                    loadPending(_uiState.value.query)
+                }
+            }
+        }
     }
 
     fun canModify(): Boolean = authRepository.hasPermission(167, "Modificar")

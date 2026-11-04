@@ -124,8 +124,13 @@ class SalidaRepository @Inject constructor(private val api: PMMovilApi) {
     suspend fun pausar(relno: String): Result<SalidaOperacionResponse> =
         operacion("No se pudo pausar la operación.") { api.pausarSalida(relno) }
 
-    suspend fun cancelar(relno: String): Result<SalidaOperacionResponse> =
-        operacion("No se pudo cancelar la operación.") { api.cancelarSalida(relno) }
+    /** [restaurar]: estado con el que llegó la relación ("EN ESPERA" si venía pausada) para no perder la pausa al cancelar. */
+    suspend fun cancelar(relno: String, restaurar: String? = null): Result<SalidaOperacionResponse> =
+        operacion("No se pudo cancelar la operación.") { api.cancelarSalida(relno, restaurar?.takeIf(String::isNotBlank)) }
+
+    /** Cierra una carga sin relación (entrada directa/transbordo): la entrada no es una relación, tiene su propio cierre. */
+    suspend fun finalizarSinRelacion(entrada: String): Result<SalidaOperacionResponse> =
+        operacion("No se pudo finalizar la carga.") { api.finalizarSinRelacionSalida(entrada) }
 
     suspend fun solicitarAutorizacion(relno: String): Result<SalidaOperacionResponse> =
         operacion("No se pudo solicitar la autorización.") { api.solicitarAutorizacionSalida(relno) }

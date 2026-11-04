@@ -74,6 +74,12 @@ class WarehouseHubService @Inject constructor(
     private val _cierreForzosoFlow = MutableSharedFlow<CierreForzosoMessage>(extraBufferCapacity = EVENT_BUFFER_CAPACITY)
     val cierreForzosoFlow = _cierreForzosoFlow.asSharedFlow()
 
+    private val _salidaBloqueadaFlow = MutableSharedFlow<SalidaBloqueoMessage>(extraBufferCapacity = EVENT_BUFFER_CAPACITY)
+    val salidaBloqueadaFlow = _salidaBloqueadaFlow.asSharedFlow()
+
+    private val _salidaDesbloqueadaFlow = MutableSharedFlow<SalidaDesbloqueoMessage>(extraBufferCapacity = EVENT_BUFFER_CAPACITY)
+    val salidaDesbloqueadaFlow = _salidaDesbloqueadaFlow.asSharedFlow()
+
     private val _preregistroCreadoFlow = MutableSharedFlow<PreregistroCreadoMessage>(extraBufferCapacity = EVENT_BUFFER_CAPACITY)
     val preregistroCreadoFlow = _preregistroCreadoFlow.asSharedFlow()
 
@@ -155,9 +161,11 @@ class WarehouseHubService @Inject constructor(
                             // no cubre un argumento que el cliente nunca mando, asi que
                             // mandar solo el usuario hacia fallar la invocacion.
                             //
-                            // false porque el grupo de bloqueos es para el panel de
-                            // supervisores; el movil no lo escucha.
-                            sendNow(connectionToStart, "UnirseASesion", user, false)
+                            // recibeBloqueos: los supervisores de relaciones (modulo 167)
+                            // reciben el aviso en vivo de las cargas bloqueadas; el cargador
+                            // recibe el de su propio desbloqueo por el grupo USER_.
+                            val recibeBloqueos = authRepository.hasPermission(167, "Lectura")
+                            sendNow(connectionToStart, "UnirseASesion", user, recibeBloqueos)
                         }.onFailure {
                             // Igual que las otras dos suscripciones: no poder unirse a
                             // un grupo NO es un fallo de conexion. Sin este runCatching
@@ -219,6 +227,14 @@ class WarehouseHubService @Inject constructor(
             on("onDesbloqueoRechazado", { msg: DesbloqueoMessage ->
                 _desbloqueoRechazadoFlow.tryEmit(msg)
             }, DesbloqueoMessage::class.java)
+
+            on("onSalidaBloqueada", { msg: SalidaBloqueoMessage ->
+                _salidaBloqueadaFlow.tryEmit(msg)
+            }, SalidaBloqueoMessage::class.java)
+
+            on("onSalidaDesbloqueada", { msg: SalidaDesbloqueoMessage ->
+                _salidaDesbloqueadaFlow.tryEmit(msg)
+            }, SalidaDesbloqueoMessage::class.java)
 
             on("onRevisionAsignada", { msg: AsignacionMessage ->
                 _nuevaAsignacionFlow.tryEmit(msg)

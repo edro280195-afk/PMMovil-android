@@ -1147,15 +1147,29 @@ private fun RelationField(label: String, value: String, modifier: Modifier = Mod
 @Composable
 private fun RelationLabelRow(label: SalidaEtiqueta) {
     val blocked = RelacionRules.isBlocked(label)
+    // Etiqueta reimpresa: en el legacy la fila sale naranja para que el supervisor la revise antes de desbloquear.
+    val reprinted = !blocked && label.reimpresa
     val color = when {
         blocked -> PmmRed
+        reprinted -> PmmAmber
         label.escaneado -> PmmGreen
         else -> PmmTextMuted
     }
     Surface(
-        color = if (blocked) PmmRed.copy(alpha = 0.06f) else PmmBgSurface,
+        color = when {
+            blocked -> PmmRed.copy(alpha = 0.06f)
+            reprinted -> PmmAmber.copy(alpha = 0.08f)
+            else -> PmmBgSurface
+        },
         shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.5.dp, if (blocked) PmmRed.copy(alpha = 0.45f) else PmmNavyBorder)
+        border = BorderStroke(
+            1.5.dp,
+            when {
+                blocked -> PmmRed.copy(alpha = 0.45f)
+                reprinted -> PmmAmber.copy(alpha = 0.55f)
+                else -> PmmNavyBorder
+            }
+        )
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
@@ -1204,6 +1218,7 @@ private fun RelationLabelRow(label: SalidaEtiqueta) {
             RelationStatusBadge(
                 when {
                     blocked -> "BLOQUEO"
+                    reprinted -> "REIMPRESA"
                     label.estatus.isNotBlank() -> label.estatus
                     label.escaneado -> "CARGADO"
                     else -> "PENDIENTE"

@@ -21,7 +21,9 @@ data class SalidaEtiqueta(
     val usucarga: String? = null,
     val timeScan: String? = null,
     val manejo: String? = null,
-    val historial: String? = null
+    val historial: String? = null,
+    /** La etiqueta es una reimpresión: al escanearla la relación se bloquea hasta que un supervisor la libere. */
+    val reimpresa: Boolean = false
 )
 
 data class SalidaRelacion(

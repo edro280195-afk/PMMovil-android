@@ -395,7 +395,10 @@ interface PMMovilApi {
     suspend fun pausarSalida(@Path("relno") relno: String): Response<SalidaOperacionResponse>
 
     @POST("Salida/{relno}/cancelar")
-    suspend fun cancelarSalida(@Path("relno") relno: String): Response<SalidaOperacionResponse>
+    suspend fun cancelarSalida(
+        @Path("relno") relno: String,
+        @Query("restaurar") restaurar: String? = null
+    ): Response<SalidaOperacionResponse>
 
     @POST("Salida/{relno}/solicitar-autorizacion")
     suspend fun solicitarAutorizacionSalida(
@@ -421,6 +424,11 @@ interface PMMovilApi {
     suspend fun scanSinRelacionSalida(
         @Body request: SalidaSinRelacionScanRequest
     ): Response<SalidaScanResponse>
+
+    @POST("Salida/sin-relacion/{entrada}/finalizar")
+    suspend fun finalizarSinRelacionSalida(
+        @Path("entrada") entrada: String
+    ): Response<SalidaOperacionResponse>
 
     // ── Catálogos maestros ────────────────────────────────────────────────────
     @GET("Catalogos/versiones")

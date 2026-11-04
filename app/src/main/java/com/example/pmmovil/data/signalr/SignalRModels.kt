@@ -112,3 +112,20 @@ data class PreregistroAlertaMessage(
     val tipo: String = "",
     val folio: String = ""
 )
+
+/** Aviso en vivo de que una relación quedó bloqueada durante la carga (escaneo rápido o etiqueta reimpresa). */
+data class SalidaBloqueoMessage(
+    val relno: String = "",
+    val caja: String = "",
+    val usuario: String = "",
+    val cliente: String = "",
+    val motivo: String = "",
+    val etiquetasBloqueadas: Int = 0
+)
+
+/** Aviso en vivo de que un supervisor desbloqueó una relación. */
+data class SalidaDesbloqueoMessage(
+    val relno: String = "",
+    val supervisor: String = "",
+    val usuarioCarga: String = ""
+)
