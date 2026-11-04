@@ -72,10 +72,10 @@ android {
         .orElse("false")
         .get()
         .toBoolean()
-    // Inicio nuevo (visor de escaneo universal + Tablero). Apagado hasta verificarlo en aparato; se prueba
-    // con -PpmmNewHome=true sin tocar el código.
+    // Inicio nuevo (visor de escaneo universal + Tablero de La Línea). Es el inicio por defecto desde la 1.1.10;
+    // para volver al Bento de módulos clásico se compila con -PpmmNewHome=false sin tocar el código.
     val newHomeEnabled = providers.gradleProperty("pmmNewHome")
-        .orElse("false")
+        .orElse("true")
         .get()
         .toBoolean()
 
@@ -91,8 +91,8 @@ android {
         applicationId = "com.example.pmmovil"
         minSdk = 28
         targetSdk = 36
-        versionCode = 20
-        versionName = "1.1.9"
+        versionCode = 21
+        versionName = "1.1.10"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders["sentryDsn"] = sentryDsnValue
