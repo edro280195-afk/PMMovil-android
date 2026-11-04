@@ -42,6 +42,17 @@ class RelacionRulesTest {
     }
 
     @Test
+    fun `no permite autorizar una relacion que ya salio ni una con los totales ilegibles`() {
+        val salida = readyRelation(estatusCarga = "SALIDA")
+        assertFalse(RelacionRules.canAuthorize(salida, "supervisor01"))
+        assertEquals("YA SALIÓ", RelacionRules.statusLabel(salida, "supervisor01"))
+
+        // El estado del legacy trae la palabra ERROR, que la app ya bloquea.
+        val sinTotales = readyRelation().copy(estatus = "ERROR EN INFORMACION (revisar si esta agrupado)")
+        assertFalse(RelacionRules.canAuthorize(sinTotales, "supervisor01"))
+    }
+
+    @Test
     fun `detecta un bloqueo posterior a un desbloqueo`() {
         val label = SalidaEtiqueta(historial = "BLOQUEO, DESBLOQUEO, BLOQUEO")
 

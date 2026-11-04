@@ -15,7 +15,9 @@ object RelacionRules {
             loadStatus != "EN ESPERA" &&
             loadStatus != "CARGANDO" &&
             !(loadStatus.isBlank() && relation.usucargaMcia != "NO REQUERIDO") &&
-            !loadStatus.contains("BLOQUEO")
+            !loadStatus.contains("BLOQUEO") &&
+            // La búsqueda del supervisor ya encuentra relaciones de cualquier estado: una que ya salió no se autoriza.
+            loadStatus != "SALIDA"
     }
 
     fun statusLabel(relation: SalidaRelacion?, currentUser: String): String {
@@ -30,6 +32,7 @@ object RelacionRules {
             loadStatus == "EN ESPERA" || loadStatus == "CARGANDO" -> relation.estatusCarga
             loadStatus.isBlank() && relation.usucargaMcia != "NO REQUERIDO" -> "NO HA SIDO CARGADA"
             loadStatus.contains("BLOQUEO") -> "BLOQUEADA"
+            loadStatus == "SALIDA" -> "YA SALIÓ"
             else -> relation.estatusCarga.ifBlank { relation.estatus }
         }
     }
