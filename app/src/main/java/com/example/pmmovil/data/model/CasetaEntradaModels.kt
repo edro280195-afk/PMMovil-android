@@ -118,6 +118,11 @@ data class CasetaEntradaGuardarRequest(
     val fotos: List<String> = emptyList(),
     /** Cuando es true, el API guarda primero la entrada y el correo se envía al terminar la cola de fotos. */
     val diferirCorreo: Boolean = false,
+    /**
+     * Posiciones de las fotos nuevas que se subiran despues de guardar (con [diferirCorreo]). El servidor avisa solo
+     * cuando llegan todas y, si la sincronizacion se queda a medias, manda el aviso por su cuenta a los pocos minutos.
+     */
+    val indicesFotosEsperadas: List<Int> = emptyList(),
     val requiereImpo: Boolean = false,
     val casetaid: String = "",
     val idcaseta: String = "",

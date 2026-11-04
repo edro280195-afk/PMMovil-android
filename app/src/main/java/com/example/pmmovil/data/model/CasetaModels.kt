@@ -23,7 +23,19 @@ data class CasetaDetalleResponse(
 data class ConfirmarSalidaCasetaRequest(
     val usuario: String,
     val observaciones: String = "",
-    val fotosBase64: List<String>? = null
+    val fotosBase64: List<String>? = null,
+    /**
+     * Cuántas fotos ya se subieron por lotes ([SubirFotosSalidaCasetaRequest]). Con valor, [fotosBase64] va vacío y el
+     * servidor solo comprueba que estén todas. Nulo = envío único de siempre (servidor sin el endpoint de lotes).
+     */
+    val totalFotos: Int? = null
+)
+
+/** Un lote de fotos de la salida: pocas por envío para que una red lenta no deje la salida colgada. */
+data class SubirFotosSalidaCasetaRequest(
+    /** Posición (desde 1) de la primera foto del lote dentro de las fotos de la salida. */
+    val indiceInicial: Int,
+    val fotosBase64: List<String>
 )
 
 data class ConfirmarSalidaCasetaResponse(

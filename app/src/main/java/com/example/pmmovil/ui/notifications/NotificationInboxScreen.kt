@@ -93,6 +93,7 @@ fun NotificationInboxScreen(
     viewModel: NotificationInboxViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsState()
+    LaunchedEffect(Unit) { viewModel.refresh() }
     var selectedNotificationId by rememberSaveable { mutableStateOf<Long?>(null) }
     var isOpeningRevision by remember { mutableStateOf(false) }
     val selectedNotification = state.items.firstOrNull { it.id == selectedNotificationId }

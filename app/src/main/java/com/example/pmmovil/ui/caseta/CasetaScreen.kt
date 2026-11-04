@@ -5,6 +5,7 @@ import android.media.ToneGenerator
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -66,6 +67,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -75,6 +77,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
@@ -86,6 +89,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.example.pmmovil.data.model.CasetaDetalle
@@ -264,13 +268,53 @@ fun CasetaScreen(
                 }
 
                 if (state.isProcessing) {
+                    // Segundos desde que arranco: un spinner sin numeros parecia congelado aunque estuviera trabajando.
+                    val segundos by produceState(0, Unit) {
+                        while (true) {
+                            delay(1_000)
+                            value += 1
+                        }
+                    }
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(Color.White.copy(alpha = 0.62f)),
+                            .background(Color.White.copy(alpha = 0.82f))
+                            .pointerInput(Unit) { detectTapGestures { } },
                         contentAlignment = Alignment.Center
                     ) {
-                        CircularProgressIndicator(color = PmmBlueDeep)
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .widthIn(max = 360.dp)
+                                .padding(horizontal = 24.dp)
+                        ) {
+                            CircularProgressIndicator(color = PmmBlueDeep)
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                text = state.progresoEnvio ?: "Registrando la salida…",
+                                color = PmmTextPrimary,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 16.sp,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = "Transcurrido %d:%02d".format(segundos / 60, segundos % 60),
+                                color = PmmTextSecondary,
+                                fontSize = 13.sp
+                            )
+                            Spacer(Modifier.height(10.dp))
+                            Text(
+                                text = "No cierres la app: tus fotos siguen guardadas en la tableta.",
+                                color = PmmTextSecondary,
+                                fontSize = 12.sp,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(Modifier.height(18.dp))
+                            OutlinedButton(onClick = viewModel::cancelarConfirmacion) {
+                                Text("Cancelar envío")
+                            }
+                        }
                     }
                 }
             }

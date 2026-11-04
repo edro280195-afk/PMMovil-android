@@ -65,6 +65,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
@@ -232,7 +235,8 @@ fun SalidaCasetaScreen(
             onQuitarFoto = viewModel::removePhoto,
             onConfirmar = viewModel::requestConfirm,
             onDismissConfirm = viewModel::dismissConfirm,
-            onConfirm = viewModel::confirm
+            onConfirm = viewModel::confirm,
+            onCancelarEnvio = viewModel::cancelarConfirmacion
         )
     )
 }
@@ -252,7 +256,8 @@ internal class SalidaAcciones(
     val onQuitarFoto: (String) -> Unit,
     val onConfirmar: () -> Unit,
     val onDismissConfirm: () -> Unit,
-    val onConfirm: () -> Unit
+    val onConfirm: () -> Unit,
+    val onCancelarEnvio: () -> Unit = {}
 )
 
 @OptIn(ExperimentalAnimationApi::class)
@@ -364,14 +369,53 @@ internal fun SalidaCasetaContenido(
             }
 
             if (state.isProcessing) {
+                // Segundos desde que arrancó: un spinner sin números parecía congelado aunque estuviera trabajando.
+                val segundos by produceState(0, Unit) {
+                    while (true) {
+                        delay(1_000)
+                        value += 1
+                    }
+                }
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color.White.copy(alpha = 0.62f))
+                        .background(Color.White.copy(alpha = 0.82f))
                         .pointerInput(Unit) { detectTapGestures { } },
                     contentAlignment = Alignment.Center
                 ) {
-                    CircularProgressIndicator(color = PmmBlueDeep)
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .widthIn(max = 360.dp)
+                            .padding(horizontal = 24.dp)
+                    ) {
+                        CircularProgressIndicator(color = PmmBlueDeep)
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            text = state.progresoEnvio ?: "Registrando la salida…",
+                            color = PmmTextPrimary,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 16.sp,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Transcurrido %d:%02d".format(segundos / 60, segundos % 60),
+                            color = PmmTextSecondary,
+                            fontSize = 13.sp
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            text = "No cierres la app: tus fotos siguen guardadas en la tableta.",
+                            color = PmmTextSecondary,
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(Modifier.height(18.dp))
+                        OutlinedButton(onClick = acciones.onCancelarEnvio) {
+                            Text("Cancelar envío")
+                        }
+                    }
                 }
             }
         }

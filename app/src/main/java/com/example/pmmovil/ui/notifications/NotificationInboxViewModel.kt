@@ -29,12 +29,8 @@ class NotificationInboxViewModel @Inject constructor(
     private val _state = MutableStateFlow(NotificationInboxUiState())
     val state: StateFlow<NotificationInboxUiState> = _state.asStateFlow()
 
-    init {
-        load()
-    }
-
     fun refresh() {
-        load(isRefresh = true)
+        load(isRefresh = _state.value.items.isNotEmpty())
     }
 
     fun markRead(id: Long) {

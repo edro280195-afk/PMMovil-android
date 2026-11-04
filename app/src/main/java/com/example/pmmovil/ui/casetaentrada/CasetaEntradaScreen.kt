@@ -24,7 +24,15 @@ import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -3552,9 +3560,9 @@ private fun EquipmentSection(
             Spacer(Modifier.height(10.dp))
         }
         LookupSearchField(
-            title = "Linea camion",
+            title = "Línea de camión *",
             selectedLabel = state.form.truckLineLabel,
-            placeholder = "Buscar linea camion",
+            placeholder = "Buscar línea de camión",
             type = CasetaEntradaLookupType.TruckLine,
             results = state.truckLineResults,
             frequentItems = state.frequentTruckLines,
@@ -3591,6 +3599,7 @@ private fun EquipmentSection(
                     onValueChange = { viewModel.updateText("truckNumber", it) },
                     enabled = enabled,
                     label = { Text("No camion") },
+                    resaltado = true,
                     singleLine = true,
                     pending = "truckNumber" in state.pendingTruckFields,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
@@ -3608,6 +3617,7 @@ private fun EquipmentSection(
                     onValueChange = { viewModel.updateText("operatorName", it) },
                     enabled = enabled,
                     label = { Text("Operador") },
+                    resaltado = true,
                     singleLine = true,
                     pending = "operatorName" in state.pendingTruckFields,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
@@ -3625,6 +3635,7 @@ private fun EquipmentSection(
                     onValueChange = { viewModel.updateText("seals", it) },
                     enabled = enabled,
                     label = { Text("Sellos") },
+                    resaltado = true,
                     singleLine = true,
                     pending = "seals" in state.pendingTruckFields,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
@@ -3643,6 +3654,7 @@ private fun EquipmentSection(
                     enabled = enabled,
                     label = { Text("Placas") },
                     placeholder = { Text("OCR o captura manual") },
+                    resaltado = true,
                     singleLine = true,
                     isError = state.fieldErrors.containsKey("plates"),
                     supportingText = errorText(state.fieldErrors["plates"]),
@@ -5418,8 +5430,28 @@ private fun CasetaTextField(
     maxLines: Int = Int.MAX_VALUE,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
+    /** Marco grueso para los campos que el guardia no debe pasar por alto (No camion, Operador, Sellos, Placas). */
+    resaltado: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    if (resaltado) {
+        CasetaTextFieldResaltado(
+            value = value,
+            onValueChange = onValueChange,
+            enabled = enabled,
+            label = label,
+            placeholder = placeholder,
+            singleLine = singleLine,
+            isError = isError,
+            pending = pending,
+            supportingText = supportingText,
+            keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
+            modifier = modifier
+        )
+        return
+    }
+
     // El error manda sobre el pendiente: si el campo esta mal, no lo pintamos de ambar.
     val pendingActive = pending && !isError
     val container = pendingPulseColor(pendingActive)
@@ -5451,6 +5483,91 @@ private fun CasetaTextField(
             errorBorderColor = Color.Transparent
         ),
         modifier = modifier
+    )
+}
+
+/**
+ * [CasetaTextField] con un marco grueso: azul institucional de 2 dp y de 3 dp al enfocarlo, ambar si falta capturarlo y
+ * rojo si tiene error. El OutlinedTextField de Material no deja cambiar el grosor del borde, asi que se arma con
+ * BasicTextField y la caja decorativa de Material (misma etiqueta flotante, mismo texto de apoyo).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CasetaTextFieldResaltado(
+    value: String,
+    onValueChange: (String) -> Unit,
+    enabled: Boolean,
+    label: @Composable (() -> Unit)?,
+    placeholder: @Composable (() -> Unit)?,
+    singleLine: Boolean,
+    isError: Boolean,
+    pending: Boolean,
+    supportingText: @Composable (() -> Unit)?,
+    keyboardOptions: KeyboardOptions,
+    keyboardActions: KeyboardActions,
+    modifier: Modifier
+) {
+    val pendingActive = pending && !isError
+    val container = pendingPulseColor(pendingActive)
+    val interactionSource = remember { MutableInteractionSource() }
+    val focused by interactionSource.collectIsFocusedAsState()
+    val colors = OutlinedTextFieldDefaults.colors(
+        focusedContainerColor = container,
+        unfocusedContainerColor = container,
+        disabledContainerColor = Color(0xFFF8FAFC),
+        errorContainerColor = Color(0xFFFFF7ED),
+        focusedBorderColor = if (pendingActive) PmmAmber else PmmBlueDeep,
+        unfocusedBorderColor = if (pendingActive) PmmAmber else PmmNavyDark,
+        disabledBorderColor = Color(0xFFCBD5E1),
+        errorBorderColor = PmmRed
+    )
+    val textColor = when {
+        !enabled -> colors.disabledTextColor
+        isError -> colors.errorTextColor
+        focused -> colors.focusedTextColor
+        else -> colors.unfocusedTextColor
+    }
+
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        // Los 8 dp de arriba son el hueco que Material le deja a la etiqueta cuando flota sobre el marco.
+        modifier = modifier
+            .then(if (label != null) Modifier.padding(top = 8.dp) else Modifier)
+            .defaultMinSize(minWidth = OutlinedTextFieldDefaults.MinWidth, minHeight = OutlinedTextFieldDefaults.MinHeight),
+        enabled = enabled,
+        textStyle = LocalTextStyle.current.merge(TextStyle(color = textColor)),
+        cursorBrush = SolidColor(if (isError) colors.errorCursorColor else colors.cursorColor),
+        keyboardOptions = keyboardOptions,
+        keyboardActions = keyboardActions,
+        interactionSource = interactionSource,
+        singleLine = singleLine,
+        decorationBox = { innerTextField ->
+            OutlinedTextFieldDefaults.DecorationBox(
+                value = value,
+                innerTextField = innerTextField,
+                enabled = enabled,
+                singleLine = singleLine,
+                visualTransformation = VisualTransformation.None,
+                interactionSource = interactionSource,
+                isError = isError,
+                label = label,
+                placeholder = placeholder,
+                supportingText = supportingText ?: pendingHint(pendingActive),
+                colors = colors,
+                container = {
+                    OutlinedTextFieldDefaults.Container(
+                        enabled = enabled,
+                        isError = isError,
+                        interactionSource = interactionSource,
+                        colors = colors,
+                        shape = RoundedCornerShape(14.dp),
+                        focusedBorderThickness = 3.dp,
+                        unfocusedBorderThickness = 2.dp
+                    )
+                }
+            )
+        }
     )
 }
 

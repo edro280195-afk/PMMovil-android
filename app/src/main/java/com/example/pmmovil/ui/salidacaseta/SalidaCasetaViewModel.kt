@@ -1,7 +1,10 @@
 package com.example.pmmovil.ui.salidacaseta
 
+import android.content.SharedPreferences
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.pmmovil.data.camera.PhotoEncodingRules
 import com.example.pmmovil.data.camera.PhotoPipeline
 import com.example.pmmovil.data.model.MobileModuleIds
 import com.example.pmmovil.data.model.SalidaCarril
@@ -18,9 +21,11 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
@@ -59,6 +64,8 @@ data class SalidaUiState(
     val relBorrar: Boolean = false,
     val manualModificar: Boolean = false,
     val actualizado: String = "",
+    /** Qué está haciendo la app mientras [isProcessing] ("Enviando fotos: 3 de 8"): el guardia nunca ve un spinner mudo. */
+    val progresoEnvio: String? = null,
     val message: String? = null,
     val feedbackSeq: Int = 0
 ) {
@@ -117,7 +124,8 @@ private fun SalidaPatioItem.urgencia(): Long = when (carrilEnum) {
 class SalidaCasetaViewModel @Inject constructor(
     private val repository: SalidaCasetaRepository,
     private val casetaRepository: CasetaRepository,
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val prefs: SharedPreferences
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -140,6 +148,20 @@ class SalidaCasetaViewModel @Inject constructor(
     private val pendingEncodedPhotos = mutableMapOf<String, Deferred<String?>>()
 
     private val pendingCode = PendingCode()
+
+    /** La confirmación en curso: se puede cancelar sin perder las fotos. */
+    private var confirmacionJob: Job? = null
+
+    /** Manda las fotos al servidor por lotes y recuerda cuáles ya llegaron, para que un reintento no las repita. */
+    private val envioFotos = SalidaFotosEnvio(casetaRepository, TAG)
+
+    /**
+     * Fotos que el guardia ya había tomado antes de salir de la pantalla o de que la app se reiniciara; se devuelven a
+     * su relación con la primera lectura del patio (ver [SalidaFotosBorrador]).
+     */
+    private var fotosGuardadas: Map<String, List<String>> = SalidaFotosBorrador.leer(
+        prefs.getString(CLAVE_FOTOS_BORRADOR, null)
+    ) { File(it).exists() }
 
     init {
         if (_uiState.value.tieneAcceso) refresh() else _uiState.update { it.copy(isLoading = false) }
@@ -177,6 +199,17 @@ class SalidaCasetaViewModel @Inject constructor(
     }
 
     private fun aplicarPatio(nuevos: List<SalidaPatioItem>, hoy: SalidaPatioHoy) {
+        // Con la primera lectura del patio: las fotos respaldadas de una relación que ya no está (otro guardia le dio
+        // salida) se borran, y las demás se devuelven a su relación dentro de la actualización de abajo. Va fuera de
+        // `update` porque esa lambda puede repetirse y esto debe pasar una sola vez.
+        val porRestaurar = fotosGuardadas
+        fotosGuardadas = emptyMap()
+        val idsVigentes = nuevos.map { it.id }.toSet()
+        porRestaurar
+            .filterKeys { it !in idsVigentes }
+            .values.flatten()
+            .forEach { runCatching { File(it).delete() } }
+
         _uiState.update { actual ->
             val vigentes = nuevos.map { it.id }.toSet()
             val anterior = actual.selected
@@ -196,6 +229,10 @@ class SalidaCasetaViewModel @Inject constructor(
             val descartados = actual.fotos.keys.filter { it !in vigentes }
             descartados.forEach { id -> actual.fotos[id].orEmpty().forEach(::descartarFoto) }
 
+            // Las fotos respaldadas de una sesión anterior vuelven a su relación (ver porRestaurar).
+            val restauradas = porRestaurar
+                .filter { (id, _) -> id in vigentes && actual.fotos[id].isNullOrEmpty() }
+
             actual.copy(
                 items = nuevos,
                 hoy = hoy,
@@ -205,11 +242,17 @@ class SalidaCasetaViewModel @Inject constructor(
                 selectedId = nuevoSeleccionado?.id,
                 confirmVisible = if (nuevoSeleccionado == null || aviso != null) false else actual.confirmVisible,
                 observaciones = actual.observaciones.filterKeys { it in vigentes },
-                fotos = actual.fotos.filterKeys { it in vigentes },
+                fotos = actual.fotos.filterKeys { it in vigentes } + restauradas,
                 message = aviso ?: actual.message,
                 feedbackSeq = if (aviso != null) actual.feedbackSeq + 1 else actual.feedbackSeq
             )
         }
+        guardarFotosBorrador()
+    }
+
+    /** Deja en la tableta qué fotos lleva cada relación, para recuperarlas si el guardia sale o la app se reinicia. */
+    private fun guardarFotosBorrador() {
+        prefs.edit().putString(CLAVE_FOTOS_BORRADOR, SalidaFotosBorrador.serializar(_uiState.value.fotos)).apply()
     }
 
     private fun tituloCorto(item: SalidaPatioItem): String =
@@ -298,6 +341,7 @@ class SalidaCasetaViewModel @Inject constructor(
             return
         }
         _uiState.update { it.copy(fotos = it.fotos + (item.id to it.fotosDeId(item.id) + path)) }
+        guardarFotosBorrador()
         // Arranca la compresión ya, en paralelo a que se sigan tomando fotos.
         pendingEncodedPhotos[path] = photoEncodingScope.async { PhotoPipeline.aBase64(path) }
     }
@@ -317,20 +361,29 @@ class SalidaCasetaViewModel @Inject constructor(
         _uiState.update { it.copy(fotos = it.fotos + (item.id to it.fotosDeId(item.id) - path)) }
         pendingEncodedPhotos.remove(path)?.cancel()
         descartarFoto(path)
+        guardarFotosBorrador()
     }
 
     private fun SalidaUiState.fotosDeId(id: String): List<String> = fotos[id].orEmpty()
 
     private fun descartarFoto(path: String) {
         pendingEncodedPhotos.remove(path)?.cancel()
+        envioFotos.olvidar(path)
         runCatching { File(path).delete() }
     }
 
     private suspend fun codificarFotos(paths: List<String>): List<String> =
         withContext(Dispatchers.Default) {
-            paths.mapNotNull { path ->
-                pendingEncodedPhotos.getOrPut(path) { photoEncodingScope.async { PhotoPipeline.aBase64(path) } }.await()
+            val encoded = paths.map { path ->
+                val photo = pendingEncodedPhotos
+                    .getOrPut(path) { photoEncodingScope.async { PhotoPipeline.aBase64(path) } }
+                    .await()
+                if (photo.isNullOrBlank()) {
+                    pendingEncodedPhotos.remove(path)?.cancel()
+                }
+                photo
             }
+            PhotoEncodingRules.requireAllEncoded(encoded)
         }
 
     // ── Confirmación ────────────────────────────────────────────────────────
@@ -369,70 +422,150 @@ class SalidaCasetaViewModel @Inject constructor(
         }
         val observacion = estado.observacionDe(item).trim()
 
-        viewModelScope.launch {
-            _uiState.update { it.copy(isProcessing = true, confirmVisible = false) }
+        confirmacionJob = viewModelScope.launch {
+            _uiState.update { it.copy(isProcessing = true, confirmVisible = false, progresoEnvio = "Registrando la salida…") }
+            val inicio = System.currentTimeMillis()
 
-            val resultado: Result<Pair<Boolean, String?>> = when (item.carrilEnum) {
-                SalidaCarril.LISTA -> {
-                    val fotosCodificadas = codificarFotos(estado.fotosDe(item))
-                    casetaRepository.confirmarSalida(
-                        relno = item.relno,
-                        usuario = estado.currentUser,
-                        observaciones = observacion,
-                        fotosBase64 = fotosCodificadas
-                    ).map { it.success to it.message }
+            try {
+                val resultado: Result<Pair<Boolean, String?>> = when (item.carrilEnum) {
+                    // null = ya se avisó que las fotos no se pudieron preparar o enviar (siguen en la tableta).
+                    SalidaCarril.LISTA -> confirmarRelacion(item, estado.currentUser, observacion, estado.fotosDe(item))
+                        ?: return@launch
+                    SalidaCarril.MANUAL -> repository
+                        .registrarSalida(item.cajas.first().casetaId, observacion)
+                        .map { it.success to it.message }
+                    SalidaCarril.CERRAR -> repository
+                        .cerrarRegistro(item.relno)
+                        .map { it.success to it.message }
+                    SalidaCarril.PROCESO -> Result.failure(IllegalStateException("Esta relación todavía no puede salir."))
                 }
-                SalidaCarril.MANUAL -> repository
-                    .registrarSalida(item.cajas.first().casetaId, observacion)
-                    .map { it.success to it.message }
-                SalidaCarril.CERRAR -> repository
-                    .cerrarRegistro(item.relno)
-                    .map { it.success to it.message }
-                SalidaCarril.PROCESO -> Result.failure(IllegalStateException("Esta relación todavía no puede salir."))
+                Log.i(TAG, "salida ${item.relno} terminó en ${System.currentTimeMillis() - inicio} ms")
+                terminarConfirmacion(item, estado.fotosDe(item), resultado)
+            } catch (e: CancellationException) {
+                // La cancelación la informa cancelarConfirmacion(); aquí solo se deja pasar.
+                throw e
+            } catch (e: Throwable) {
+                Log.e(TAG, "salida ${item.relno} falló tras ${System.currentTimeMillis() - inicio} ms", e)
+                _uiState.update {
+                    it.copy(
+                        isProcessing = false,
+                        progresoEnvio = null,
+                        message = "✗ ${e.message ?: "Error al registrar la salida."}",
+                        feedbackSeq = it.feedbackSeq + 1
+                    )
+                }
             }
+        }
+    }
 
-            resultado
-                .onSuccess { (ok, mensaje) ->
-                    if (ok) {
-                        estado.fotosDe(item).forEach(::descartarFoto)
-                        _uiState.update {
-                            it.copy(
-                                isProcessing = false,
-                                items = it.items.filterNot { x -> x.id == item.id },
-                                selectedId = null,
-                                observaciones = it.observaciones - item.id,
-                                fotos = it.fotos - item.id,
-                                hoy = when (item.carrilEnum) {
-                                    SalidaCarril.LISTA -> it.hoy.copy(conRelacion = it.hoy.conRelacion + 1)
-                                    SalidaCarril.MANUAL -> it.hoy.copy(manuales = it.hoy.manuales + 1)
-                                    else -> it.hoy
-                                },
-                                message = "✓ ${mensaje ?: "Salida registrada correctamente."}",
-                                feedbackSeq = it.feedbackSeq + 1
-                            )
-                        }
-                    } else {
-                        _uiState.update {
-                            it.copy(
-                                isProcessing = false,
-                                message = "✗ ${mensaje ?: "No se pudo registrar la salida."}",
-                                feedbackSeq = it.feedbackSeq + 1
-                            )
-                        }
-                    }
-                    // Sea éxito o rechazo, el patio pudo cambiar: se vuelve a leer del servidor.
-                    refresh(silencioso = true)
-                }
-                .onFailure { error ->
+    /** Resultado de la confirmación: éxito o rechazo, el patio pudo cambiar, así que se vuelve a leer del servidor. */
+    private fun terminarConfirmacion(
+        item: SalidaPatioItem,
+        fotosDelItem: List<String>,
+        resultado: Result<Pair<Boolean, String?>>
+    ) {
+        resultado
+            .onSuccess { (ok, mensaje) ->
+                if (ok) {
+                    fotosDelItem.forEach(::descartarFoto)
                     _uiState.update {
                         it.copy(
                             isProcessing = false,
-                            message = "✗ ${error.message ?: "Error al registrar la salida."}",
+                            progresoEnvio = null,
+                            items = it.items.filterNot { x -> x.id == item.id },
+                            selectedId = null,
+                            observaciones = it.observaciones - item.id,
+                            fotos = it.fotos - item.id,
+                            hoy = when (item.carrilEnum) {
+                                SalidaCarril.LISTA -> it.hoy.copy(conRelacion = it.hoy.conRelacion + 1)
+                                SalidaCarril.MANUAL -> it.hoy.copy(manuales = it.hoy.manuales + 1)
+                                else -> it.hoy
+                            },
+                            message = "✓ ${mensaje ?: "Salida registrada correctamente."}",
+                            feedbackSeq = it.feedbackSeq + 1
+                        )
+                    }
+                    guardarFotosBorrador()
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            isProcessing = false,
+                            progresoEnvio = null,
+                            message = "✗ ${mensaje ?: "No se pudo registrar la salida."}",
                             feedbackSeq = it.feedbackSeq + 1
                         )
                     }
                 }
+                refresh(silencioso = true)
+            }
+            .onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        isProcessing = false,
+                        progresoEnvio = null,
+                        message = "✗ ${error.message ?: "Error al registrar la salida."}",
+                        feedbackSeq = it.feedbackSeq + 1
+                    )
+                }
+                // Si se cortó justo al confirmar, la salida pudo haberse registrado: se revisa el patio antes de reintentar.
+                if (item.carrilEnum == SalidaCarril.LISTA) refresh(silencioso = true)
+            }
+    }
+
+    /**
+     * Salida con relación: prepara las fotos, las manda por lotes con avance visible y confirma (ver [SalidaFotosEnvio]).
+     * Devuelve `null` cuando las fotos no se pudieron preparar o enviar (ya se avisó al guardia; siguen guardadas).
+     */
+    private suspend fun confirmarRelacion(
+        item: SalidaPatioItem,
+        usuario: String,
+        observacion: String,
+        fotos: List<String>
+    ): Result<Pair<Boolean, String?>>? =
+        when (val confirmacion = envioFotos.confirmarConFotos(
+            relno = item.relno,
+            usuario = usuario,
+            observaciones = observacion,
+            rutas = fotos,
+            codificar = ::codificarFotos,
+            alAvanzar = ::publicarProgreso
+        )) {
+            is SalidaFotosEnvio.Confirmacion.Terminada -> confirmacion.resultado.map { it.success to it.message }
+            is SalidaFotosEnvio.Confirmacion.SinConfirmar -> {
+                avisarFalla(confirmacion.mensaje)
+                null
+            }
         }
+
+    private fun publicarProgreso(texto: String) = _uiState.update { it.copy(progresoEnvio = texto) }
+
+    private fun avisarFalla(texto: String) = _uiState.update {
+        it.copy(
+            isProcessing = false,
+            progresoEnvio = null,
+            message = "✗ $texto",
+            feedbackSeq = it.feedbackSeq + 1
+        )
+    }
+
+    /**
+     * Corta el envío en curso sin perder nada: las fotos siguen en la tableta y se vuelve a leer el patio por si la
+     * salida alcanzó a registrarse.
+     */
+    fun cancelarConfirmacion() {
+        val job = confirmacionJob ?: return
+        if (!_uiState.value.isProcessing) return
+        job.cancel()
+        confirmacionJob = null
+        _uiState.update {
+            it.copy(
+                isProcessing = false,
+                progresoEnvio = null,
+                message = "Envío cancelado. Tus fotos siguen guardadas en la tableta.",
+                feedbackSeq = it.feedbackSeq + 1
+            )
+        }
+        refresh(silencioso = true)
     }
 
     fun clearMessage() = _uiState.update { it.copy(message = null) }
@@ -443,6 +576,8 @@ class SalidaCasetaViewModel @Inject constructor(
     }
 
     companion object {
+        private const val TAG = "PMM-SALIDA"
         private const val MAX_OBSERVACION = 100 // caseta.obs_salida es varchar(100)
+        private const val CLAVE_FOTOS_BORRADOR = "SALIDA_FOTOS_BORRADOR"
     }
 }

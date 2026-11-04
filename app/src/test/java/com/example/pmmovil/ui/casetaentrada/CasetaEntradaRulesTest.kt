@@ -22,14 +22,12 @@ class CasetaEntradaRulesTest {
         assertTrue(errors.containsKey("boxLine"))
         assertTrue(errors.containsKey("movement"))
         assertTrue(errors.containsKey("boxNumber"))
-        // La linea de camion dejo de ser obligatoria: la pantalla la marca en ambar.
-        assertFalse(errors.containsKey("truckLine"))
+        assertEquals("Selecciona la linea de camion.", errors["truckLine"])
     }
 
     @Test
-    fun validate_does_not_require_tractor_fields() {
-        // Linea camion, No camion, Operador y Sellos cambian en cada viaje, asi que la
-        // plantilla del historico ya no los hereda y tampoco bloquean el guardado.
+    fun validate_requires_truck_line_but_does_not_require_other_tractor_fields() {
+        // No. de camion, Operador y Sellos cambian en cada viaje y siguen siendo opcionales.
         val errors = CasetaEntradaRules.validate(
             validForm().copy(
                 idTruckLine = "",
@@ -40,7 +38,7 @@ class CasetaEntradaRulesTest {
             )
         )
 
-        assertTrue("No debe pedir datos del tractor pero pidio $errors", errors.isEmpty())
+        assertEquals(setOf("truckLine"), errors.keys)
     }
 
     @Test

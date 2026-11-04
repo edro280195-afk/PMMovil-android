@@ -6,6 +6,7 @@ import com.example.pmmovil.data.model.CasetaDetalle
 import com.example.pmmovil.data.model.CasetaPendiente
 import com.example.pmmovil.data.repository.AuthRepository
 import com.example.pmmovil.data.repository.CasetaRepository
+import com.example.pmmovil.ui.salidacaseta.SalidaFotosEnvio
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
@@ -18,10 +19,12 @@ import kotlinx.coroutines.launch
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Base64
+import com.example.pmmovil.data.camera.PhotoEncodingRules
 import com.example.pmmovil.data.camera.PhotoPipeline
 import com.example.pmmovil.data.ocr.applyExifOrientation
 import java.io.ByteArrayOutputStream
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -38,6 +41,8 @@ data class CasetaUiState(
     val blockingMessage: String? = null,
     val isLoading: Boolean = true,
     val isProcessing: Boolean = false,
+    /** Qué está haciendo la app mientras [isProcessing] ("Enviando fotos: 3 de 8"): el guardia nunca ve un spinner mudo. */
+    val progresoEnvio: String? = null,
     val confirmVisible: Boolean = false,
     val confirmObservations: String = "",
     val currentUser: String = "",
@@ -78,13 +83,18 @@ class CasetaViewModel @Inject constructor(
     private var searchJob: Job? = null
 
     // Comprime cada foto apenas se toma, no hasta que se presiona "Confirmar
-    // salida" -- esa pantalla manda todas las fotos juntas en una sola
-    // peticion (a diferencia de Entrada, que las sube una a una), asi que sin
-    // esto el usuario esperaba a que se comprimieran TODAS de golpe justo en
-    // el peor momento. Scope propio (no viewModelScope) para que un cierre de
-    // pantalla a medio comprimir no tire el trabajo si el usuario vuelve.
+    // salida": sin esto el usuario esperaba a que se comprimieran TODAS de golpe
+    // justo en el peor momento. Scope propio (no viewModelScope) para que un
+    // cierre de pantalla a medio comprimir no tire el trabajo si el usuario vuelve.
     private val photoEncodingScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val pendingEncodedPhotos = mutableMapOf<String, Deferred<String?>>()
+
+    // Las fotos viajan al servidor por lotes (como en Entrada) y luego se confirma la salida; antes iban TODAS en una
+    // sola peticion, sin avance y sin forma de salir si la red se atoraba.
+    private val envioFotos = SalidaFotosEnvio(repository, "PMM-CASETA")
+
+    /** La confirmacion en curso: se puede cancelar sin perder las fotos. */
+    private var confirmacionJob: Job? = null
 
     init {
         refresh()
@@ -269,6 +279,7 @@ class CasetaViewModel @Inject constructor(
             }
             return
         }
+        if (_uiState.value.isProcessing) return
         val detail = _uiState.value.detail ?: return
         val usuario = _uiState.value.currentUser
         if (usuario.isBlank()) {
@@ -281,52 +292,107 @@ class CasetaViewModel @Inject constructor(
             }
             return
         }
-        viewModelScope.launch {
-            _uiState.update { it.copy(isProcessing = true, confirmVisible = false) }
-            
-            val encodedPhotos = encodePhotos(_uiState.value.localPhotoPaths)
+        val rutas = _uiState.value.localPhotoPaths
+        val observaciones = _uiState.value.confirmObservations.trim()
 
-            repository.confirmarSalida(
-                relno = detail.relno,
-                usuario = usuario,
-                observaciones = _uiState.value.confirmObservations.trim(),
-                fotosBase64 = encodedPhotos
+        confirmacionJob = viewModelScope.launch {
+            _uiState.update {
+                it.copy(isProcessing = true, confirmVisible = false, progresoEnvio = "Registrando la salida…")
+            }
+
+            val confirmacion = try {
+                envioFotos.confirmarConFotos(
+                    relno = detail.relno,
+                    usuario = usuario,
+                    observaciones = observaciones,
+                    rutas = rutas,
+                    codificar = ::encodePhotos,
+                    alAvanzar = ::publicarProgreso
+                )
+            } catch (e: CancellationException) {
+                // La cancelacion la informa cancelarConfirmacion(); aqui solo se deja pasar.
+                throw e
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isProcessing = false,
+                        progresoEnvio = null,
+                        message = "✗ ${e.message ?: "No se pudieron preparar todas las fotos."}",
+                        feedbackSeq = it.feedbackSeq + 1
+                    )
+                }
+                return@launch
+            }
+
+            when (confirmacion) {
+                // Las fotos no se pudieron preparar o enviar: nada se confirmo y siguen en la tableta.
+                is SalidaFotosEnvio.Confirmacion.SinConfirmar -> _uiState.update {
+                    it.copy(
+                        isProcessing = false,
+                        progresoEnvio = null,
+                        message = "✗ ${confirmacion.mensaje}",
+                        feedbackSeq = it.feedbackSeq + 1
+                    )
+                }
+                is SalidaFotosEnvio.Confirmacion.Terminada -> confirmacion.resultado
+                    .onSuccess { response ->
+                        if (response.success) {
+                            pendingEncodedPhotos.clear()
+                            envioFotos.olvidarTodas()
+                            _uiState.update {
+                                it.copy(
+                                    isProcessing = false,
+                                    progresoEnvio = null,
+                                    selectedRelno = null,
+                                    detail = null,
+                                    blockingMessage = null,
+                                    confirmObservations = "",
+                                    localPhotoPaths = emptyList(),
+                                    message = "✓ ${response.message ?: "Salida confirmada correctamente."}",
+                                    feedbackSeq = it.feedbackSeq + 1
+                                )
+                            }
+                            refresh()
+                        } else {
+                            _uiState.update {
+                                it.copy(
+                                    isProcessing = false,
+                                    progresoEnvio = null,
+                                    message = "✗ ${response.message ?: "No se pudo confirmar la salida."}",
+                                    feedbackSeq = it.feedbackSeq + 1
+                                )
+                            }
+                        }
+                    }
+                    .onFailure { error ->
+                        _uiState.update {
+                            it.copy(
+                                isProcessing = false,
+                                progresoEnvio = null,
+                                message = "✗ ${error.message ?: "Error al confirmar salida."}",
+                                feedbackSeq = it.feedbackSeq + 1
+                            )
+                        }
+                    }
+            }
+        }
+    }
+
+    private fun publicarProgreso(texto: String) = _uiState.update { it.copy(progresoEnvio = texto) }
+
+    /** Corta el envio en curso sin perder nada: las fotos siguen en la tableta y se puede volver a confirmar. */
+    fun cancelarConfirmacion() {
+        val job = confirmacionJob ?: return
+        if (!_uiState.value.isProcessing) return
+        job.cancel()
+        confirmacionJob = null
+        _uiState.update {
+            it.copy(
+                isProcessing = false,
+                progresoEnvio = null,
+                message = "Envío cancelado. Tus fotos siguen guardadas en la tableta.",
+                feedbackSeq = it.feedbackSeq + 1
             )
-                .onSuccess { response ->
-                    if (response.success) {
-                        pendingEncodedPhotos.clear()
-                        _uiState.update {
-                            it.copy(
-                                isProcessing = false,
-                                selectedRelno = null,
-                                detail = null,
-                                blockingMessage = null,
-                                confirmObservations = "",
-                                localPhotoPaths = emptyList(),
-                                message = "✓ ${response.message ?: "Salida confirmada correctamente."}",
-                                feedbackSeq = it.feedbackSeq + 1
-                            )
-                        }
-                        refresh()
-                    } else {
-                        _uiState.update {
-                            it.copy(
-                                isProcessing = false,
-                                message = "✗ ${response.message ?: "No se pudo confirmar la salida."}",
-                                feedbackSeq = it.feedbackSeq + 1
-                            )
-                        }
-                    }
-                }
-                .onFailure { error ->
-                    _uiState.update {
-                        it.copy(
-                            isProcessing = false,
-                            message = "✗ ${error.message ?: "Error al confirmar salida."}",
-                            feedbackSeq = it.feedbackSeq + 1
-                        )
-                    }
-                }
         }
     }
 
@@ -364,12 +430,14 @@ class CasetaViewModel @Inject constructor(
         }
         _uiState.update { it.copy(localPhotoPaths = it.localPhotoPaths - path) }
         pendingEncodedPhotos.remove(path)?.cancel()
+        envioFotos.olvidar(path)
     }
 
     /** Descarta fotos y compresiones en curso de una relacion que se abandona sin confirmar. */
     private fun clearLocalPhotos() {
         pendingEncodedPhotos.values.forEach { it.cancel() }
         pendingEncodedPhotos.clear()
+        envioFotos.olvidarTodas()
         _uiState.update { it.copy(localPhotoPaths = emptyList()) }
     }
 
@@ -378,12 +446,17 @@ class CasetaViewModel @Inject constructor(
             // Reutiliza la compresion que ya viene corriendo desde addPhoto();
             // solo si por algo no existe (ej. proceso reiniciado) se comprime
             // aqui mismo como respaldo, igual que antes.
-            paths.mapNotNull { path ->
+            val encoded = paths.map { path ->
                 val deferred = pendingEncodedPhotos.getOrPut(path) {
                     photoEncodingScope.async { encodePhotoForSave(path) }
                 }
-                deferred.await()
+                val photo = deferred.await()
+                if (photo.isNullOrBlank()) {
+                    pendingEncodedPhotos.remove(path)?.cancel()
+                }
+                photo
             }
+            PhotoEncodingRules.requireAllEncoded(encoded)
         }
 
     /**

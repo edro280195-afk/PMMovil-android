@@ -338,11 +338,10 @@ data class CasetaEntradaUiState(
     val isRefrigerated: Boolean
         get() = CasetaEntradaRules.isRefrigerated(form.boxTypeDescription.ifBlank { form.boxType })
 
-    // Datos del tractor que la plantilla ya no hereda: se resaltan en ambar mientras
-    // sigan vacios. No son obligatorios, solo un recordatorio de captura.
+    // No. de camion, operador y sellos son datos variables de cada viaje: se
+    // resaltan en ambar si faltan al reutilizar una plantilla, pero son opcionales.
     val pendingTruckFields: Set<String>
         get() = if (templateSource.isBlank()) emptySet() else buildSet {
-            if (form.idTruckLine.isBlank() && form.truckLineName.isBlank()) add("truckLine")
             if (form.truckNumber.isBlank()) add("truckNumber")
             if (form.operatorName.isBlank()) add("operatorName")
             if (form.seals.isBlank()) add("seals")
@@ -428,6 +427,7 @@ class CasetaEntradaViewModel @Inject constructor(
     init {
         loadCatalogs()
         loadFrequentCatalogs()
+        resumePendingPhotoSync()
         observeDrafts()
         observeFormChangesForAutosave()
         viewModelScope.launch {
@@ -592,6 +592,16 @@ class CasetaEntradaViewModel @Inject constructor(
                     )
                     _uiState.update { it.copy(form = it.form.copy(remotePhotos = remotePhotos)) }
                 }
+        }
+    }
+
+    /**
+     * Si quedaron fotos sin subir (la app se cerro, o el aviso de WorkManager se perdio entre guardar y encolar), las
+     * manda ya al abrir la pantalla en lugar de esperar al siguiente guardado.
+     */
+    private fun resumePendingPhotoSync() {
+        viewModelScope.launch {
+            if (casetaPhotoSyncDao.getPendingOnce().isNotEmpty()) syncScheduler.scheduleCasetaEntradaPhotos()
         }
     }
 
@@ -1658,12 +1668,18 @@ class CasetaEntradaViewModel @Inject constructor(
                 )
             }
 
+            // Posicion de cada foto nueva en el servidor: las mismas con las que se encolan mas abajo y las que el
+            // servidor espera para saber que ya llegaron todas.
+            val firstPhotoIndex = state.form.remotePhotos.mapNotNull { it.sourceIndex }.maxOrNull()?.plus(1) ?: 1
+            val expectedPhotoIndexes = List(state.form.localPhotoPaths.size) { firstPhotoIndex + it }
+
             val request = state.form.toRequest(
                 photos = existingPhotoMarkers,
                 user = state.currentUser,
                 userName = state.currentUserName.ifBlank { state.currentUser },
                 plant = state.currentPlant,
                 diferirCorreo = state.form.localPhotoPaths.isNotEmpty(),
+                indicesFotosEsperadas = expectedPhotoIndexes,
                 preregistroFolio = state.preregistroFolio,
                 placasNoCoinciden = state.preregistroPlacasConfirmadas == false
             )
@@ -1679,7 +1695,7 @@ class CasetaEntradaViewModel @Inject constructor(
                     val queuedPhotos = enqueueCasetaPhotos(
                         casetaIds = casetaIds,
                         paths = state.form.localPhotoPaths,
-                        firstPhotoIndex = state.form.remotePhotos.mapNotNull { it.sourceIndex }.maxOrNull()?.plus(1) ?: 1,
+                        firstPhotoIndex = firstPhotoIndex,
                         isUpdate = state.form.updated
                     )
 
@@ -2550,8 +2566,10 @@ object CasetaEntradaRules {
                 errors["boxNumber"] = "Captura el numero de caja."
             }
         }
-        // Linea de camion, No camion, Operador y Sellos son sugeridos, no obligatorios:
-        // la pantalla los resalta en ambar cuando faltan, pero no bloquean el guardado.
+        if (form.idTruckLine.isBlank() && form.truckLineName.isBlank()) {
+            errors["truckLine"] = "Selecciona la linea de camion."
+        }
+        // No. de camion, Operador y Sellos son sugeridos; no bloquean el guardado.
         if (form.movement.isBlank()) {
             errors["movement"] = "Selecciona el tipo de movimiento."
         }
@@ -2650,6 +2668,7 @@ private fun CasetaEntradaForm.toRequest(
     userName: String,
     plant: String,
     diferirCorreo: Boolean = false,
+    indicesFotosEsperadas: List<Int> = emptyList(),
     preregistroFolio: String = "",
     placasNoCoinciden: Boolean = false
 ): CasetaEntradaGuardarRequest {
@@ -2687,6 +2706,7 @@ private fun CasetaEntradaForm.toRequest(
         guia = guideCount,
         fotos = photos,
         diferirCorreo = diferirCorreo,
+        indicesFotosEsperadas = indicesFotosEsperadas,
         requiereImpo = requiresImport,
         casetaid = casetaId,
         idcaseta = idCaseta,

@@ -1,6 +1,7 @@
 package com.example.pmmovil.worker
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
@@ -75,19 +76,16 @@ class CasetaEntradaPhotoSyncWorker(
                         }
                     }
 
-                    if (encoded.isEmpty()) {
-                        stopCurrentCaseta = true
-                        return@forEachIndexed
-                    }
-                    if (encoded.size != batch.size) {
-                        // No se manda una tanda incompleta: si falta una
-                        // evidencia no se debe marcar como enviado el resto ni
-                        // disparar el correo final con un expediente parcial.
-                        stopCurrentCaseta = true
-                        return@forEachIndexed
-                    }
+                    // Una foto que ya no existe en la tableta (o que no se pudo procesar) quedo marcada como falla
+                    // permanente: eso no debe dejar atras las demas fotos del lote ni las de los lotes siguientes.
+                    if (encoded.isEmpty()) return@forEachIndexed
+
+                    // Con un lote incompleto NO se marca el ultimo lote (`finalizar`): el expediente esta incompleto. El
+                    // servidor sabe cuantas fotos anuncio la tableta y, como no llegaran todas, manda el aviso por su
+                    // respaldo a los pocos minutos con las que si llegaron.
 
                     val isFinalBatch = batchIndex == orderedPhotos.lastIndex / PHOTOS_PER_REQUEST
+                    val startedAt = SystemClock.elapsedRealtime()
                     try {
                         val response = api.uploadCasetaEntradaPhotos(
                             casetaId,
@@ -106,6 +104,13 @@ class CasetaEntradaPhotoSyncWorker(
                                 dao.markSynced(photo.id)
                                 runCatching { fileFor(photo).delete() }
                             }
+                            // Tiempos para medir: lo que tardo el lote y cuanto llevan las fotos esperando desde que se guardo la entrada.
+                            Log.i(
+                                TAG,
+                                "casetaId=$casetaId fotos=${encoded.size} lote=${SystemClock.elapsedRealtime() - startedAt} ms " +
+                                    "desdeGuardado=${System.currentTimeMillis() - batch.first().timestamp} ms " +
+                                    "finalizar=${batch.lastOrNull()?.notifyWhenFinished == true && isFinalBatch}"
+                            )
                         } else {
                             val errorBody = response.errorBody()?.string().orEmpty()
                             val message = body?.message

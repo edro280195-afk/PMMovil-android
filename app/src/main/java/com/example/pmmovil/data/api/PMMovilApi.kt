@@ -587,6 +587,13 @@ interface PMMovilApi {
         @Body request: ConfirmarSalidaCasetaRequest
     ): Response<ConfirmarSalidaCasetaResponse>
 
+    // Fotos de la salida en lotes pequenos, antes de confirmar (un servidor viejo responde 404/405).
+    @POST("Caseta/{relno}/salida-fotos")
+    suspend fun subirFotosSalidaCaseta(
+        @Path("relno") relno: String,
+        @Body request: SubirFotosSalidaCasetaRequest
+    ): Response<ConfirmarSalidaCasetaResponse>
+
     // ── Salida de caja de caseta (legacy Salidas.aspx) ───────────────────────
     @GET("SalidaCaseta/pendientes")
     suspend fun getSalidaCasetaPendientes(): Response<SalidaCajaPendientesResponse>
