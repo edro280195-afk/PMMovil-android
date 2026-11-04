@@ -14,6 +14,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -160,6 +161,7 @@ fun BrandedHeroHeader(
     onOpenPrinterSettings: () -> Unit,
     onOpenSettings: () -> Unit = {},
     showSystemTools: Boolean = false,
+    compact: Boolean = false,
     onLogout: () -> Unit
 ) {
     val displayName = userName
@@ -176,7 +178,9 @@ fun BrandedHeroHeader(
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 14.dp)
+                // La tarjeta flota, pero debajo de la barra de estado: antes se montaba sobre la hora y los íconos.
+                .statusBarsPadding()
+                .padding(horizontal = 20.dp, vertical = if (compact) 8.dp else 14.dp)
                 .shadow(
                     elevation = 6.dp,
                     shape = RoundedCornerShape(20.dp),
@@ -205,7 +209,7 @@ fun BrandedHeroHeader(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 22.dp, vertical = 18.dp),
+                        .padding(horizontal = 22.dp, vertical = if (compact) 10.dp else 18.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
@@ -267,7 +271,7 @@ fun BrandedHeroHeader(
                 modifier = Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(horizontal = 22.dp, vertical = 18.dp)
+                    .padding(horizontal = 22.dp, vertical = if (compact) 12.dp else 18.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -292,7 +296,7 @@ fun BrandedHeroHeader(
                     }
                 }
 
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(if (compact) 10.dp else 16.dp))
 
                 Text(
                     text = stringResource(smartGreetingRes()),
@@ -305,7 +309,7 @@ fun BrandedHeroHeader(
                 Text(
                     text = displayName,
                     color = Color.White,
-                    fontSize = 30.sp,
+                    fontSize = if (compact) 28.sp else 30.sp,
                     fontWeight = FontWeight.Black,
                     letterSpacing = (-0.8).sp
                 )
@@ -503,8 +507,10 @@ private fun NotificationBubble(
     }
 }
 
+// matchParentSize y no fillMaxSize: los orbes no deben decidir el alto del encabezado. Con fillMaxSize, en cuanto el
+// encabezado vive dentro de una columna con alto definido (el inicio de tableta) se estira hasta llenar la pantalla.
 @Composable
-private fun AmbientOrbs() {
+private fun BoxScope.AmbientOrbs() {
     val transition = rememberInfiniteTransition(label = "orbs")
     val x by transition.animateFloat(
         initialValue = 0f,
@@ -524,7 +530,7 @@ private fun AmbientOrbs() {
         ),
         label = "y"
     )
-    Canvas(modifier = Modifier.fillMaxSize()) {
+    Canvas(modifier = Modifier.matchParentSize()) {
         drawCircle(
             brush = Brush.radialGradient(
                 listOf(PmmYellow.copy(alpha = 0.18f), Color.Transparent),
@@ -811,7 +817,8 @@ fun adminModules(): List<ModuleItem> = listOf(
 @Composable
 fun SystemFooter(
     lastSyncMillis: Long?,
-    onTap: () -> Unit
+    onTap: () -> Unit,
+    compact: Boolean = false
 ) {
     val haptic = LocalHapticFeedback.current
     val sdf = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
@@ -820,7 +827,7 @@ fun SystemFooter(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 4.dp, vertical = 12.dp)
+            .padding(horizontal = 4.dp, vertical = if (compact) 4.dp else 12.dp)
             .clip(RoundedCornerShape(10.dp))
             .clickable {
                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)

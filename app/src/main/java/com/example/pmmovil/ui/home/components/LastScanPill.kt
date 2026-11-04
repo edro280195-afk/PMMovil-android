@@ -59,7 +59,13 @@ private fun elapsedText(elapsed: LastScanElapsed): String = when (elapsed) {
  * se pide de nuevo al servidor: la píldora solo recuerda qué era.
  */
 @Composable
-fun HomeLastScanPill(state: HomeLastScanUi, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun HomeLastScanPill(
+    state: HomeLastScanUi,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    large: Boolean = false,
+    dense: Boolean = false
+) {
     val title = stringResource(R.string.home_new_last_title)
     val kind = stringResource(kindLabel(state.scan.kind))
     val ago = elapsedText(state.elapsed)
@@ -78,14 +84,19 @@ fun HomeLastScanPill(state: HomeLastScanUi, onClick: () -> Unit, modifier: Modif
                 contentDescription = spoken
                 role = Role.Button
             },
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(if (large) 16.dp else 12.dp),
         color = Color.White,
         border = BorderStroke(1.dp, PmmNavyBorder)
     ) {
         Row(
             modifier = Modifier
-                .heightIn(min = 56.dp)
-                .padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                .heightIn(min = if (dense) 56.dp else if (large) 68.dp else 56.dp)
+                .padding(
+                    start = if (large) 16.dp else 12.dp,
+                    end = if (large) 12.dp else 8.dp,
+                    top = if (dense) 6.dp else 8.dp,
+                    bottom = if (dense) 6.dp else 8.dp
+                ),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
@@ -93,7 +104,11 @@ fun HomeLastScanPill(state: HomeLastScanUi, onClick: () -> Unit, modifier: Modif
                 Text(
                     text = "${title.uppercase()} · $ago",
                     color = PmmTextSecondary,
-                    style = SignageType.Caption.copy(fontSize = 9.5.sp),
+                    style = if (large) {
+                        SignageType.Caption.copy(fontSize = 12.sp, lineHeight = 15.sp)
+                    } else {
+                        SignageType.Caption.copy(fontSize = 9.5.sp)
+                    },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -101,7 +116,11 @@ fun HomeLastScanPill(state: HomeLastScanUi, onClick: () -> Unit, modifier: Modif
                     Text(
                         text = kind,
                         color = PmmBlueDeep,
-                        style = SignageType.Caption.copy(fontSize = 9.5.sp),
+                        style = if (large) {
+                            SignageType.Caption.copy(fontSize = 12.sp, lineHeight = 15.sp)
+                        } else {
+                            SignageType.Caption.copy(fontSize = 9.5.sp)
+                        },
                         maxLines = 1
                     )
                     Text(
@@ -110,14 +129,14 @@ fun HomeLastScanPill(state: HomeLastScanUi, onClick: () -> Unit, modifier: Modif
                         color = PmmTextPrimary,
                         fontFamily = SignageType.Mono,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        lineHeight = 16.sp,
+                        fontSize = if (dense) 15.sp else if (large) 17.sp else 13.sp,
+                        lineHeight = if (dense) 19.sp else if (large) 21.sp else 16.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
             }
-            state.signal?.let { SignalChip(kind = it) }
+            state.signal?.let { SignalChip(kind = it, large = large) }
             Icon(
                 Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null,

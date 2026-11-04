@@ -11,6 +11,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
@@ -142,8 +143,12 @@ fun HomeScreen(
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var showNotifications by rememberSaveable { mutableStateOf(false) }
-    BackHandler(enabled = showNotifications) {
+    val closeNotifications = {
         showNotifications = false
+        homeViewModel.refreshNotificationUnreadCount()
+    }
+    BackHandler(enabled = showNotifications) {
+        closeNotifications()
     }
 
     if (BuildConfig.USE_NEW_HOME) {
@@ -277,6 +282,60 @@ fun HomeScreen(
     val configuration = LocalConfiguration.current
     val screenWidth = configuration.screenWidthDp
     val screenHeight = configuration.screenHeightDp
+    val homeForm = homeFormFor(configuration.smallestScreenWidthDp, screenWidth, screenHeight)
+    val newHomeReady = BuildConfig.USE_NEW_HOME && !state.isPreparingModules && !state.permissionsFailed &&
+        allActiveModules.isNotEmpty()
+    // En tableta el inicio nuevo llena la ventana: encabezado, cuerpo y pie van en un solo bloque del alto de la
+    // pantalla, y el cuerpo se queda con lo que sobra. En teléfono siguen siendo tres elementos de la lista.
+    val tabletBoard = newHomeReady && homeForm.isTablet
+
+    val header: @Composable () -> Unit = {
+        BrandedHeroHeader(
+            userName = userName,
+            username = username,
+            notificationUnreadCount = state.notificationUnreadCount,
+            onOpenNotifications = {
+                homeViewModel.refreshNotificationUnreadCount()
+                showNotifications = true
+            },
+            onOpenPrinterSettings = onOpenPrinterSettings,
+            onOpenSettings = onOpenSettings,
+            showSystemTools = isSystemsArea,
+            compact = homeForm.dense,
+            onLogout = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                authViewModel.logout()
+                onLogout()
+            }
+        )
+    }
+    val footer: @Composable () -> Unit = {
+        SystemFooter(
+            lastSyncMillis = state.lastSyncMillis,
+            onTap = { homeViewModel.refresh() },
+            compact = homeForm.dense
+        )
+    }
+    val newHome: @Composable (Modifier) -> Unit = { newHomeModifier ->
+        NewHomeContent(
+            modules = allActiveModules,
+            summary = summary,
+            lastScan = lastScan,
+            // Mismo camino que una lectura: la ficha se pide de nuevo, la píldora solo recuerda qué era.
+            onOpenLastScan = onScanned,
+            form = homeForm,
+            modifier = newHomeModifier,
+            onScan = onNavigateToScanner,
+            onModuleClick = onModuleClick,
+            onBlocked = { stationName ->
+                scope.launch {
+                    snackbar.showSnackbar(
+                        context.getString(R.string.home_new_station_blocked, stationName)
+                    )
+                }
+            }
+        )
+    }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -292,249 +351,238 @@ fun HomeScreen(
                 },
                 modifier = Modifier.fillMaxSize()
             ) {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 16.dp)
-                ) {
-                    // ── 1) HEADER HERO
-                    item("header") {
-                        BrandedHeroHeader(
-                            userName = userName,
-                            username = username,
-                            notificationUnreadCount = state.notificationUnreadCount,
-                            onOpenNotifications = {
-                                homeViewModel.refreshNotificationUnreadCount()
-                                showNotifications = true
-                            },
-                            onOpenPrinterSettings = onOpenPrinterSettings,
-                            onOpenSettings = onOpenSettings,
-                            showSystemTools = isSystemsArea,
-                            onLogout = {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                authViewModel.logout()
-                                onLogout()
-                            }
-                        )
-                    }
+                // La altura de la ventana: la tableta le da al inicio exactamente ese alto, y la lista no la ofrece.
+                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                    val viewportHeight = maxHeight
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        // En tableta el bloque ya mide justo el alto de la ventana: un relleno abajo lo haría desplazable.
+                        contentPadding = PaddingValues(bottom = if (tabletBoard) 0.dp else 16.dp)
+                    ) {
+                        // ── 1) HEADER HERO
+                        if (!tabletBoard) {
+                            item("header") { header() }
+                        }
 
-                    if (state.isPreparingModules) {
-                        item("preparing") {
-                            HomePreparingModules(phase = state.phase)
-                        }
-                    } else if (state.permissionsFailed) {
-                        item("permissions-error") {
-                            HomeModulesError(onRetry = { homeViewModel.refresh() })
-                        }
-                    } else if (allActiveModules.isEmpty()) {
-                        item("empty-modules") {
-                            HomeNoModulesAssigned()
-                        }
-                    } else if (BuildConfig.USE_NEW_HOME) {
-                        item("new-home") {
-                            NewHomeContent(
-                                modules = allActiveModules,
-                                summary = summary,
-                                lastScan = lastScan,
-                                // Mismo camino que una lectura: la ficha se pide de nuevo, la píldora solo recuerda qué era.
-                                onOpenLastScan = onScanned,
-                                wide = screenWidth >= 720,
-                                onScan = onNavigateToScanner,
-                                onModuleClick = onModuleClick,
-                                onBlocked = { stationName ->
-                                    scope.launch {
-                                        snackbar.showSnackbar(
-                                            context.getString(R.string.home_new_station_blocked, stationName)
-                                        )
+                        if (tabletBoard) {
+                            // ═════════════════════════════════════════════════════════
+                            // TABLETA — INICIO NUEVO A PANTALLA COMPLETA
+                            // ═════════════════════════════════════════════════════════
+                            item("new-home-tablet") {
+                                // Alto fijo (el de la ventana, o el mínimo del diseño si la ventana es más baja): así los
+                                // pesos de adentro reparten un alto de verdad, y si no cabe la página se desplaza en
+                                // lugar de apretar los bloques. No sirve fillParentMaxSize: ignora cualquier mínimo.
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(viewportHeight.coerceAtLeast(homeForm.minHeight))
+                                ) {
+                                    header()
+                                    newHome(Modifier.weight(1f))
+                                    footer()
+                                    Spacer(Modifier.navigationBarsPadding())
+                                }
+                            }
+                        } else if (state.isPreparingModules) {
+                            item("preparing") {
+                                HomePreparingModules(phase = state.phase)
+                            }
+                        } else if (state.permissionsFailed) {
+                            item("permissions-error") {
+                                HomeModulesError(onRetry = { homeViewModel.refresh() })
+                            }
+                        } else if (allActiveModules.isEmpty()) {
+                            item("empty-modules") {
+                                HomeNoModulesAssigned()
+                            }
+                        } else if (BuildConfig.USE_NEW_HOME) {
+                            item("new-home") { newHome(Modifier) }
+                        } else if (screenWidth >= 900) {
+                            // ═════════════════════════════════════════════════════════
+                            // TABLETA LANDSCAPE — BENTO GRID 2026
+                            // ═════════════════════════════════════════════════════════
+                            item("bento-landscape") {
+                                Spacer(Modifier.height(20.dp))
+                                val bentoHeight = (screenHeight * 0.56f).dp.coerceIn(350.dp, 460.dp)
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 20.dp)
+                                        .height(bentoHeight),
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                ) {
+                                    // 1) HERO CARD (Izquierda)
+                                    heroModule?.let { hero ->
+                                        FadeInStagger(
+                                            index = 1,
+                                            modifier = Modifier
+                                                .weight(0.42f)
+                                                .fillMaxHeight()
+                                        ) {
+                                            BentoHeroCard(
+                                                item = hero,
+                                                onClick = { onModuleClick(hero) },
+                                                isLandscapeTablet = true,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        }
+                                    }
+
+                                    // 2) SATELLITE CARDS (Derecha - Grid 2x2 o balanceado)
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(0.58f)
+                                            .fillMaxHeight(),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        val itemsPerRow = if (satelliteModules.size > 4) 3 else 2
+                                        val rows = satelliteModules.chunked(itemsPerRow)
+
+                                        rows.forEachIndexed { rowIndex, rowItems ->
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .weight(1f),
+                                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                            ) {
+                                                rowItems.forEachIndexed { colIndex, satItem ->
+                                                    val staggerIndex = 2 + (rowIndex * itemsPerRow) + colIndex
+                                                    FadeInStagger(
+                                                        index = staggerIndex,
+                                                        modifier = Modifier
+                                                            .weight(1f)
+                                                            .fillMaxHeight()
+                                                    ) {
+                                                        BentoSatelliteCard(
+                                                            item = satItem,
+                                                            onClick = { onModuleClick(satItem) },
+                                                            modifier = Modifier.fillMaxSize()
+                                                        )
+                                                    }
+                                                }
+                                                repeat(itemsPerRow - rowItems.size) {
+                                                    Spacer(modifier = Modifier.weight(1f))
+                                                }
+                                            }
+                                        }
                                     }
                                 }
-                            )
-                        }
-                    } else if (screenWidth >= 900) {
-                        // ═════════════════════════════════════════════════════════
-                        // TABLETA LANDSCAPE — BENTO GRID 2026
-                        // ═════════════════════════════════════════════════════════
-                        item("bento-landscape") {
-                            Spacer(Modifier.height(20.dp))
-                            val bentoHeight = (screenHeight * 0.56f).dp.coerceIn(350.dp, 460.dp)
-
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 20.dp)
-                                    .height(bentoHeight),
-                                horizontalArrangement = Arrangement.spacedBy(16.dp)
-                            ) {
-                                // 1) HERO CARD (Izquierda)
+                            }
+                        } else if (screenWidth >= 600) {
+                            // ═════════════════════════════════════════════════════════
+                            // TABLETA PORTRAIT — BENTO GRID VERTICAL
+                            // ═════════════════════════════════════════════════════════
+                            item("bento-portrait-hero") {
+                                Spacer(Modifier.height(18.dp))
                                 heroModule?.let { hero ->
                                     FadeInStagger(
                                         index = 1,
                                         modifier = Modifier
-                                            .weight(0.42f)
-                                            .fillMaxHeight()
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 20.dp)
+                                            .height(230.dp)
                                     ) {
                                         BentoHeroCard(
                                             item = hero,
                                             onClick = { onModuleClick(hero) },
-                                            isLandscapeTablet = true,
+                                            isLandscapeTablet = false,
                                             modifier = Modifier.fillMaxSize()
                                         )
                                     }
                                 }
+                            }
 
-                                // 2) SATELLITE CARDS (Derecha - Grid 2x2 o balanceado)
+                            item("bento-portrait-satellites") {
+                                Spacer(Modifier.height(14.dp))
                                 Column(
                                     modifier = Modifier
-                                        .weight(0.58f)
-                                        .fillMaxHeight(),
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 20.dp),
                                     verticalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
-                                    val itemsPerRow = if (satelliteModules.size > 4) 3 else 2
-                                    val rows = satelliteModules.chunked(itemsPerRow)
-
-                                    rows.forEachIndexed { rowIndex, rowItems ->
+                                    satelliteModules.chunked(2).forEachIndexed { rowIndex, rowItems ->
                                         Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .weight(1f),
+                                            modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                                         ) {
                                             rowItems.forEachIndexed { colIndex, satItem ->
-                                                val staggerIndex = 2 + (rowIndex * itemsPerRow) + colIndex
+                                                val staggerIndex = 2 + (rowIndex * 2) + colIndex
                                                 FadeInStagger(
                                                     index = staggerIndex,
-                                                    modifier = Modifier
-                                                        .weight(1f)
-                                                        .fillMaxHeight()
+                                                    modifier = Modifier.weight(1f)
                                                 ) {
                                                     BentoSatelliteCard(
                                                         item = satItem,
                                                         onClick = { onModuleClick(satItem) },
-                                                        modifier = Modifier.fillMaxSize()
+                                                        modifier = Modifier.fillMaxWidth()
                                                     )
                                                 }
                                             }
-                                            repeat(itemsPerRow - rowItems.size) {
+                                            repeat(2 - rowItems.size) {
                                                 Spacer(modifier = Modifier.weight(1f))
                                             }
                                         }
                                     }
                                 }
                             }
-                        }
-                    } else if (screenWidth >= 600) {
-                        // ═════════════════════════════════════════════════════════
-                        // TABLETA PORTRAIT — BENTO GRID VERTICAL
-                        // ═════════════════════════════════════════════════════════
-                        item("bento-portrait-hero") {
-                            Spacer(Modifier.height(18.dp))
-                            heroModule?.let { hero ->
-                                FadeInStagger(
-                                    index = 1,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 20.dp)
-                                        .height(230.dp)
-                                ) {
-                                    BentoHeroCard(
-                                        item = hero,
-                                        onClick = { onModuleClick(hero) },
-                                        isLandscapeTablet = false,
-                                        modifier = Modifier.fillMaxSize()
-                                    )
-                                }
-                            }
-                        }
-
-                        item("bento-portrait-satellites") {
-                            Spacer(Modifier.height(14.dp))
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 20.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                satelliteModules.chunked(2).forEachIndexed { rowIndex, rowItems ->
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                    ) {
-                                        rowItems.forEachIndexed { colIndex, satItem ->
-                                            val staggerIndex = 2 + (rowIndex * 2) + colIndex
-                                            FadeInStagger(
-                                                index = staggerIndex,
-                                                modifier = Modifier.weight(1f)
-                                            ) {
-                                                BentoSatelliteCard(
-                                                    item = satItem,
-                                                    onClick = { onModuleClick(satItem) },
-                                                    modifier = Modifier.fillMaxWidth()
-                                                )
-                                            }
-                                        }
-                                        repeat(2 - rowItems.size) {
-                                            Spacer(modifier = Modifier.weight(1f))
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        // ═════════════════════════════════════════════════════════
-                        // MÓVIL (Compact)
-                        // ═════════════════════════════════════════════════════════
-                        item("bento-mobile-hero") {
-                            Spacer(Modifier.height(14.dp))
-                            heroModule?.let { hero ->
-                                FadeInStagger(
-                                    index = 1,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 14.dp)
-                                        .height(195.dp)
-                                ) {
-                                    BentoHeroCard(
-                                        item = hero,
-                                        onClick = { onModuleClick(hero) },
-                                        isLandscapeTablet = false,
-                                        modifier = Modifier.fillMaxSize()
-                                    )
-                                }
-                            }
-                        }
-
-                        item("bento-mobile-satellites") {
-                            Spacer(Modifier.height(10.dp))
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 14.dp),
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                satelliteModules.forEachIndexed { index, satItem ->
+                        } else {
+                            // ═════════════════════════════════════════════════════════
+                            // MÓVIL (Compact)
+                            // ═════════════════════════════════════════════════════════
+                            item("bento-mobile-hero") {
+                                Spacer(Modifier.height(14.dp))
+                                heroModule?.let { hero ->
                                     FadeInStagger(
-                                        index = index + 2,
-                                        modifier = Modifier.fillMaxWidth()
+                                        index = 1,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 14.dp)
+                                            .height(195.dp)
                                     ) {
-                                        BentoSatelliteCard(
-                                            item = satItem,
-                                            onClick = { onModuleClick(satItem) },
-                                            modifier = Modifier.fillMaxWidth()
+                                        BentoHeroCard(
+                                            item = hero,
+                                            onClick = { onModuleClick(hero) },
+                                            isLandscapeTablet = false,
+                                            modifier = Modifier.fillMaxSize()
                                         )
                                     }
                                 }
                             }
-                        }
-                    }
 
-                    // ── 3) FOOTER
-                    item("footer") {
-                        Spacer(Modifier.height(18.dp))
-                        SystemFooter(
-                            lastSyncMillis = state.lastSyncMillis,
-                            onTap = { homeViewModel.refresh() }
-                        )
-                        Spacer(Modifier.navigationBarsPadding())
+                            item("bento-mobile-satellites") {
+                                Spacer(Modifier.height(10.dp))
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    satelliteModules.forEachIndexed { index, satItem ->
+                                        FadeInStagger(
+                                            index = index + 2,
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            BentoSatelliteCard(
+                                                item = satItem,
+                                                onClick = { onModuleClick(satItem) },
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── 3) FOOTER
+                        if (!tabletBoard) {
+                            item("footer") {
+                                Spacer(Modifier.height(18.dp))
+                                footer()
+                                Spacer(Modifier.navigationBarsPadding())
+                            }
+                        }
                     }
                 }
             }
@@ -555,7 +603,7 @@ fun HomeScreen(
 
             if (showNotifications) {
                 Dialog(
-                    onDismissRequest = { showNotifications = false },
+                    onDismissRequest = closeNotifications,
                     properties = DialogProperties(usePlatformDefaultWidth = false)
                 ) {
                     Box(
@@ -564,7 +612,7 @@ fun HomeScreen(
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
-                                onClick = { showNotifications = false }
+                                onClick = closeNotifications
                             )
                             .statusBarsPadding()
                             .padding(
@@ -586,9 +634,9 @@ fun HomeScreen(
                                 )
                         ) {
                             NotificationInboxScreen(
-                                onNavigateBack = { showNotifications = false },
+                                onNavigateBack = closeNotifications,
                                 onOpenRevision = { crefAgrupada, mode ->
-                                    showNotifications = false
+                                    closeNotifications()
                                     onOpenRevisionFromNotification(crefAgrupada, mode)
                                 }
                             )
