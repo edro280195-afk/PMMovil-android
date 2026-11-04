@@ -143,28 +143,3 @@ fun isEntryLocked(entry: EntradaPendienteDto, currentUsername: String?): Boolean
     return !activeOwner.isNullOrEmpty() &&
         !activeOwner.equals(currentUsername?.trim(), ignoreCase = true)
 }
-
-fun matchesEntryFilter(
-    entry: EntradaPendienteDto,
-    query: String,
-    status: FilterStatus
-): Boolean {
-    val normalizedQuery = query.trim().lowercase()
-    val matchesQuery = normalizedQuery.isEmpty() ||
-        entry.crefAgrupada.lowercase().contains(normalizedQuery) ||
-        entry.nombreCliente.orEmpty().lowercase().contains(normalizedQuery) ||
-        entry.clienteId.orEmpty().lowercase().contains(normalizedQuery) ||
-        entry.asignSupervisor.orEmpty().lowercase().contains(normalizedQuery) ||
-        entry.asignNota.orEmpty().lowercase().contains(normalizedQuery)
-
-    val category = calculateEntryStatus(entry).category
-    val matchesStatus = when (status) {
-        FilterStatus.TOTAL -> true
-        FilterStatus.PENDIENTE -> category == EntryCategory.PENDING
-        FilterStatus.REVISION -> category == EntryCategory.IN_PROGRESS
-        FilterStatus.PAUSADA -> category == EntryCategory.PAUSED
-        FilterStatus.FINALIZADO -> category == EntryCategory.COMPLETED
-    }
-
-    return matchesQuery && matchesStatus
-}

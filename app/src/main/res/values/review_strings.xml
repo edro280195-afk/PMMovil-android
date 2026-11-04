@@ -8,7 +8,6 @@
     <string name="common_cancel">Cancelar</string>
     <string name="common_close_message">Cerrar mensaje</string>
     <string name="common_clear_search">Limpiar búsqueda</string>
-    <string name="common_clear_filters">Limpiar filtros</string>
     <string name="common_understood">Entendido</string>
     <string name="common_request">Solicitar</string>
     <string name="common_preparing_review">Preparando la revisión…</string>
@@ -19,33 +18,12 @@
     <string name="notification_entry_authorized">Entrada autorizada</string>
     <string name="notification_review_assigned">Revisión asignada</string>
 
-    <string name="assignments_title">Pendientes</string>
-    <string name="assignments_subtitle">Revisiones de bodega</string>
     <string name="assignments_searching">Buscando</string>
-    <string name="assignments_scanner_ready">Escáner listo</string>
     <string name="assignments_refresh_content_description">Actualizar revisiones</string>
-    <string name="assignments_my_work">Mi trabajo</string>
-    <string name="assignments_available">Disponibles</string>
-    <string name="assignments_my_work_title">Tu trabajo de revisión</string>
-    <string name="assignments_available_title">Entradas disponibles</string>
-    <string name="assignments_up_to_date">Al día — nada pendiente por ahora</string>
-    <string name="assignments_one_attention">1 entrada requiere tu atención</string>
-    <string name="assignments_many_attention">%1$d entradas requieren tu atención</string>
-    <string name="assignments_one_available">1 entrada puede ser tomada</string>
-    <string name="assignments_many_available">%1$d entradas pueden ser tomadas</string>
-    <string name="assignments_search_hint">Buscar referencia, cliente o supervisor</string>
     <string name="assignments_filter_all">Todas</string>
     <string name="assignments_filter_pending">Pendientes</string>
-    <string name="assignments_filter_in_progress">En proceso</string>
-    <string name="assignments_filter_paused">Pausadas</string>
-    <string name="assignments_filter_completed">Finalizadas</string>
     <string name="assignments_assigned_to_me">Asignadas a mí</string>
     <string name="assignments_sorted_by_priority">Ordenadas por prioridad</string>
-    <string name="assignments_in_progress">En curso</string>
-    <string name="assignments_entries">Entradas</string>
-    <string name="assignments_opened_by_you">Revisiones abiertas por ti</string>
-    <string name="assignments_choose_mode_hint">Toca una entrada para elegir el modo</string>
-    <string name="assignments_truncated_hint">Se muestran los primeros resultados. Escribe una referencia o cliente para refinar la lista.</string>
     <string name="assignments_urgent">URGENTE</string>
     <string name="assignments_high_priority">PRIORIDAD ALTA</string>
     <string name="assignments_assigned">ASIGNADA</string>
@@ -71,14 +49,6 @@
     <string name="assignments_reason">Motivo</string>
     <string name="assignments_reason_hint">Explica por qué necesitas continuar esta revisión.</string>
     <string name="assignments_reason_counter">%1$d/500 · mínimo 5 caracteres</string>
-    <string name="assignments_no_matches">No encontramos coincidencias</string>
-    <string name="assignments_no_active_reviews">No tienes revisiones activas</string>
-    <string name="assignments_no_available_entries">No hay entradas disponibles</string>
-    <string name="assignments_try_another_filter">Prueba con otra referencia, cliente o estado.</string>
-    <string name="assignments_taken_items_here">Las asignaciones y documentos que tomes aparecerán aquí.</string>
-    <string name="assignments_list_updates">La lista se actualizará cuando lleguen nuevas entradas.</string>
-    <string name="assignments_scan_entry">Escanear entrada</string>
-    <string name="assignments_camera_or_gun">Cámara o pistola</string>
     <string name="assignments_progress_count">%1$d/%2$d completas</string>
     <string name="assignments_status_process_finished">Proceso terminado</string>
     <string name="assignments_status_review_finished">Revisión terminada</string>
@@ -388,4 +358,50 @@
     <string name="revision_read_label_hint">Encuadra la etiqueta completa, sin reflejo encima del texto</string>
     <string name="revision_hazmat_saved">Datos de material peligroso guardados</string>
     <string name="revision_hazmat_failed">No se pudieron guardar los datos de material peligroso</string>
+
+    <!-- Hub de Revisión: buscador + mis pendientes -->
+    <string name="assignments_hub_title">Revisiones</string>
+    <string name="assignments_hub_subtitle_loading">Cargando tus pendientes…</string>
+    <string name="assignments_hub_subtitle_none">Sin pendientes</string>
+    <plurals name="assignments_hub_subtitle_count">
+        <item quantity="one">%d pendiente</item>
+        <item quantity="other">%d pendientes</item>
+    </plurals>
+    <string name="assignments_search_placeholder">Escribe la entrada o el cliente</string>
+    <string name="assignments_scan_with_camera">Escanear con la cámara</string>
+    <string name="assignments_scanner_hint">Pistola lista · dispara sobre la etiqueta o el QR de la carpeta</string>
+    <plurals name="assignments_hub_chip_assigned">
+        <item quantity="one">%d asignada</item>
+        <item quantity="other">%d asignadas</item>
+    </plurals>
+    <plurals name="assignments_hub_chip_in_progress">
+        <item quantity="one">%d en curso</item>
+        <item quantity="other">%d en curso</item>
+    </plurals>
+    <plurals name="assignments_hub_chip_paused">
+        <item quantity="one">%d pausada</item>
+        <item quantity="other">%d pausadas</item>
+    </plurals>
+    <string name="assignments_open_title">Dejaste abiertas</string>
+    <string name="assignments_open_subtitle">Las empezaste y no las has terminado</string>
+    <string name="assignments_activity_in_progress">En curso desde %1$s</string>
+    <string name="assignments_activity_paused">Pausada %1$s</string>
+    <string name="assignments_activity_assigned">Asignada %1$s</string>
+    <string name="assignments_progress_real">Avance real</string>
+    <string name="assignments_progress_parts">%1$d de %2$d partidas</string>
+    <string name="assignments_hub_empty_title">Estás al día</string>
+    <string name="assignments_hub_empty_body">No tienes revisiones asignadas ni abiertas. Escanea la carpeta de una entrada o escribe su número arriba.</string>
+    <string name="assignments_results_mine">En tus revisiones</string>
+    <string name="assignments_results_all">En todas las entradas</string>
+    <string name="assignments_results_instant">al instante</string>
+    <string name="assignments_results_waiting">buscando…</string>
+    <string name="assignments_results_ms">%1$d ms</string>
+    <string name="assignments_results_min_chars">Escribe al menos 3 caracteres para buscar en todas las entradas.</string>
+    <string name="assignments_results_no_more">No hay más coincidencias fuera de tus revisiones.</string>
+    <string name="assignments_results_footer">Mostrando las %1$d mejores de %2$d. Escribe más dígitos para afinar.</string>
+    <string name="assignments_results_approximate">APROXIMADA</string>
+    <string name="assignments_results_unavailable_hint">No se pudo buscar en todas las entradas. Tus revisiones sí se buscan.</string>
+    <string name="assignments_results_none_title">No encontramos «%1$s»</string>
+    <string name="assignments_results_none_body">Revisa los dígitos, prueba con parte del nombre del cliente o escanea el QR de la carpeta.</string>
+    <string name="assignments_in_use_short">En uso</string>
 </resources>

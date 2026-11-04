@@ -47,6 +47,53 @@ class RevisionRepository @Inject constructor(private val api: PMMovilApi) {
         }
     }
 
+    /** Lo que devuelve la búsqueda: las mejores coincidencias, cuántas hubo y si hizo falta tolerar errores de tecleo. */
+    data class EntrySearchPage(
+        val hits: List<EntradaBusquedaHitDto>,
+        val total: Int,
+        val tolerant: Boolean,
+        /** `true` si el API aún no tiene la búsqueda rápida y se usó la lista de pendientes de siempre. */
+        val usedLegacyApi: Boolean = false
+    )
+
+    /**
+     * Busca entradas en TODA la base sin bajar la lista: el servidor responde con las ocho mejores coincidencias y su
+     * estado real. Si el API publicado todavía no trae `buscar-rapido` (404) o falla (5xx), cae a filtrar la lista de
+     * pendientes de siempre, más lenta pero con el mismo resultado: la tableta no se queda sin buscador.
+     */
+    suspend fun buscarRapido(consulta: String, limit: Int = 8): Result<EntrySearchPage> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val response = api.buscarRapido(consulta, limit)
+                val body = response.body()
+                when {
+                    response.isSuccessful && body?.success == true -> EntrySearchPage(
+                        hits = body.hits.orEmpty(),
+                        total = body.total ?: body.hits.orEmpty().size,
+                        tolerant = body.tolerante == true
+                    )
+
+                    response.code() == 404 || response.code() in 500..599 -> buscarConApiAnterior(consulta, limit)
+                    else -> throw Exception(errorMessage(response, body?.message ?: "No se pudo buscar la entrada."))
+                }
+            }
+        }
+
+    private suspend fun buscarConApiAnterior(consulta: String, limit: Int): EntrySearchPage {
+        val response = api.getEntradasPendientes(consulta)
+        val body = response.body()
+        if (!response.isSuccessful || body?.success != true) {
+            throw Exception(errorMessage(response, "No se pudo buscar la entrada."))
+        }
+        val items = body.items.orEmpty()
+        return EntrySearchPage(
+            hits = items.take(limit).map { EntradaBusquedaHitDto(item = it, aproximada = false) },
+            total = items.size,
+            tolerant = false,
+            usedLegacyApi = true
+        )
+    }
+
     suspend fun registrarTomaDocumento(creferencia: String) = withContext(Dispatchers.IO) {
         runCatching {
             val response = api.registrarTomaDocumento(creferencia)

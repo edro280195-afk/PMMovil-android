@@ -8,7 +8,6 @@
     <string name="common_cancel">Cancel</string>
     <string name="common_close_message">Close message</string>
     <string name="common_clear_search">Clear search</string>
-    <string name="common_clear_filters">Clear filters</string>
     <string name="common_understood">Got it</string>
     <string name="common_request">Request</string>
     <string name="common_preparing_review">Preparing inspection…</string>
@@ -18,33 +17,12 @@
     <string name="common_no_reference">No reference</string>
     <string name="notification_entry_authorized">Entry authorized</string>
     <string name="notification_review_assigned">Inspection assigned</string>
-    <string name="assignments_title">Pending</string>
-    <string name="assignments_subtitle">Warehouse inspections</string>
     <string name="assignments_searching">Searching</string>
-    <string name="assignments_scanner_ready">Scanner ready</string>
     <string name="assignments_refresh_content_description">Refresh inspections</string>
-    <string name="assignments_my_work">My work</string>
-    <string name="assignments_available">Available</string>
-    <string name="assignments_my_work_title">Your inspection work</string>
-    <string name="assignments_available_title">Available entries</string>
-    <string name="assignments_up_to_date">All caught up — nothing pending right now</string>
-    <string name="assignments_one_attention">1 entry needs your attention</string>
-    <string name="assignments_many_attention">%1$d entries need your attention</string>
-    <string name="assignments_one_available">1 entry can be taken</string>
-    <string name="assignments_many_available">%1$d entries can be taken</string>
-    <string name="assignments_search_hint">Search reference, customer, or supervisor</string>
     <string name="assignments_filter_all">All</string>
     <string name="assignments_filter_pending">Pending</string>
-    <string name="assignments_filter_in_progress">In progress</string>
-    <string name="assignments_filter_paused">Paused</string>
-    <string name="assignments_filter_completed">Completed</string>
     <string name="assignments_assigned_to_me">Assigned to me</string>
     <string name="assignments_sorted_by_priority">Sorted by priority</string>
-    <string name="assignments_in_progress">In progress</string>
-    <string name="assignments_entries">Entries</string>
-    <string name="assignments_opened_by_you">Inspections opened by you</string>
-    <string name="assignments_choose_mode_hint">Tap an entry to choose the mode</string>
-    <string name="assignments_truncated_hint">Showing the first results. Enter a reference or customer to narrow the list.</string>
     <string name="assignments_urgent">URGENT</string>
     <string name="assignments_high_priority">HIGH PRIORITY</string>
     <string name="assignments_assigned">ASSIGNED</string>
@@ -70,14 +48,6 @@
     <string name="assignments_reason">Reason</string>
     <string name="assignments_reason_hint">Explain why you need to continue this inspection.</string>
     <string name="assignments_reason_counter">%1$d/500 · at least 5 characters</string>
-    <string name="assignments_no_matches">No matches found</string>
-    <string name="assignments_no_active_reviews">You have no active inspections</string>
-    <string name="assignments_no_available_entries">No entries available</string>
-    <string name="assignments_try_another_filter">Try another reference, customer, or status.</string>
-    <string name="assignments_taken_items_here">Assignments and documents you take will appear here.</string>
-    <string name="assignments_list_updates">The list will update when new entries arrive.</string>
-    <string name="assignments_scan_entry">Scan entry</string>
-    <string name="assignments_camera_or_gun">Camera or scanner</string>
     <string name="assignments_progress_count">%1$d/%2$d complete</string>
     <string name="assignments_status_process_finished">Process finished</string>
     <string name="assignments_status_review_finished">Inspection finished</string>
@@ -383,4 +353,50 @@
     <string name="revision_read_label_hint">Frame the whole label, with no glare over the text</string>
     <string name="revision_hazmat_saved">Hazardous material data saved</string>
     <string name="revision_hazmat_failed">Could not save hazardous material data</string>
+
+    <!-- Review hub: search + my pending work -->
+    <string name="assignments_hub_title">Reviews</string>
+    <string name="assignments_hub_subtitle_loading">Loading your pending work…</string>
+    <string name="assignments_hub_subtitle_none">Nothing pending</string>
+    <plurals name="assignments_hub_subtitle_count">
+        <item quantity="one">%d pending</item>
+        <item quantity="other">%d pending</item>
+    </plurals>
+    <string name="assignments_search_placeholder">Type the entry or the customer</string>
+    <string name="assignments_scan_with_camera">Scan with the camera</string>
+    <string name="assignments_scanner_hint">Scanner ready · aim at the label or the folder QR</string>
+    <plurals name="assignments_hub_chip_assigned">
+        <item quantity="one">%d assigned</item>
+        <item quantity="other">%d assigned</item>
+    </plurals>
+    <plurals name="assignments_hub_chip_in_progress">
+        <item quantity="one">%d in progress</item>
+        <item quantity="other">%d in progress</item>
+    </plurals>
+    <plurals name="assignments_hub_chip_paused">
+        <item quantity="one">%d paused</item>
+        <item quantity="other">%d paused</item>
+    </plurals>
+    <string name="assignments_open_title">You left these open</string>
+    <string name="assignments_open_subtitle">You started them and haven\'t finished</string>
+    <string name="assignments_activity_in_progress">In progress since %1$s</string>
+    <string name="assignments_activity_paused">Paused %1$s</string>
+    <string name="assignments_activity_assigned">Assigned %1$s</string>
+    <string name="assignments_progress_real">Real progress</string>
+    <string name="assignments_progress_parts">%1$d of %2$d lines</string>
+    <string name="assignments_hub_empty_title">You\'re all caught up</string>
+    <string name="assignments_hub_empty_body">You have no assigned or open reviews. Scan an entry\'s folder or type its number above.</string>
+    <string name="assignments_results_mine">In your reviews</string>
+    <string name="assignments_results_all">In all entries</string>
+    <string name="assignments_results_instant">instant</string>
+    <string name="assignments_results_waiting">searching…</string>
+    <string name="assignments_results_ms">%1$d ms</string>
+    <string name="assignments_results_min_chars">Type at least 3 characters to search all entries.</string>
+    <string name="assignments_results_no_more">No more matches outside your reviews.</string>
+    <string name="assignments_results_footer">Showing the best %1$d of %2$d. Type more digits to narrow it down.</string>
+    <string name="assignments_results_approximate">APPROXIMATE</string>
+    <string name="assignments_results_unavailable_hint">Couldn\'t search all entries. Your own reviews are still searched.</string>
+    <string name="assignments_results_none_title">We couldn\'t find “%1$s”</string>
+    <string name="assignments_results_none_body">Check the digits, try part of the customer name, or scan the folder QR.</string>
+    <string name="assignments_in_use_short">In use</string>
 </resources>

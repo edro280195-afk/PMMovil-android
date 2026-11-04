@@ -157,6 +157,16 @@ interface PMMovilApi {
     @GET("Revision/pendientes")
     suspend fun getEntradasPendientes(@Query("filtro") filtro: String? = null): Response<EntradasPendientesResponse>
 
+    /**
+     * Búsqueda de la pantalla de Revisión: unos dígitos de la entrada o parte del cliente, tolerante a acentos y a un
+     * error de tecleo. Devuelve las mejores coincidencias (ocho) con su estado real; no recorre la lista de pendientes.
+     */
+    @GET("Revision/buscar-rapido")
+    suspend fun buscarRapido(
+        @Query("q") consulta: String,
+        @Query("limit") limit: Int = 8
+    ): Response<BuscarRapidoResponse>
+
     @GET("Revision/mis-activas")
     suspend fun getMisActivas(): Response<EntradasPendientesResponse>
 

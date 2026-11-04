@@ -252,6 +252,21 @@ data class EntradasPendientesResponse(
     val message: String?
 )
 
+/** Una coincidencia de la búsqueda rápida: la entrada con su estado real y si salió por tolerar un error de tecleo. */
+data class EntradaBusquedaHitDto(
+    @SerializedName("item") val item: EntradaPendienteDto,
+    @SerializedName("aproximada") val aproximada: Boolean = false
+)
+
+/** Respuesta de GET /Revision/buscar-rapido?q=: las mejores coincidencias y cuántas hubo en total. */
+data class BuscarRapidoResponse(
+    val success: Boolean,
+    val hits: List<EntradaBusquedaHitDto>?,
+    val total: Int?,
+    val tolerante: Boolean?,
+    val message: String?
+)
+
 /** Respuesta de GET /Revision/buscar/{crefAgrupada} */
 data class BuscarEntradaResponse(
     val success: Boolean,

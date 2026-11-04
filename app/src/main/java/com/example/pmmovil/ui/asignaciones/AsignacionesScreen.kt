@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridScope
@@ -40,7 +39,6 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.FilterAltOff
 import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Inventory2
@@ -57,13 +55,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -80,17 +75,18 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -124,7 +120,6 @@ import com.example.pmmovil.ui.theme.PmmAmberDark
 import com.example.pmmovil.ui.theme.PmmBgPrimary
 import com.example.pmmovil.ui.theme.PmmBgSurface
 import com.example.pmmovil.ui.theme.PmmBlueDeep
-import com.example.pmmovil.ui.theme.PmmBlueLight
 import com.example.pmmovil.ui.theme.PmmGreen
 import com.example.pmmovil.ui.theme.PmmGreenDark
 import com.example.pmmovil.ui.theme.PmmNavyBorder
@@ -137,6 +132,15 @@ import com.example.pmmovil.ui.theme.PmmTextPrimary
 import com.example.pmmovil.ui.theme.PmmTextSecondary
 import com.example.pmmovil.ui.theme.PmmYellow
 import kotlinx.coroutines.launch
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.withStyle
+import java.time.LocalDateTime
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -149,22 +153,29 @@ fun AsignacionesScreen(
     viewModel: AsignacionesViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val mine by viewModel.misRevisionesTotales.collectAsState()
-    val available by viewModel.entradasFiltradas.collectAsState()
-    val mineCount by viewModel.mineCount.collectAsState()
-    val minePendingCount by viewModel.minePendingCount.collectAsState()
-    val availableCount by viewModel.availableCount.collectAsState()
-    val counts by viewModel.counts.collectAsState()
+    val hub by viewModel.pendingHub.collectAsState()
+    val localResults by viewModel.localResults.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var snackbarKind by remember { mutableStateOf(PendingMessageKind.INFO) }
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
     val context = LocalContext.current
     val playUnlockApprovedAlert = rememberUnlockApprovedAlert()
+    val currentUsername = viewModel.getUsername()
+    val searching = searchTokens(uiState.query).isNotEmpty()
 
     PmmStatusBar(color = PmmNavyDark, darkIcons = false)
 
     HardwareScannerListener(onBarcodeScanned = viewModel::searchExactReference)
+
+    // Al regresar de una revisión o de la cámara se renuevan los pendientes: así el avance que se ve es el real.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.refreshOnResume() }
+
+    // «Atrás» con algo escrito borra la búsqueda y vuelve a los pendientes; solo con el buscador vacío sale de la pantalla.
+    BackHandler(enabled = uiState.query.isNotEmpty()) {
+        focusManager.clearFocus()
+        viewModel.clearQuery()
+    }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -180,8 +191,8 @@ fun AsignacionesScreen(
                 is AsignacionesEvent.ShowMessage -> {
                     snackbarKind = event.kind
                     snackbarHostState.currentSnackbarData?.dismiss()
-                        scope.launch {
-                            snackbarHostState.showSnackbar(
+                    scope.launch {
+                        snackbarHostState.showSnackbar(
                             message = event.message.resolve(context),
                             duration = SnackbarDuration.Long
                         )
@@ -199,23 +210,31 @@ fun AsignacionesScreen(
         }
     }
 
-    val currentEntries = if (uiState.drawerTab == DrawerTab.MIAS) mine else available
-
     Scaffold(
         containerColor = PmmBgPrimary,
         topBar = {
             // OJO: debe ir en el slot topBar, no como contenido normal del
             // body -- Scaffold ya reserva el inset del status bar para su
-            // contenido (scaffoldPadding), y PendingHeader aplica el suyo
+            // contenido (scaffoldPadding), y HubHeader aplica el suyo
             // propio (.statusBarsPadding()) -- puesto como body, el inset se
             // reservaba dos veces y dejaba una tira en blanco (el
             // containerColor claro del Scaffold) antes de que empezara el
             // azul del header. El slot topBar no sufre ese doble padding.
-            PendingHeader(
+            HubHeader(
+                pendingCount = hub.total,
+                hasLoaded = uiState.hasLoadedMine,
+                query = uiState.query,
+                isLookingUp = uiState.isSearching,
+                isRefreshing = uiState.isRefreshing,
                 onBack = onNavigateBack,
                 onRefresh = { viewModel.loadData(showLoading = true) },
-                isSearching = uiState.isSearching,
-                isRefreshing = uiState.isRefreshing
+                onQueryChange = viewModel::setQuery,
+                onSubmit = {
+                    focusManager.clearFocus()
+                    viewModel.submitQuery()
+                },
+                onClear = viewModel::clearQuery,
+                onScan = onNavigateToScanner
             )
         },
         snackbarHost = {
@@ -223,84 +242,43 @@ fun AsignacionesScreen(
                 hostState = snackbarHostState,
                 kind = snackbarKind
             )
-        },
-        floatingActionButton = {
-            ScanButton(
-                onClick = onNavigateToScanner,
-                modifier = Modifier
-                    .navigationBarsPadding()
-                    .padding(bottom = 4.dp)
-            )
         }
     ) { scaffoldPadding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(scaffoldPadding)
+                .padding(scaffoldPadding),
+            contentAlignment = Alignment.TopCenter
         ) {
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentAlignment = Alignment.TopCenter
+                    .fillMaxSize()
+                    .widthIn(max = 980.dp)
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .widthIn(max = 980.dp)
-                ) {
-                    PendingOverview(
-                        mineCount = mineCount,
-                        minePendingCount = minePendingCount,
-                        availableCount = availableCount,
-                        selectedTab = uiState.drawerTab
-                    )
-
-                    PendingTabs(
-                        selectedTab = uiState.drawerTab,
-                        mineCount = mineCount,
-                        availableCount = availableCount,
-                        onSelect = viewModel::setDrawerTab
-                    )
-
-                    PendingSearch(
-                        value = uiState.filtroTexto,
-                        onValueChange = viewModel::setFiltroTexto,
-                        onSearch = {
+                if (searching) {
+                    SearchResultsPane(
+                        query = uiState.query,
+                        localResults = localResults,
+                        search = uiState.search,
+                        currentUsername = currentUsername,
+                        onEntryClick = {
                             focusManager.clearFocus()
-                        },
-                        onClear = {
-                            focusManager.clearFocus()
-                            viewModel.setFiltroTexto("")
+                            viewModel.selectEntry(it)
                         }
                     )
-
-                    StatusFilters(
-                        selected = uiState.statusActivo,
-                        counts = counts,
-                        onSelect = viewModel::setStatusActivo
-                    )
-
+                } else {
                     PullToRefreshBox(
                         isRefreshing = uiState.isRefreshing,
                         onRefresh = { viewModel.loadData(showLoading = false) },
                         modifier = Modifier.fillMaxSize()
                     ) {
                         when {
-                            uiState.isLoading && currentEntries.isEmpty() -> PendingSkeletonGrid()
-                            currentEntries.isEmpty() -> PendingEmptyState(
-                                tab = uiState.drawerTab,
-                                hasFilters = uiState.filtroTexto.isNotBlank() ||
-                                    uiState.statusActivo != FilterStatus.TOTAL,
-                                onClearFilters = viewModel::clearFilters
-                            )
-
-                            else -> PendingEntriesGrid(
-                                entries = currentEntries,
-                                currentUsername = viewModel.getUsername(),
+                            !uiState.hasLoadedMine && hub.isEmpty -> PendingSkeletonGrid()
+                            hub.isEmpty -> HubEmptyState(onScan = onNavigateToScanner)
+                            else -> PendingHubList(
+                                hub = hub,
+                                currentUsername = currentUsername,
                                 waitingUnlock = uiState.unlockRequests,
-                                selectedTab = uiState.drawerTab,
-                                truncated = uiState.truncated,
                                 onEntryClick = viewModel::selectEntry,
                                 onUnlockClick = viewModel::showDesbloqueoDialog
                             )
@@ -332,21 +310,36 @@ fun AsignacionesScreen(
     }
 }
 
+/**
+ * Arriba siempre está lo que el revisador necesita para llegar a una entrada: el buscador y, a su lado, el botón grande
+ * de la cámara. La pistola no necesita nada: escucha en toda la pantalla, y la leyenda de abajo lo confirma.
+ */
 @Composable
-private fun PendingHeader(
+private fun HubHeader(
+    pendingCount: Int,
+    hasLoaded: Boolean,
+    query: String,
+    isLookingUp: Boolean,
+    isRefreshing: Boolean,
     onBack: (() -> Unit)?,
     onRefresh: () -> Unit,
-    isSearching: Boolean,
-    isRefreshing: Boolean
+    onQueryChange: (String) -> Unit,
+    onSubmit: () -> Unit,
+    onClear: () -> Unit,
+    onScan: () -> Unit
 ) {
+    val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val subtitle = when {
+        !hasLoaded -> stringResource(R.string.assignments_hub_subtitle_loading)
+        pendingCount == 0 -> stringResource(R.string.assignments_hub_subtitle_none)
+        else -> context.resources.getQuantityString(R.plurals.assignments_hub_subtitle_count, pendingCount, pendingCount)
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(PmmNavyDark, PmmBlueDeep)
-                )
-            )
+            .background(Brush.verticalGradient(colors = listOf(PmmNavyDark, PmmBlueDeep)))
             .statusBarsPadding()
     ) {
         Row(
@@ -367,49 +360,20 @@ private fun PendingHeader(
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = stringResource(R.string.assignments_title),
+                    text = stringResource(R.string.assignments_hub_title),
                     color = Color.White,
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Black,
                     letterSpacing = (-0.4).sp
                 )
                 Text(
-                    text = stringResource(R.string.assignments_subtitle),
-                    color = Color.White.copy(alpha = 0.72f),
+                    text = subtitle,
+                    color = Color.White.copy(alpha = 0.78f),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium
                 )
             }
 
-            Surface(
-                shape = RoundedCornerShape(999.dp),
-                color = Color.White.copy(alpha = 0.12f),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f))
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(7.dp)
-                            .clip(CircleShape)
-                            .background(if (isSearching) PmmYellow else Color(0xFF86EFAC))
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = stringResource(
-                            if (isSearching) R.string.assignments_searching
-                            else R.string.assignments_scanner_ready
-                        ),
-                        color = Color.White,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-
-            Spacer(Modifier.width(8.dp))
             HeaderIconButton(
                 icon = Icons.Default.Refresh,
                 contentDescription = stringResource(R.string.assignments_refresh_content_description),
@@ -418,7 +382,112 @@ private fun PendingHeader(
             )
         }
 
-        if (isSearching || isRefreshing) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 56.dp),
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = null,
+                        tint = PmmTextSecondary
+                    )
+                },
+                trailingIcon = {
+                    if (query.isNotEmpty()) {
+                        IconButton(
+                            onClick = onClear,
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = stringResource(R.string.common_clear_search),
+                                tint = PmmTextSecondary
+                            )
+                        }
+                    }
+                },
+                placeholder = {
+                    Text(
+                        text = stringResource(R.string.assignments_search_placeholder),
+                        color = PmmTextSecondary,
+                        fontSize = 14.sp,
+                        maxLines = 1
+                    )
+                },
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.None,
+                    imeAction = ImeAction.Search
+                ),
+                keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color.White,
+                    focusedTextColor = PmmTextPrimary,
+                    unfocusedTextColor = PmmTextPrimary,
+                    focusedBorderColor = PmmYellow,
+                    unfocusedBorderColor = Color.Transparent,
+                    cursorColor = PmmBlueDeep
+                )
+            )
+
+            Surface(
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onScan()
+                },
+                modifier = Modifier.size(56.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = PmmYellow
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.QrCodeScanner,
+                        contentDescription = stringResource(R.string.assignments_scan_with_camera),
+                        tint = PmmNavyDark,
+                        modifier = Modifier.size(30.dp)
+                    )
+                }
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(7.dp)
+                    .clip(CircleShape)
+                    .background(if (isLookingUp) PmmYellow else Color(0xFF86EFAC))
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = stringResource(
+                    if (isLookingUp) R.string.assignments_searching else R.string.assignments_scanner_hint
+                ),
+                color = Color.White.copy(alpha = 0.85f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        if (isLookingUp || isRefreshing) {
             LinearProgressIndicator(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -456,180 +525,160 @@ private fun HeaderIconButton(
 }
 
 @Composable
-private fun PendingOverview(
-    mineCount: Int,
-    minePendingCount: Int,
-    availableCount: Int,
-    selectedTab: DrawerTab
+private fun PendingHubList(
+    hub: PendingHub,
+    currentUsername: String?,
+    waitingUnlock: Set<String>,
+    onEntryClick: (EntradaPendienteDto) -> Unit,
+    onUnlockClick: (EntradaPendienteDto) -> Unit
 ) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        shape = RoundedCornerShape(20.dp),
-        color = PmmBgSurface,
-        shadowElevation = 2.dp,
-        border = BorderStroke(1.dp, PmmNavyBorder)
+    val context = LocalContext.current
+
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(minSize = 320.dp),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 32.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(
-                        if (selectedTab == DrawerTab.MIAS) {
-                            PmmYellow.copy(alpha = 0.2f)
-                        } else {
-                            PmmNavyVariant
-                        }
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = if (selectedTab == DrawerTab.MIAS) {
-                        Icons.AutoMirrored.Filled.FactCheck
-                    } else {
-                        Icons.Default.Inventory2
-                    },
-                    contentDescription = null,
-                    tint = if (selectedTab == DrawerTab.MIAS) PmmAmberDark else PmmBlueDeep,
-                    modifier = Modifier.size(26.dp)
-                )
-            }
-            Spacer(Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = if (selectedTab == DrawerTab.MIAS) {
-                        stringResource(R.string.assignments_my_work_title)
-                    } else {
-                        stringResource(R.string.assignments_available_title)
-                    },
-                    color = PmmTextPrimary,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = if (selectedTab == DrawerTab.MIAS) {
-                        // "Requieren tu atención" solo tiene sentido para las
-                        // pendientes/en progreso -- antes usaba mineCount (el
-                        // total, incluyendo las ya finalizadas) y avisaba de
-                        // trabajo urgente que en realidad ya estaba cerrado.
-                        when {
-                            minePendingCount == 0 && mineCount > 0 ->
-                                stringResource(R.string.assignments_up_to_date)
-                            minePendingCount == 1 ->
-                                stringResource(R.string.assignments_one_attention)
-                            else -> stringResource(
-                                R.string.assignments_many_attention,
-                                minePendingCount
-                            )
-                        }
-                    } else {
-                        if (availableCount == 1) {
-                            stringResource(R.string.assignments_one_available)
-                        } else {
-                            stringResource(R.string.assignments_many_available, availableCount)
-                        }
-                    },
-                    color = PmmTextSecondary,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-            Text(
-                text = if (selectedTab == DrawerTab.MIAS) minePendingCount.toString() else availableCount.toString(),
-                color = PmmBlueDeep,
-                fontSize = 30.sp,
-                fontWeight = FontWeight.Black
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            HubSummary(hub)
+        }
+
+        if (hub.assigned.isNotEmpty()) {
+            sectionHeader(
+                title = context.getString(R.string.assignments_assigned_to_me),
+                subtitle = context.getString(R.string.assignments_sorted_by_priority),
+                count = hub.assigned.size
             )
+            items(hub.assigned, key = { "assigned_${it.crefAgrupada}" }) { entry ->
+                PendingEntryCard(
+                    entry = entry,
+                    currentUsername = currentUsername,
+                    waitingUnlock = entry.crefAgrupada in waitingUnlock,
+                    onEntryClick = { onEntryClick(entry) },
+                    onUnlockClick = { onUnlockClick(entry) }
+                )
+            }
+        }
+
+        if (hub.open.isNotEmpty()) {
+            sectionHeader(
+                title = context.getString(R.string.assignments_open_title),
+                subtitle = context.getString(R.string.assignments_open_subtitle),
+                count = hub.open.size
+            )
+            items(hub.open, key = { "open_${it.crefAgrupada}" }) { entry ->
+                PendingEntryCard(
+                    entry = entry,
+                    currentUsername = currentUsername,
+                    waitingUnlock = entry.crefAgrupada in waitingUnlock,
+                    onEntryClick = { onEntryClick(entry) },
+                    onUnlockClick = { onUnlockClick(entry) }
+                )
+            }
         }
     }
 }
 
+/** De un vistazo: cuántas asignadas, cuántas en curso y cuántas pausadas. Solo salen las que tienen algo. */
 @Composable
-private fun PendingTabs(
-    selectedTab: DrawerTab,
-    mineCount: Int,
-    availableCount: Int,
-    onSelect: (DrawerTab) -> Unit
-) {
+private fun HubSummary(hub: PendingHub) {
+    val resources = LocalContext.current.resources
+    val chips = buildList {
+        if (hub.assigned.isNotEmpty()) {
+            add(resources.getQuantityString(R.plurals.assignments_hub_chip_assigned, hub.assigned.size, hub.assigned.size))
+        }
+        if (hub.inProgressCount > 0) {
+            add(resources.getQuantityString(R.plurals.assignments_hub_chip_in_progress, hub.inProgressCount, hub.inProgressCount))
+        }
+        if (hub.pausedCount > 0) {
+            add(resources.getQuantityString(R.plurals.assignments_hub_chip_paused, hub.pausedCount, hub.pausedCount))
+        }
+    }
+    if (chips.isEmpty()) return
+
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(PmmNavyVariant)
-            .padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        PendingTab(
-            modifier = Modifier.weight(1f),
-            selected = selectedTab == DrawerTab.MIAS,
-            label = stringResource(R.string.assignments_my_work),
-            count = mineCount,
-            icon = Icons.Default.Person,
-            onClick = { onSelect(DrawerTab.MIAS) }
-        )
-        PendingTab(
-            modifier = Modifier.weight(1f),
-            selected = selectedTab == DrawerTab.DISPO,
-            label = stringResource(R.string.assignments_available),
-            count = availableCount,
-            icon = Icons.Default.Inventory2,
-            onClick = { onSelect(DrawerTab.DISPO) }
-        )
+        chips.forEach { label ->
+            Surface(
+                shape = RoundedCornerShape(999.dp),
+                color = PmmBgSurface,
+                border = BorderStroke(1.dp, PmmNavyBorder)
+            ) {
+                Text(
+                    text = label,
+                    modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+                    color = PmmTextSecondary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1
+                )
+            }
+        }
     }
 }
 
+/** Sin pendientes: la pantalla lo dice y ofrece lo que sigue, que es escanear. */
 @Composable
-private fun PendingTab(
-    modifier: Modifier,
-    selected: Boolean,
-    label: String,
-    count: Int,
-    icon: ImageVector,
-    onClick: () -> Unit
-) {
-    Surface(
-        onClick = onClick,
-        modifier = modifier.heightIn(min = 48.dp),
-        shape = RoundedCornerShape(11.dp),
-        color = if (selected) Color.White else Color.Transparent,
-        shadowElevation = if (selected) 2.dp else 0.dp
+private fun HubEmptyState(onScan: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 28.dp, vertical = 48.dp),
+        contentAlignment = Alignment.TopCenter
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.widthIn(max = 420.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = if (selected) PmmBlueDeep else PmmTextMuted,
-                modifier = Modifier.size(17.dp)
-            )
-            Spacer(Modifier.width(7.dp))
-            Text(
-                text = label,
-                color = if (selected) PmmTextPrimary else PmmTextSecondary,
-                fontSize = 12.sp,
-                fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.SemiBold,
-                maxLines = 1
-            )
-            Spacer(Modifier.width(7.dp))
-            Surface(
-                shape = RoundedCornerShape(999.dp),
-                color = if (selected) PmmNavyVariant else PmmNavyBorder
+            Box(
+                modifier = Modifier
+                    .size(82.dp)
+                    .clip(RoundedCornerShape(26.dp))
+                    .background(PmmNavyVariant),
+                contentAlignment = Alignment.Center
             ) {
+                Icon(
+                    imageVector = Icons.Default.TaskAlt,
+                    contentDescription = null,
+                    tint = PmmBlueDeep,
+                    modifier = Modifier.size(38.dp)
+                )
+            }
+            Spacer(Modifier.height(18.dp))
+            Text(
+                text = stringResource(R.string.assignments_hub_empty_title),
+                color = PmmTextPrimary,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Black,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = stringResource(R.string.assignments_hub_empty_body),
+                color = PmmTextSecondary,
+                fontSize = 13.sp,
+                lineHeight = 19.sp,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(18.dp))
+            Button(
+                onClick = onScan,
+                modifier = Modifier.heightIn(min = 52.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = PmmYellow, contentColor = PmmNavyDark),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.QrCodeScanner,
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(Modifier.width(8.dp))
                 Text(
-                    text = count.toString(),
-                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
-                    color = if (selected) PmmBlueDeep else PmmTextSecondary,
-                    fontSize = 10.sp,
+                    text = stringResource(R.string.assignments_scan_with_camera),
                     fontWeight = FontWeight.Black
                 )
             }
@@ -637,222 +686,435 @@ private fun PendingTab(
     }
 }
 
+// ── Resultados de la búsqueda ────────────────────────────────────────────────
+
+/**
+ * Lo que se ve mientras hay algo escrito. Arriba, al instante, las coincidencias entre las revisiones del propio
+ * revisador (ya están en la tableta). Debajo, lo que contesta el servidor sobre TODAS las entradas, ocho como máximo y
+ * con su estado real; mientras llega se ven renglones de espera, no una pantalla en blanco.
+ */
 @Composable
-private fun PendingSearch(
-    value: String,
-    onValueChange: (String) -> Unit,
-    onSearch: () -> Unit,
-    onClear: () -> Unit
-) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        singleLine = true,
-        shape = RoundedCornerShape(14.dp),
-        leadingIcon = {
-            Icon(
-                imageVector = Icons.Default.Search,
-                contentDescription = null,
-                tint = PmmTextSecondary
-            )
-        },
-        trailingIcon = {
-            if (value.isNotBlank()) {
-                IconButton(
-                    onClick = onClear,
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = stringResource(R.string.common_clear_search),
-                        tint = PmmTextSecondary
-                    )
-                }
-            }
-        },
-        placeholder = {
-            Text(
-                text = stringResource(R.string.assignments_search_hint),
-                color = PmmTextMuted,
-                fontSize = 13.sp
-            )
-        },
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        keyboardActions = KeyboardActions(onSearch = { onSearch() }),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = PmmBgSurface,
-            unfocusedContainerColor = PmmBgSurface,
-            focusedBorderColor = PmmBlueDeep,
-            unfocusedBorderColor = PmmNavyBorder,
-            cursorColor = PmmBlueDeep
-        )
-    )
-}
-
-@Composable
-private fun StatusFilters(
-    selected: FilterStatus,
-    counts: Map<FilterStatus, Int>,
-    onSelect: (FilterStatus) -> Unit
-) {
-    LazyRow(
-        modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        items(FilterStatus.entries) { status ->
-            val visual = filterVisual(status)
-            FilterChip(
-                selected = selected == status,
-                onClick = { onSelect(status) },
-                label = {
-                    Text(
-                        text = "${stringResource(visual.labelRes)} ${counts[status] ?: 0}",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp
-                    )
-                },
-                leadingIcon = {
-                    Icon(
-                        imageVector = visual.icon,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                },
-                colors = FilterChipDefaults.filterChipColors(
-                    containerColor = PmmBgSurface,
-                    labelColor = PmmTextSecondary,
-                    iconColor = visual.color,
-                    selectedContainerColor = visual.color,
-                    selectedLabelColor = Color.White,
-                    selectedLeadingIconColor = Color.White
-                ),
-                border = FilterChipDefaults.filterChipBorder(
-                    enabled = true,
-                    selected = selected == status,
-                    borderColor = PmmNavyBorder,
-                    selectedBorderColor = visual.color
-                )
-            )
-        }
-    }
-}
-
-private data class FilterVisual(
-    @androidx.annotation.StringRes val labelRes: Int,
-    val icon: ImageVector,
-    val color: Color
-)
-
-private fun filterVisual(status: FilterStatus): FilterVisual {
-    return when (status) {
-        FilterStatus.TOTAL -> FilterVisual(R.string.assignments_filter_all, Icons.Default.Inventory2, PmmBlueDeep)
-        FilterStatus.PENDIENTE -> FilterVisual(R.string.assignments_filter_pending, Icons.Default.Description, PmmTextSecondary)
-        FilterStatus.REVISION -> FilterVisual(R.string.assignments_filter_in_progress, Icons.Default.Refresh, PmmAmberDark)
-        FilterStatus.PAUSADA -> FilterVisual(R.string.assignments_filter_paused, Icons.Default.HourglassTop, Color(0xFF4F46E5))
-        FilterStatus.FINALIZADO -> FilterVisual(R.string.assignments_filter_completed, Icons.Default.TaskAlt, PmmGreenDark)
-    }
-}
-
-@Composable
-private fun PendingEntriesGrid(
-    entries: List<EntradaPendienteDto>,
+private fun SearchResultsPane(
+    query: String,
+    localResults: List<EntradaPendienteDto>,
+    search: SearchState,
     currentUsername: String?,
-    waitingUnlock: Set<String>,
-    selectedTab: DrawerTab,
-    truncated: Boolean,
-    onEntryClick: (EntradaPendienteDto) -> Unit,
-    onUnlockClick: (EntradaPendienteDto) -> Unit
+    onEntryClick: (EntradaPendienteDto) -> Unit
 ) {
     val context = LocalContext.current
-    val assigned = entries.filter { it.esAsignada == true }
-    val regular = entries.filterNot { it.esAsignada == true }
+    val tokens = remember(query) { searchTokens(query) }
+    val localReferences = remember(localResults) { localResults.map { it.crefAgrupada }.toSet() }
 
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 320.dp),
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(
-            start = 16.dp,
-            end = 16.dp,
-            top = 12.dp,
-            bottom = 112.dp
-        ),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 32.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        if (assigned.isNotEmpty()) {
-            sectionHeader(
-                title = context.getString(R.string.assignments_assigned_to_me),
-                subtitle = context.getString(R.string.assignments_sorted_by_priority),
-                count = assigned.size
+        if (localResults.isNotEmpty()) {
+            resultsHeader(
+                title = context.getString(R.string.assignments_results_mine),
+                chip = context.getString(R.string.assignments_results_instant),
+                chipIsFinal = true
             )
-            items(assigned, key = { "assigned_${it.crefAgrupada}" }) { entry ->
-                PendingEntryCard(
+            items(localResults, key = { "local_${it.crefAgrupada}" }) { entry ->
+                ResultRow(
                     entry = entry,
+                    approximate = false,
+                    tokens = tokens,
                     currentUsername = currentUsername,
-                    waitingUnlock = entry.crefAgrupada in waitingUnlock,
-                    onEntryClick = { onEntryClick(entry) },
-                    onUnlockClick = { onUnlockClick(entry) }
+                    onClick = { onEntryClick(entry) }
                 )
             }
         }
 
-        if (regular.isNotEmpty()) {
-            sectionHeader(
-                title = if (selectedTab == DrawerTab.MIAS) {
-                    context.getString(R.string.assignments_in_progress)
-                } else {
-                    context.getString(R.string.assignments_entries)
-                },
-                subtitle = if (selectedTab == DrawerTab.MIAS) {
-                    context.getString(R.string.assignments_opened_by_you)
-                } else {
-                    context.getString(R.string.assignments_choose_mode_hint)
-                },
-                count = regular.size
-            )
-            items(regular, key = { "regular_${it.crefAgrupada}" }) { entry ->
-                PendingEntryCard(
-                    entry = entry,
-                    currentUsername = currentUsername,
-                    waitingUnlock = entry.crefAgrupada in waitingUnlock,
-                    onEntryClick = { onEntryClick(entry) },
-                    onUnlockClick = { onUnlockClick(entry) }
-                )
+        when (search) {
+            SearchState.Idle -> item(span = { GridItemSpan(maxLineSpan) }) {
+                SearchNote(stringResource(R.string.assignments_results_min_chars))
             }
-        }
 
-        if (truncated && selectedTab == DrawerTab.DISPO) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    color = PmmNavyVariant,
-                    border = BorderStroke(1.dp, PmmBlueLight.copy(alpha = 0.25f))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Info,
-                            contentDescription = null,
-                            tint = PmmBlueDeep
-                        )
-                        Spacer(Modifier.width(10.dp))
-                        Text(
-                            text = stringResource(R.string.assignments_truncated_hint),
-                            color = PmmTextSecondary,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
-                        )
+            SearchState.Searching -> {
+                resultsHeader(
+                    title = context.getString(R.string.assignments_results_all),
+                    chip = context.getString(R.string.assignments_results_waiting),
+                    chipIsFinal = false
+                )
+                items(3, key = { "wait_$it" }) { ResultSkeletonRow() }
+            }
+
+            is SearchState.Results -> {
+                val shown = search.hits.filter { it.item.crefAgrupada !in localReferences }
+                resultsHeader(
+                    title = context.getString(R.string.assignments_results_all),
+                    chip = context.getString(R.string.assignments_results_ms, search.elapsedMillis.toInt()),
+                    chipIsFinal = true
+                )
+                when {
+                    shown.isEmpty() && localResults.isEmpty() -> item(span = { GridItemSpan(maxLineSpan) }) {
+                        NoResultsState(query = query.trim())
+                    }
+
+                    shown.isEmpty() -> item(span = { GridItemSpan(maxLineSpan) }) {
+                        SearchNote(stringResource(R.string.assignments_results_no_more))
+                    }
+
+                    else -> {
+                        items(shown, key = { "hit_${it.item.crefAgrupada}" }) { hit ->
+                            ResultRow(
+                                entry = hit.item,
+                                approximate = hit.aproximada,
+                                tokens = tokens,
+                                currentUsername = currentUsername,
+                                onClick = { onEntryClick(hit.item) }
+                            )
+                        }
+                        if (search.total > search.hits.size) {
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                SearchNote(
+                                    stringResource(
+                                        R.string.assignments_results_footer,
+                                        search.hits.size,
+                                        search.total
+                                    )
+                                )
+                            }
+                        }
                     }
                 }
             }
+
+            is SearchState.Unavailable -> {
+                resultsHeader(
+                    title = context.getString(R.string.assignments_results_all),
+                    chip = null,
+                    chipIsFinal = false
+                )
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    UnavailableNote(message = search.message.resolve(context))
+                }
+            }
         }
+    }
+}
+
+private fun LazyGridScope.resultsHeader(title: String, chip: String?, chipIsFinal: Boolean) {
+    item(span = { GridItemSpan(maxLineSpan) }) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = title,
+                modifier = Modifier.weight(1f),
+                color = PmmTextSecondary,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+            if (chip != null) {
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = if (chipIsFinal) Color(0xFFF0FDF4) else Color(0xFFFFFBEB)
+                ) {
+                    Text(
+                        text = chip,
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
+                        color = if (chipIsFinal) PmmGreenDark else PmmAmberDark,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun rememberHighlighted(text: String, tokens: List<String>): AnnotatedString =
+    remember(text, tokens) {
+        buildAnnotatedString {
+            var cursor = 0
+            for (range in matchRanges(text, tokens)) {
+                append(text.substring(cursor, range.first))
+                withStyle(SpanStyle(background = PmmYellow)) {
+                    append(text.substring(range.first, range.last + 1))
+                }
+                cursor = range.last + 1
+            }
+            append(text.substring(cursor))
+        }
+    }
+
+/** Un resultado compacto: lo justo para reconocer la entrada y su estado antes de abrirla. */
+@Composable
+private fun ResultRow(
+    entry: EntradaPendienteDto,
+    approximate: Boolean,
+    tokens: List<String>,
+    currentUsername: String?,
+    onClick: () -> Unit
+) {
+    val status = calculateEntryStatus(entry)
+    val visual = entryVisual(status.lifecycle)
+    val locked = isEntryLocked(entry, currentUsername)
+    val owner = entry.usuarioRevisando?.takeIf { it.isNotBlank() } ?: entry.usuarioTomoDocumento
+    val haptic = LocalHapticFeedback.current
+
+    Surface(
+        onClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            onClick()
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 72.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = PmmBgSurface,
+        border = BorderStroke(1.dp, if (locked) PmmRed.copy(alpha = 0.3f) else PmmNavyBorder)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(IntrinsicSize.Min)
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(5.dp)
+                    .fillMaxHeight()
+                    .background(if (locked) PmmRed else visual.color)
+            )
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = rememberHighlighted(entry.crefAgrupada, tokens),
+                        color = PmmTextPrimary,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = (-0.2).sp,
+                        maxLines = 1
+                    )
+                    if (approximate) {
+                        Spacer(Modifier.width(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color(0xFFFFFBEB),
+                            border = BorderStroke(1.dp, PmmAmber.copy(alpha = 0.3f))
+                        ) {
+                            Text(
+                                text = stringResource(R.string.assignments_results_approximate),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                color = PmmAmberDark,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                        }
+                    }
+                }
+                Text(
+                    text = rememberHighlighted(
+                        entry.nombreCliente?.takeIf { it.isNotBlank() }
+                            ?: stringResource(R.string.common_customer_unavailable),
+                        tokens
+                    ),
+                    color = PmmTextSecondary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "${stringResource(R.string.revision_invoices)} ${entry.facturasCompletas}/${entry.totalFacturas}",
+                        color = PmmTextSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "${stringResource(R.string.revision_parts)} ${entry.partidasRevisadas}/${entry.totalPartidas}",
+                        color = PmmTextSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    if (locked && !owner.isNullOrBlank()) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = null,
+                                tint = PmmRedDark,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Spacer(Modifier.width(3.dp))
+                            Text(
+                                text = owner,
+                                color = PmmRedDark,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .padding(end = 12.dp)
+                    .align(Alignment.CenterVertically)
+            ) {
+                if (locked) {
+                    Surface(
+                        shape = RoundedCornerShape(999.dp),
+                        color = Color(0xFFFEF2F2),
+                        border = BorderStroke(1.dp, PmmRed.copy(alpha = 0.22f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = null,
+                                tint = PmmRedDark,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(Modifier.width(5.dp))
+                            Text(
+                                text = stringResource(R.string.assignments_in_use_short),
+                                color = PmmRedDark,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                } else {
+                    StatusBadge(status = status, visual = visual)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResultSkeletonRow() {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(72.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = PmmBgSurface,
+        border = BorderStroke(1.dp, PmmNavyBorder)
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
+            SkeletonLine(modifier = Modifier.fillMaxWidth(0.5f))
+            Spacer(Modifier.height(10.dp))
+            SkeletonLine(modifier = Modifier.fillMaxWidth(0.8f))
+        }
+    }
+}
+
+@Composable
+private fun SearchNote(text: String) {
+    Text(
+        text = text,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 6.dp),
+        color = PmmTextSecondary,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Medium,
+        textAlign = TextAlign.Center
+    )
+}
+
+@Composable
+private fun UnavailableNote(message: String) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = Color(0xFFFEF2F2),
+        border = BorderStroke(1.dp, PmmRed.copy(alpha = 0.25f))
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Info,
+                contentDescription = null,
+                tint = PmmRedDark
+            )
+            Spacer(Modifier.width(10.dp))
+            Column {
+                Text(
+                    text = message,
+                    color = PmmRedDark,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Text(
+                    text = stringResource(R.string.assignments_results_unavailable_hint),
+                    color = PmmRedDark,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NoResultsState(query: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(72.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .background(PmmNavyVariant),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Search,
+                contentDescription = null,
+                tint = PmmBlueDeep,
+                modifier = Modifier.size(34.dp)
+            )
+        }
+        Spacer(Modifier.height(16.dp))
+        Text(
+            text = stringResource(R.string.assignments_results_none_title, query),
+            color = PmmTextPrimary,
+            fontSize = 17.sp,
+            fontWeight = FontWeight.Black,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = stringResource(R.string.assignments_results_none_body),
+            modifier = Modifier.widthIn(max = 380.dp),
+            color = PmmTextSecondary,
+            fontSize = 13.sp,
+            lineHeight = 19.sp,
+            textAlign = TextAlign.Center
+        )
     }
 }
 
@@ -910,6 +1172,17 @@ private fun PendingEntryCard(
     val visual = entryVisual(status.lifecycle)
     val locked = isEntryLocked(entry, currentUsername)
     val haptic = LocalHapticFeedback.current
+    val now = remember { LocalDateTime.now() }
+    // Cuándo fue lo último que pasó con esta entrada, para que el revisador sepa si la dejó hace una hora o hace tres días.
+    val activity: String? = when {
+        status.category == EntryCategory.IN_PROGRESS ->
+            formatActivity(entry.inicioRevision, now)?.let { stringResource(R.string.assignments_activity_in_progress, it) }
+        status.category == EntryCategory.PAUSED ->
+            formatActivity(entry.finRevision, now)?.let { stringResource(R.string.assignments_activity_paused, it) }
+        entry.esAsignada == true ->
+            formatActivity(entry.asignFecha, now)?.let { stringResource(R.string.assignments_activity_assigned, it) }
+        else -> null
+    }
 
     Surface(
         onClick = {
@@ -974,13 +1247,24 @@ private fun PendingEntryCard(
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
+                        if (activity != null) {
+                            Spacer(Modifier.height(5.dp))
+                            Text(
+                                text = activity,
+                                color = visual.color,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                     Spacer(Modifier.width(10.dp))
                     StatusBadge(status = status, visual = visual)
                 }
 
                 Spacer(Modifier.height(14.dp))
-                EntryProgress(status = status, visual = visual)
+                EntryProgress(entry = entry, status = status, visual = visual)
                 Spacer(Modifier.height(12.dp))
 
                 Row(
@@ -1167,31 +1451,37 @@ private fun StatusBadge(
 
 @Composable
 private fun EntryProgress(
+    entry: EntradaPendienteDto,
     status: EntryStatusInfo,
     visual: EntryVisual
 ) {
+    // Con partidas se cuenta por partidas revisadas; sin ellas, por facturas completas (ver progressPercent).
+    val byParts = progressIsByParts(entry)
+    val percent = progressPercent(entry)
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = stringResource(R.string.assignments_progress),
-                color = PmmTextMuted,
+                text = stringResource(
+                    if (byParts) R.string.assignments_progress_real else R.string.assignments_progress
+                ),
+                color = PmmTextSecondary,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold
             )
             Spacer(Modifier.weight(1f))
             Text(
-                text = stringResource(
-                    R.string.assignments_progress_count,
-                    status.completedInvoices,
-                    status.totalInvoices
-                ),
+                text = if (byParts) {
+                    stringResource(R.string.assignments_progress_parts, entry.partidasRevisadas, entry.totalPartidas)
+                } else {
+                    stringResource(R.string.assignments_progress_count, status.completedInvoices, status.totalInvoices)
+                },
                 color = PmmTextSecondary,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold
             )
             Spacer(Modifier.width(8.dp))
             Text(
-                text = "${status.progressPercent}%",
+                text = "$percent%",
                 color = visual.color,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Black
@@ -1199,7 +1489,7 @@ private fun EntryProgress(
         }
         Spacer(Modifier.height(6.dp))
         LinearProgressIndicator(
-            progress = { status.progressPercent / 100f },
+            progress = { percent / 100f },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(7.dp)
@@ -1600,7 +1890,7 @@ private fun PendingSkeletonGrid() {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        items(6) {
+        items(2) {
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1632,132 +1922,6 @@ private fun PendingSkeletonGrid() {
 }
 
 @Composable
-private fun PendingEmptyState(
-    tab: DrawerTab,
-    hasFilters: Boolean,
-    onClearFilters: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 28.dp, vertical = 48.dp),
-        contentAlignment = Alignment.TopCenter
-    ) {
-        Column(
-            modifier = Modifier.widthIn(max = 420.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(82.dp)
-                    .clip(RoundedCornerShape(26.dp))
-                    .background(PmmNavyVariant),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = if (hasFilters) Icons.Default.Search else Icons.Default.TaskAlt,
-                    contentDescription = null,
-                    tint = PmmBlueDeep,
-                    modifier = Modifier.size(38.dp)
-                )
-            }
-            Spacer(Modifier.height(18.dp))
-            Text(
-                text = when {
-                    hasFilters -> stringResource(R.string.assignments_no_matches)
-                    tab == DrawerTab.MIAS -> stringResource(R.string.assignments_no_active_reviews)
-                    else -> stringResource(R.string.assignments_no_available_entries)
-                },
-                color = PmmTextPrimary,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Black,
-                textAlign = TextAlign.Center
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = when {
-                    hasFilters -> stringResource(R.string.assignments_try_another_filter)
-                    tab == DrawerTab.MIAS -> stringResource(R.string.assignments_taken_items_here)
-                    else -> stringResource(R.string.assignments_list_updates)
-                },
-                color = PmmTextSecondary,
-                fontSize = 13.sp,
-                lineHeight = 19.sp,
-                textAlign = TextAlign.Center
-            )
-            if (hasFilters) {
-                Spacer(Modifier.height(18.dp))
-                OutlinedButton(
-                    onClick = onClearFilters,
-                    modifier = Modifier.heightIn(min = 48.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.FilterAltOff,
-                        contentDescription = null
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        stringResource(R.string.common_clear_filters),
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ScanButton(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val haptic = LocalHapticFeedback.current
-    Surface(
-        onClick = {
-            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-            onClick()
-        },
-        modifier = modifier
-            .shadow(
-                elevation = 10.dp,
-                shape = RoundedCornerShape(18.dp),
-                ambientColor = PmmYellow.copy(alpha = 0.3f),
-                spotColor = PmmYellow.copy(alpha = 0.35f)
-            )
-            .heightIn(min = 56.dp),
-        shape = RoundedCornerShape(18.dp),
-        color = PmmYellow
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.QrCodeScanner,
-                contentDescription = null,
-                tint = PmmNavyDark,
-                modifier = Modifier.size(23.dp)
-            )
-            Spacer(Modifier.width(9.dp))
-            Column {
-                Text(
-                    text = stringResource(R.string.assignments_scan_entry),
-                    color = PmmNavyDark,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Black
-                )
-                Text(
-                    text = stringResource(R.string.assignments_camera_or_gun),
-                    color = PmmNavyDark.copy(alpha = 0.72f),
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun PendingSnackbarHost(
     hostState: SnackbarHostState,
     kind: PendingMessageKind
@@ -1767,7 +1931,7 @@ private fun PendingSnackbarHost(
         modifier = Modifier
             .imePadding()
             .navigationBarsPadding()
-            .padding(start = 12.dp, end = 12.dp, bottom = 76.dp)
+            .padding(start = 12.dp, end = 12.dp, bottom = 16.dp)
     ) { data ->
         val visual = when (kind) {
             PendingMessageKind.INFO -> Triple(PmmNavyDark, Icons.Default.Info, Color.White)

@@ -1,15 +1,17 @@
 package com.example.pmmovil.ui.asignaciones
 
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.annotation.StringRes
 import com.example.pmmovil.R
 import com.example.pmmovil.data.model.AsignacionEntity
+import com.example.pmmovil.data.model.EntradaBusquedaHitDto
 import com.example.pmmovil.data.model.EntradaPendienteDto
 import com.example.pmmovil.data.preferences.ModePreferences
 import com.example.pmmovil.data.repository.AsignacionRepository
 import com.example.pmmovil.data.repository.AuthRepository
 import com.example.pmmovil.data.repository.RevisionRepository
+import com.example.pmmovil.data.scanner.OfficialQrParser
 import com.example.pmmovil.data.scanner.ScanEventBus
 import com.example.pmmovil.data.signalr.WarehouseHubService
 import com.example.pmmovil.ui.localization.UiText
@@ -22,19 +24,18 @@ import javax.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-
-enum class DrawerTab { MIAS, DISPO }
-
-enum class FilterStatus { TOTAL, PENDIENTE, REVISION, PAUSADA, FINALIZADO }
 
 enum class PendingMessageKind { INFO, SUCCESS, WARNING, ERROR }
 
@@ -61,25 +62,49 @@ sealed interface AsignacionesEvent {
     data object RevisionAssigned : AsignacionesEvent
 }
 
+/** Lo que muestra la zona de resultados mientras hay algo escrito en el buscador. */
+sealed interface SearchState {
+    /** Sin consulta (o muy corta para buscar en todo): se ven los pendientes, no resultados. */
+    data object Idle : SearchState
+
+    /** La consulta salió al servidor y se espera la respuesta; mientras tanto ya se ven las coincidencias locales. */
+    data object Searching : SearchState
+
+    data class Results(
+        val hits: List<EntradaBusquedaHitDto>,
+        val total: Int,
+        val tolerant: Boolean,
+        /** Lo que tardó el servidor en contestar, para que se vea que es instantáneo. */
+        val elapsedMillis: Long
+    ) : SearchState
+
+    /** No se pudo buscar en todo (sin conexión o falla): las coincidencias locales siguen disponibles. */
+    data class Unavailable(val message: UiText) : SearchState
+}
+
 data class AsignacionesUiState(
-    val drawerTab: DrawerTab = DrawerTab.MIAS,
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
+    /** Hay una lectura de pistola o cámara resolviéndose contra el servidor. */
     val isSearching: Boolean = false,
     val isOpeningEntry: Boolean = false,
     val isSubmittingUnlock: Boolean = false,
+    /** Ya llegó (o falló) la primera carga de «mis pendientes»: distingue «cargando» de «no tienes nada». */
+    val hasLoadedMine: Boolean = false,
     val misActivas: List<EntradaPendienteDto> = emptyList(),
     val misAsignaciones: List<AsignacionEntity> = emptyList(),
-    val todasEntradas: List<EntradaPendienteDto> = emptyList(),
-    val filtroTexto: String = "",
-    val statusActivo: FilterStatus = FilterStatus.TOTAL,
+    val query: String = "",
+    val search: SearchState = SearchState.Idle,
     val selectedEntry: EntradaPendienteDto? = null,
     val desbloqueoDialog: EntradaPendienteDto? = null,
     val unlockRequests: Set<String> = emptySet(),
-    val removedAssignmentReferences: Set<String> = emptySet(),
-    val truncated: Boolean = false
+    val removedAssignmentReferences: Set<String> = emptySet()
 )
 
+/**
+ * El hub de Revisión. Al entrar solo pide lo del revisador (sus asignaciones y lo que dejó abierto): ya no baja la lista
+ * de todas las entradas. Todo lo demás se encuentra con el buscador, que pregunta al servidor por ocho coincidencias.
+ */
 @HiltViewModel
 class AsignacionesViewModel @Inject constructor(
     private val asignacionRepository: AsignacionRepository,
@@ -97,6 +122,8 @@ class AsignacionesViewModel @Inject constructor(
     val events = _events.asSharedFlow()
 
     private var loadJob: Job? = null
+    private var searchJob: Job? = null
+    private var activityJob: Job? = null
 
     init {
         hubService.startConnection()
@@ -109,7 +136,7 @@ class AsignacionesViewModel @Inject constructor(
     private fun observeAsignaciones() {
         viewModelScope.launch {
             asignacionRepository.getAsignaciones().collect { assignments ->
-                _uiState.value = _uiState.value.copy(misAsignaciones = assignments)
+                _uiState.update { it.copy(misAsignaciones = assignments) }
             }
         }
     }
@@ -123,16 +150,16 @@ class AsignacionesViewModel @Inject constructor(
         // mensaje -- lo peor que pasa ahora es que ese evento puntual no
         // se procese, no que la app se cierre.
         viewModelScope.launch {
-            hubService.actividadFlow.collect {
-                runCatching { loadData(showLoading = false) }
+            hubService.actividadFlow.collect { activity ->
+                runCatching { onActivity(activity.creferencia) }
             }
         }
         viewModelScope.launch {
             hubService.nuevaAsignacionFlow.collect { assignment ->
                 runCatching {
-                    _uiState.value = _uiState.value.copy(
-                        removedAssignmentReferences = _uiState.value.removedAssignmentReferences - assignment.crefAgrupada
-                    )
+                    _uiState.update {
+                        it.copy(removedAssignmentReferences = it.removedAssignmentReferences - assignment.crefAgrupada)
+                    }
                     asignacionRepository.syncAsignaciones()
                     loadData(showLoading = false)
                     _events.tryEmit(AsignacionesEvent.RevisionAssigned)
@@ -184,17 +211,39 @@ class AsignacionesViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Alguien movió una entrada. Antes esto volvía a bajar TODA la lista de pendientes en cada tableta; ahora solo
+     * importa si esa entrada está en mi lista o en los resultados que estoy viendo, y aun así se espera un momento para
+     * juntar ráfagas (una revisión activa manda un aviso por partida).
+     */
+    private fun onActivity(reference: String) {
+        val state = _uiState.value
+        val inMine = buildMyEntries(state).any { it.crefAgrupada.equals(reference, ignoreCase = true) }
+        val inResults = (state.search as? SearchState.Results)?.hits?.any {
+            it.item.crefAgrupada.equals(reference, ignoreCase = true)
+        } == true
+        if (!inMine && !inResults) return
+
+        activityJob?.cancel()
+        activityJob = viewModelScope.launch {
+            delay(ACTIVITY_REFRESH_DELAY_MS)
+            if (inMine) loadData(showLoading = false)
+            if (inResults) runSearch(_uiState.value.query, silent = true)
+        }
+    }
+
     private fun removeAssignmentFromPending(idAsignacion: Int, crefAgrupada: String) {
-        val current = _uiState.value
-        _uiState.value = current.copy(
-            misActivas = current.misActivas.filterNot { entry ->
-                entry.idAsignacion == idAsignacion || entry.crefAgrupada == crefAgrupada
-            },
-            misAsignaciones = current.misAsignaciones.filterNot { assignment ->
-                assignment.idAsignacion == idAsignacion || assignment.crefAgrupada == crefAgrupada
-            },
-            removedAssignmentReferences = current.removedAssignmentReferences + crefAgrupada
-        )
+        _uiState.update { current ->
+            current.copy(
+                misActivas = current.misActivas.filterNot { entry ->
+                    entry.idAsignacion == idAsignacion || entry.crefAgrupada == crefAgrupada
+                },
+                misAsignaciones = current.misAsignaciones.filterNot { assignment ->
+                    assignment.idAsignacion == idAsignacion || assignment.crefAgrupada == crefAgrupada
+                },
+                removedAssignmentReferences = current.removedAssignmentReferences + crefAgrupada
+            )
+        }
     }
 
     private fun observeScans() {
@@ -226,10 +275,10 @@ class AsignacionesViewModel @Inject constructor(
             return
         }
 
-        _uiState.value = _uiState.value.copy(isSearching = true)
+        _uiState.update { it.copy(isSearching = true) }
         revisionRepository.buscarPorCreferencia(reference)
             .onSuccess { entry ->
-                _uiState.value = _uiState.value.copy(isSearching = false)
+                _uiState.update { it.copy(isSearching = false) }
                 if (entry == null) {
                     showMessage(
                         message = resource(R.string.message_reference_not_found, reference),
@@ -240,45 +289,48 @@ class AsignacionesViewModel @Inject constructor(
                 }
             }
             .onFailure { error ->
-                _uiState.value = _uiState.value.copy(isSearching = false)
+                _uiState.update { it.copy(isSearching = false) }
                 showMessage(networkMessage(error), PendingMessageKind.ERROR)
             }
     }
 
+    /**
+     * Carga solo lo del revisador: sus asignaciones y lo que dejó abierto. Son un puñado de filas (no miles), así que
+     * es rápido y se puede repetir sin cuidado cuando llega un aviso en vivo.
+     */
     fun loadData(showLoading: Boolean = true) {
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                isLoading = showLoading && _uiState.value.todasEntradas.isEmpty(),
-                isRefreshing = !showLoading || _uiState.value.todasEntradas.isNotEmpty()
-            )
-
-            val results = coroutineScope {
-                val assignments = async { asignacionRepository.syncAsignaciones() }
-                val mine = async { revisionRepository.getMisActivas() }
-                val pending = async { revisionRepository.getEntradasPendientesPage() }
-                Triple(assignments.await(), mine.await(), pending.await())
+            val firstLoad = !_uiState.value.hasLoadedMine
+            _uiState.update {
+                it.copy(
+                    isLoading = showLoading && firstLoad,
+                    isRefreshing = !(showLoading && firstLoad)
+                )
             }
 
-            val mineResult = results.second
-            val pendingResult = results.third
-            val current = _uiState.value
+            val mineResult = coroutineScope {
+                val assignments = async { asignacionRepository.syncAsignaciones() }
+                val mine = async { revisionRepository.getMisActivas() }
+                assignments.await()
+                mine.await()
+            }
 
-            _uiState.value = current.copy(
-                isLoading = false,
-                isRefreshing = false,
-                misActivas = mineResult.getOrElse { current.misActivas },
-                todasEntradas = pendingResult.getOrNull()?.items ?: current.todasEntradas,
-                truncated = pendingResult.getOrNull()?.truncated ?: current.truncated
-            )
+            _uiState.update {
+                it.copy(
+                    isLoading = false,
+                    isRefreshing = false,
+                    hasLoadedMine = true,
+                    misActivas = mineResult.getOrElse { _ -> it.misActivas }
+                )
+            }
 
-            if (mineResult.isFailure || pendingResult.isFailure) {
-                val error = mineResult.exceptionOrNull() ?: pendingResult.exceptionOrNull()
+            if (mineResult.isFailure) {
                 showMessage(
-                    message = networkMessage(error),
+                    message = networkMessage(mineResult.exceptionOrNull()),
                     kind = PendingMessageKind.ERROR
                 )
-            } else if (showLoading && current.todasEntradas.isNotEmpty()) {
+            } else if (showLoading && !firstLoad) {
                 showMessage(
                     message = resource(R.string.message_list_updated),
                     kind = PendingMessageKind.SUCCESS
@@ -287,28 +339,103 @@ class AsignacionesViewModel @Inject constructor(
         }
     }
 
-    fun setDrawerTab(tab: DrawerTab) {
-        _uiState.value = _uiState.value.copy(drawerTab = tab)
+    /**
+     * Al volver a la pantalla (de una revisión, de la cámara) se renuevan mis pendientes y, si hay algo escrito, sus
+     * resultados: son pocas filas, así que el avance y los candados que se ven siempre son los reales. La primera vez
+     * no hace nada porque la carga de arranque ya está en camino.
+     */
+    fun refreshOnResume() {
+        if (!_uiState.value.hasLoadedMine) return
+        loadData(showLoading = false)
+        val query = _uiState.value.query
+        if (isSearchable(query)) {
+            viewModelScope.launch { runSearch(query, silent = true) }
+        }
     }
 
-    fun setFiltroTexto(texto: String) {
-        _uiState.value = _uiState.value.copy(filtroTexto = texto)
+    // ── Buscador ─────────────────────────────────────────────────────────────
+
+    /**
+     * Cada tecla actualiza al instante las coincidencias entre mis pendientes (ya están en la tableta). Con tres
+     * caracteres útiles, y una vez que se deja de teclear un instante, se pregunta además al servidor por el resto.
+     */
+    fun setQuery(raw: String) {
+        // La etiqueta de carpeta trae la entrada y el cliente pegados (`01C2635628400001454  100`): se busca la entrada.
+        val text = OfficialQrParser.entradaOf(raw) ?: raw
+        _uiState.update { it.copy(query = text) }
+
+        searchJob?.cancel()
+        if (!isSearchable(text)) {
+            _uiState.update { it.copy(search = SearchState.Idle) }
+            return
+        }
+        _uiState.update { it.copy(search = SearchState.Searching) }
+        searchJob = viewModelScope.launch {
+            delay(SEARCH_DEBOUNCE_MS)
+            runSearch(text, silent = false)
+        }
     }
 
-    fun setStatusActivo(status: FilterStatus) {
-        _uiState.value = _uiState.value.copy(statusActivo = status)
+    fun clearQuery() = setQuery("")
+
+    private suspend fun runSearch(query: String, silent: Boolean) {
+        if (!isSearchable(query)) return
+        val startedAt = System.currentTimeMillis()
+        revisionRepository.buscarRapido(query.trim(), SEARCH_LIMIT)
+            .onSuccess { page ->
+                // Si siguió escribiendo mientras llegaba la respuesta, esta ya no corresponde a lo que ve.
+                if (_uiState.value.query.trim() != query.trim()) return@onSuccess
+                _uiState.update {
+                    it.copy(
+                        search = SearchState.Results(
+                            hits = page.hits,
+                            total = page.total,
+                            tolerant = page.tolerant,
+                            elapsedMillis = System.currentTimeMillis() - startedAt
+                        )
+                    )
+                }
+            }
+            .onFailure { error ->
+                if (_uiState.value.query.trim() != query.trim()) return@onFailure
+                // Una actualización silenciosa que falla no debe tapar los resultados que ya se ven.
+                if (silent && _uiState.value.search is SearchState.Results) return@onFailure
+                _uiState.update { it.copy(search = SearchState.Unavailable(networkMessage(error))) }
+            }
     }
 
-    fun clearFilters() {
-        _uiState.value = _uiState.value.copy(
-            filtroTexto = "",
-            statusActivo = FilterStatus.TOTAL
-        )
+    /** Enter en el teclado: si lo escrito es una entrada completa, se abre; si no, se elige el único resultado. */
+    fun submitQuery() {
+        val state = _uiState.value
+        val typed = state.query.trim()
+        if (typed.isEmpty()) return
+
+        val local = localMatches(state)
+        val exactLocal = local.firstOrNull { it.crefAgrupada.equals(typed, ignoreCase = true) }
+        if (exactLocal != null) {
+            selectEntry(exactLocal)
+            return
+        }
+        val results = state.search as? SearchState.Results
+        val hits = results?.hits.orEmpty()
+        val exactHit = hits.firstOrNull { it.item.crefAgrupada.equals(typed, ignoreCase = true) }
+        val only = hits.singleOrNull()?.takeIf { local.isEmpty() }
+        when {
+            exactHit != null -> selectEntry(exactHit.item)
+            only != null -> selectEntry(only.item)
+            looksLikeReference(typed) -> searchExactReference(typed)
+        }
     }
+
+    /** Una referencia completa son 15 caracteres: si están, no hace falta buscar, se pregunta directo por ella. */
+    private fun looksLikeReference(text: String): Boolean =
+        normalizeForSearch(text).replace(" ", "").length >= REFERENCE_LENGTH
+
+    // ── Selección y apertura ─────────────────────────────────────────────────
 
     fun selectEntry(entry: EntradaPendienteDto) {
         if (isEntryLocked(entry, getUsername())) {
-            _uiState.value = _uiState.value.copy(desbloqueoDialog = entry)
+            _uiState.update { it.copy(desbloqueoDialog = entry) }
             val activeOwner = entry.usuarioRevisando?.takeIf { it.isNotBlank() }
                 ?: entry.usuarioTomoDocumento
             showMessage(
@@ -319,12 +446,12 @@ class AsignacionesViewModel @Inject constructor(
             )
             return
         }
-        _uiState.value = _uiState.value.copy(selectedEntry = entry)
+        _uiState.update { it.copy(selectedEntry = entry) }
     }
 
     fun dismissModeSelector() {
         if (_uiState.value.isOpeningEntry) return
-        _uiState.value = _uiState.value.copy(selectedEntry = null)
+        _uiState.update { it.copy(selectedEntry = null) }
     }
 
     fun openSelectedEntry(mode: ModePreferences.Mode) {
@@ -332,15 +459,12 @@ class AsignacionesViewModel @Inject constructor(
         if (_uiState.value.isOpeningEntry) return
 
         if (isEntryLocked(entry, getUsername())) {
-            _uiState.value = _uiState.value.copy(
-                selectedEntry = null,
-                desbloqueoDialog = entry
-            )
+            _uiState.update { it.copy(selectedEntry = null, desbloqueoDialog = entry) }
             return
         }
 
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isOpeningEntry = true)
+            _uiState.update { it.copy(isOpeningEntry = true) }
 
             val assignmentId = entry.idAsignacion
             if (assignmentId != null && entry.asignEstatus == 0) {
@@ -371,10 +495,7 @@ class AsignacionesViewModel @Inject constructor(
                     // "Preparando la revisión...".
                     try {
                         modePrefs.set(entry.crefAgrupada, mode)
-                        _uiState.value = _uiState.value.copy(
-                            isOpeningEntry = false,
-                            selectedEntry = null
-                        )
+                        _uiState.update { it.copy(isOpeningEntry = false, selectedEntry = null) }
                         _events.emit(
                             AsignacionesEvent.NavigateToRevision(
                                 crefAgrupada = entry.crefAgrupada,
@@ -382,7 +503,7 @@ class AsignacionesViewModel @Inject constructor(
                             )
                         )
                     } catch (e: Exception) {
-                        _uiState.value = _uiState.value.copy(isOpeningEntry = false)
+                        _uiState.update { it.copy(isOpeningEntry = false) }
                         showMessage(
                             message = resource(R.string.message_open_failed, entry.crefAgrupada),
                             kind = PendingMessageKind.ERROR
@@ -390,7 +511,7 @@ class AsignacionesViewModel @Inject constructor(
                     }
                 }
                 .onFailure { error ->
-                    _uiState.value = _uiState.value.copy(isOpeningEntry = false)
+                    _uiState.update { it.copy(isOpeningEntry = false) }
                     showMessage(
                         message = networkMessage(error),
                         kind = PendingMessageKind.ERROR
@@ -400,12 +521,12 @@ class AsignacionesViewModel @Inject constructor(
     }
 
     fun showDesbloqueoDialog(entry: EntradaPendienteDto) {
-        _uiState.value = _uiState.value.copy(desbloqueoDialog = entry)
+        _uiState.update { it.copy(desbloqueoDialog = entry) }
     }
 
     fun hideDesbloqueoDialog() {
         if (_uiState.value.isSubmittingUnlock) return
-        _uiState.value = _uiState.value.copy(desbloqueoDialog = null)
+        _uiState.update { it.copy(desbloqueoDialog = null) }
     }
 
     fun solicitarDesbloqueo(motivo: String) {
@@ -420,22 +541,24 @@ class AsignacionesViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isSubmittingUnlock = true)
+            _uiState.update { it.copy(isSubmittingUnlock = true) }
             revisionRepository.solicitarDesbloqueo(
                 cnofact = "ENTRY_${entry.crefAgrupada}",
                 motivo = cleanReason
             ).onSuccess {
-                _uiState.value = _uiState.value.copy(
-                    isSubmittingUnlock = false,
-                    desbloqueoDialog = null,
-                    unlockRequests = _uiState.value.unlockRequests + entry.crefAgrupada
-                )
+                _uiState.update {
+                    it.copy(
+                        isSubmittingUnlock = false,
+                        desbloqueoDialog = null,
+                        unlockRequests = it.unlockRequests + entry.crefAgrupada
+                    )
+                }
                 showMessage(
                     message = resource(R.string.message_unlock_request_sent),
                     kind = PendingMessageKind.SUCCESS
                 )
             }.onFailure { error ->
-                _uiState.value = _uiState.value.copy(isSubmittingUnlock = false)
+                _uiState.update { it.copy(isSubmittingUnlock = false) }
                 showMessage(
                     message = error.message?.takeIf(String::isNotBlank)?.let(UiText::Raw)
                         ?: resource(R.string.message_unlock_request_failed),
@@ -445,60 +568,26 @@ class AsignacionesViewModel @Inject constructor(
         }
     }
 
-    val misRevisionesTotales = _uiState
-        .map { state -> applyFilters(buildMyEntries(state), state) }
+    // ── Lo que ve la pantalla ────────────────────────────────────────────────
+
+    /** Mis pendientes, ya separados en asignadas y abiertas. Las terminadas no aparecen. */
+    val pendingHub: StateFlow<PendingHub> = _uiState
+        .map { state -> buildPendingHub(buildMyEntries(state)) }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PendingHub(emptyList(), emptyList()))
+
+    /** Coincidencias con lo escrito entre MIS revisiones (incluidas las terminadas): salen sin ir al servidor. */
+    val localResults: StateFlow<List<EntradaPendienteDto>> = _uiState
+        .map { state -> localMatches(state) }
+        .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val entradasFiltradas = _uiState
-        .map { state -> applyFilters(buildAvailableEntries(state), state) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    val mineCount = _uiState
-        .map { buildMyEntries(it).size }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
-
-    // A diferencia de mineCount (el total, incluye entradas ya finalizadas),
-    // este es el que de verdad "requiere tu atención" -- se usa para el
-    // badge de arriba, que antes contaba entradas cerradas como pendientes.
-    val minePendingCount = _uiState
-        .map { state ->
-            buildMyEntries(state).count {
-                calculateEntryStatus(it).category != EntryCategory.COMPLETED
-            }
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
-
-    val availableCount = _uiState
-        .map { buildAvailableEntries(it).size }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
-
-    val counts = _uiState
-        .map { state ->
-            val all = if (state.drawerTab == DrawerTab.MIAS) {
-                buildMyEntries(state)
-            } else {
-                buildAvailableEntries(state)
-            }
-            mapOf(
-                FilterStatus.TOTAL to all.size,
-                FilterStatus.PENDIENTE to all.count {
-                    calculateEntryStatus(it).category == EntryCategory.PENDING
-                },
-                FilterStatus.REVISION to all.count {
-                    calculateEntryStatus(it).category == EntryCategory.IN_PROGRESS
-                },
-                FilterStatus.PAUSADA to all.count {
-                    calculateEntryStatus(it).category == EntryCategory.PAUSED
-                },
-                FilterStatus.FINALIZADO to all.count {
-                    calculateEntryStatus(it).category == EntryCategory.COMPLETED
-                }
-            )
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+    private fun localMatches(state: AsignacionesUiState): List<EntradaPendienteDto> {
+        if (searchTokens(state.query).isEmpty()) return emptyList()
+        return buildMyEntries(state).filter { matchesPendingQuery(it, state.query) }
+    }
 
     private fun buildMyEntries(state: AsignacionesUiState): List<EntradaPendienteDto> {
-        val username = getUsername()
         val entriesByReference = linkedMapOf<String, EntradaPendienteDto>()
 
         state.misActivas.forEach { entry ->
@@ -507,47 +596,15 @@ class AsignacionesViewModel @Inject constructor(
             }
         }
 
-        state.todasEntradas.forEach { entry ->
-            val belongsToUser = entry.usuarioRevisando.sameUser(username) ||
-                entry.usuarioTomoDocumento.sameUser(username)
-            if (belongsToUser && entry.crefAgrupada !in state.removedAssignmentReferences) {
-                entriesByReference.putIfAbsent(entry.crefAgrupada, entry)
-            }
-        }
-
         state.misAsignaciones
             .filterNot { it.crefAgrupada in state.removedAssignmentReferences }
             .forEach { assignment ->
                 val baseEntry = entriesByReference[assignment.crefAgrupada]
-                    ?: state.todasEntradas.firstOrNull {
-                        it.crefAgrupada == assignment.crefAgrupada
-                    }
                 entriesByReference[assignment.crefAgrupada] =
                     baseEntry?.withAssignment(assignment) ?: assignment.toPendingProxy()
             }
 
-        return entriesByReference.values.sortedWith(entryComparator)
-    }
-
-    private fun buildAvailableEntries(state: AsignacionesUiState): List<EntradaPendienteDto> {
-        val myReferences = buildMyEntries(state)
-            .mapTo(hashSetOf()) { it.crefAgrupada }
-        return state.todasEntradas
-            .filterNot { it.crefAgrupada in myReferences }
-            .sortedWith(entryComparator)
-    }
-
-    private fun applyFilters(
-        entries: List<EntradaPendienteDto>,
-        state: AsignacionesUiState
-    ): List<EntradaPendienteDto> {
-        return entries.filter { entry ->
-            matchesEntryFilter(
-                entry = entry,
-                query = state.filtroTexto,
-                status = state.statusActivo
-            )
-        }
+        return entriesByReference.values.toList()
     }
 
     fun lastModeFor(crefAgrupada: String): ModePreferences.Mode = modePrefs.get(crefAgrupada)
@@ -555,9 +612,7 @@ class AsignacionesViewModel @Inject constructor(
     fun getUsername(): String? = authRepository.getUsername()
 
     private fun removeUnlockRequest(reference: String) {
-        _uiState.value = _uiState.value.copy(
-            unlockRequests = _uiState.value.unlockRequests - reference
-        )
+        _uiState.update { it.copy(unlockRequests = it.unlockRequests - reference) }
     }
 
     private fun showMessage(message: UiText, kind: PendingMessageKind) {
@@ -581,21 +636,12 @@ class AsignacionesViewModel @Inject constructor(
         UiText.Resource(id, args.toList())
 
     private companion object {
-        val entryComparator = compareByDescending<EntradaPendienteDto> {
-            it.esAsignada == true
-        }.thenByDescending {
-            it.asignPrioridad ?: -1
-        }.thenByDescending {
-            it.asignFecha.orEmpty()
-        }.thenByDescending {
-            it.dFecha.orEmpty()
-        }
-    }
-}
+        /** Cuánto se espera tras un aviso en vivo para juntar ráfagas antes de refrescar. */
+        const val ACTIVITY_REFRESH_DELAY_MS = 1_500L
 
-private fun String?.sameUser(other: String?): Boolean {
-    return !this.isNullOrBlank() && !other.isNullOrBlank() &&
-        this.trim().equals(other.trim(), ignoreCase = true)
+        /** Largo de una referencia de entrada completa (`01C263607340000`). */
+        const val REFERENCE_LENGTH = 15
+    }
 }
 
 private fun String.entryReferenceOrNull(): String? {

@@ -84,23 +84,19 @@ class PendingEntryRulesTest {
     }
 
     @Test
-    fun `filtra por referencia cliente supervisor nota y estado`() {
+    fun `busca entre los pendientes por referencia cliente supervisor y nota`() {
         val assigned = entry(
             crefAgrupada = "REF-900",
             nombreCliente = "Cliente del Norte",
             asignSupervisor = "SUPERVISOR01",
             asignNota = "Liberar antes del corte"
         )
-        val inProgress = entry(
-            crefAgrupada = "REF-901",
-            usuarioRevisando = "EDUARDO"
-        )
 
-        assertTrue(matchesEntryFilter(assigned, "norte", FilterStatus.TOTAL))
-        assertTrue(matchesEntryFilter(assigned, "supervisor01", FilterStatus.TOTAL))
-        assertTrue(matchesEntryFilter(assigned, "corte", FilterStatus.PENDIENTE))
-        assertTrue(matchesEntryFilter(inProgress, "", FilterStatus.REVISION))
-        assertFalse(matchesEntryFilter(inProgress, "", FilterStatus.FINALIZADO))
+        assertTrue(matchesPendingQuery(assigned, "norte"))
+        assertTrue(matchesPendingQuery(assigned, "supervisor01"))
+        assertTrue(matchesPendingQuery(assigned, "corte"))
+        assertTrue(matchesPendingQuery(assigned, "ref 900"))
+        assertFalse(matchesPendingQuery(assigned, "sur"))
     }
 
     @Test
