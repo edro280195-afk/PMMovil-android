@@ -164,6 +164,56 @@ class EtiquetaQuimicaKilosTest {
     }
 
     @Test
+    fun `con la cuenta abierta la tarjeta no ofrece marcar la partida como revisada`() {
+        // Medido en el Pixel el 27-oct: guardar la caja 1 la dejaba «revisada» al 20 % y las otras cuatro no contaban.
+        var libro = Ledger()
+        val abiertas = cajas.map { (q, lote) ->
+            val resultado = PackageTally.process(listOf(partida), libro, etiqueta(q, lote))
+            libro = libro.plus((resultado as Result.Added).counted)
+            PackageTally.leavesCountOpen(resultado)
+        }
+
+        // Las cuatro primeras dejan la cuenta abierta; la quinta cierra exacta y ahí sí se puede marcar.
+        assertEquals(listOf(true, true, true, true, false), abiertas)
+    }
+
+    @Test
+    fun `una cuenta que se pasa tampoco se marca revisada y lo que no se cuenta no la afecta`() {
+        var libro = Ledger()
+        cajas.forEach { (q, lote) ->
+            libro = libro.plus((PackageTally.process(listOf(partida), libro, etiqueta(q, lote)) as Result.Added).counted)
+        }
+        val pasada = PackageTally.process(listOf(partida), libro, etiqueta("0078.000", "2612010050"))
+
+        assertTrue(PackageTally.leavesCountOpen(pasada))
+        // Una etiqueta que no se cuenta (otra parte, sin unidad, lectura nula) deja la tarjeta como siempre.
+        assertFalse(PackageTally.leavesCountOpen(PackageTally.process(listOf(partida), Ledger(), etiqueta("0077.600", "2612010049", impreso("0077.600", "2612010049", unidades = "")))))
+        assertFalse(PackageTally.leavesCountOpen(null))
+    }
+
+    @Test
+    fun `dos etiquetas en la misma foto no se mezclan en una lectura`() {
+        // Medido en el Pixel el 27-oct: la foto trajo los PDF417 de 78.7 kg (lote ...47) y 77.6 kg (lote ...49) y la
+        // tarjeta enseñó 78.7 con el lote ...49.
+        val caja3 = pdf417("0078.700", "2612010047")
+        val caja1 = pdf417("0077.600", "2612010049")
+
+        val lectura = PackageTally.read(emptyList(), listOf(caja3, caja1), impreso("0078.700", "2612010047"))
+
+        assertTrue(lectura is PackageTally.Reading.SeveralLabels)
+        assertEquals(listOf(caja3, caja1), (lectura as PackageTally.Reading.SeveralLabels).ids)
+    }
+
+    @Test
+    fun `el mismo codigo leido dos veces o con un identificador de caja es una sola etiqueta`() {
+        val caja1 = pdf417("0077.600", "2612010049")
+
+        assertFalse(PackageTally.read(emptyList(), listOf(caja1, caja1), "") is PackageTally.Reading.SeveralLabels)
+        assertFalse(PackageTally.read(emptyList(), listOf(caja1, "S279239665"), "") is PackageTally.Reading.SeveralLabels)
+        assertFalse(PackageTally.read(emptyList(), listOf("0049118845", "50CR304106", "79.2"), "") is PackageTally.Reading.SeveralLabels)
+    }
+
+    @Test
     fun `el avance cuenta una partida en kilos como comparable`() {
         val libro = Ledger().plus(PackageTally.CountedPackage(partida.IdRevdet, null, 77.6, "x"))
 

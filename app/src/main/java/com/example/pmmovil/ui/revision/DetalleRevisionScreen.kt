@@ -1349,7 +1349,24 @@ fun DetalleRevisionScreen(
         }
 
         if (labelCaptureEstado.fotoPath != null) {
+            // Qué dejaría contar esta etiqueta: si la cuenta de la partida queda abierta, la tarjeta no ofrece
+            // marcarla como revisada (con la primera de cinco cajas la dejaba cerrada al 20 %).
+            val libroActual by viewModel.libroEmpaques.collectAsState()
+            val conteoAbierto = remember(
+                labelCaptureEstado.captureId, labelCaptureEstado.envio, labelCaptureEstado.observations,
+                labelCaptureEstado.rawCodes, labelCaptureEstado.textoCrudo, libroActual, partidas
+            ) {
+                if (labelCaptureEstado.envio != LabelCaptureViewModel.Envio.NINGUNO) null
+                else viewModel.previsualizarConteo(
+                    labelCaptureEstado.observations, labelCaptureEstado.rawCodes, labelCaptureEstado.textoCrudo
+                ).takeIf(PackageTally::leavesCountOpen) as? PackageTally.Result.Added
+            }
+            val variasEtiquetas = remember(labelCaptureEstado.rawCodes) {
+                viewModel.hayVariasEtiquetas(labelCaptureEstado.rawCodes)
+            }
             LabelCaptureCard(
+                conteoAbierto = conteoAbierto,
+                variasEtiquetas = variasEtiquetas,
                 estado = labelCaptureEstado,
                 onSelectPartida = labelCaptureViewModel::selectPartida,
                 onRejectPartida = labelCaptureViewModel::rejectPartida,

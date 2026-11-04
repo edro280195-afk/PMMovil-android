@@ -108,7 +108,14 @@ fun LabelCaptureCard(
     onRetry: () -> Unit,
     onReloadContext: () -> Unit,
     onDiscard: () -> Unit,
-    onNext: () -> Unit
+    onNext: () -> Unit,
+    /**
+     * Lo que contar esta etiqueta deja en la partida cuando la cuenta queda **abierta** (faltan empaques o se
+     * pasó): mientras exista, el botón principal guarda el avance y no marca la partida como revisada.
+     */
+    conteoAbierto: PackageTally.Result.Added? = null,
+    /** La foto trae dos etiquetas distintas: no se ofrece guardar, se pide otra con una sola. */
+    variasEtiquetas: Boolean = false
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val isDraft = estado.syncStatus == LabelCaptureStatus.DRAFT
@@ -161,7 +168,7 @@ fun LabelCaptureCard(
                         estado = estado, filas = filas, busy = busy, sinDatos = sinDatos,
                         menu = {
                             MenuOpciones(estado, busy, sinDatos, mostrarLectura, { mostrarLectura = !mostrarLectura },
-                                onImprove, onSave, onDiscard)
+                                onImprove, onSave, onDiscard, guardarPermitido = !variasEtiquetas)
                         },
                         onAcceptIdentity = onAcceptIdentity, onDecide = onDecide, onEdit = onEdit, onReloadContext = onReloadContext
                     )
@@ -173,6 +180,7 @@ fun LabelCaptureCard(
                 HorizontalDivider()
                 Pie(
                     estado = estado, isDraft = isDraft, busy = busy, sinDatos = sinDatos, pendientes = pendientes,
+                    conteoAbierto = conteoAbierto, variasEtiquetas = variasEtiquetas,
                     onSave = onSave, onRetake = onRetake, onRejectPartida = onRejectPartida, onClose = onClose
                 )
             }
@@ -519,6 +527,8 @@ private fun Pie(
     busy: Boolean,
     sinDatos: Boolean,
     pendientes: Int,
+    conteoAbierto: PackageTally.Result.Added?,
+    variasEtiquetas: Boolean,
     onSave: (Boolean) -> Unit,
     onRetake: () -> Unit,
     onRejectPartida: () -> Unit,
@@ -531,9 +541,12 @@ private fun Pie(
             }
             return@Column
         }
-        val confirma = estado.canMarkReviewed
+        // Con la cuenta abierta (faltan empaques o se pasó) no se ofrece marcar la partida como revisada.
+        val confirma = estado.canMarkReviewed && conteoAbierto == null && !variasEtiquetas
         val (texto, habilitado, alTocar) = when {
             busy -> Triple(stringResource(R.string.label_capture_primary_busy), false, {})
+            // Dos etiquetas en la foto: sus datos se mezclarían, así que no se guarda; se pide otra con una sola.
+            variasEtiquetas -> Triple(stringResource(R.string.label_capture_take_another), true, onRetake)
             estado.selectedPartida == null && sinDatos -> Triple(stringResource(R.string.label_capture_take_another), true, onRetake)
             estado.selectedPartida == null -> Triple(stringResource(R.string.label_capture_primary_pick), false, {})
             estado.snapshot == null -> Triple(stringResource(R.string.label_capture_primary_no_context), false, {})
@@ -544,6 +557,26 @@ private fun Pie(
             pendientes > 1 -> Triple(stringResource(R.string.label_capture_primary_resolve_many, pendientes), false, {})
             confirma -> Triple(stringResource(R.string.label_capture_primary_confirm), true, { onSave(true) })
             else -> Triple(stringResource(R.string.label_capture_primary_save), true, { onSave(false) })
+        }
+        if (variasEtiquetas && !busy) {
+            Text(
+                stringResource(R.string.label_capture_several_labels),
+                style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
+            )
+        }
+        if (conteoAbierto != null && habilitado && !sinDatos && !variasEtiquetas) {
+            val kilos = conteoAbierto.dimension == CountUnits.Dimension.KILOS
+            Text(
+                stringResource(
+                    if (kilos) R.string.label_capture_count_open_kg else R.string.label_capture_count_open_pieces,
+                    LabelCaptureCotejo.numero(conteoAbierto.totalAfter), LabelCaptureCotejo.numero(conteoAbierto.expected)
+                ),
+                style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
+            )
         }
         Button(
             onClick = alTocar, enabled = habilitado,
@@ -584,7 +617,8 @@ private fun MenuOpciones(
     onToggleLectura: () -> Unit,
     onImprove: () -> Unit,
     onSave: (Boolean) -> Unit,
-    onDiscard: () -> Unit
+    onDiscard: () -> Unit,
+    guardarPermitido: Boolean = true
 ) {
     var abierto by remember { mutableStateOf(false) }
     Box {
@@ -600,7 +634,7 @@ private fun MenuOpciones(
             if (estado.canMarkReviewed || sinDatos) {
                 DropdownMenuItem(
                     text = { Text(stringResource(if (sinDatos) R.string.label_capture_menu_save_photo else R.string.label_capture_menu_save_only)) },
-                    enabled = estado.canSave,
+                    enabled = estado.canSave && guardarPermitido,
                     onClick = { abierto = false; onSave(false) }
                 )
             }

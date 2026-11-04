@@ -120,6 +120,9 @@
     <string name="label_capture_primary_no_context">No se pudo consultar la partida</string>
     <string name="label_capture_nothing_read_selected">No pude leer datos en esta foto. Prueba otra más cerca y con mejor luz, o guárdala como avance desde el menú de la esquina superior derecha.</string>
     <string name="label_capture_fine_print">Al confirmar declaras que revisaste físicamente esta partida; la etiqueta por sí sola no verifica cantidad ni estado.</string>
+    <string name="label_capture_count_open_pieces">Con esta etiqueta llevas %1$s de %2$s pzas. La partida se marca revisada cuando la cuenta cierre.</string>
+    <string name="label_capture_count_open_kg">Con esta etiqueta llevas %1$s de %2$s kg. La partida se marca revisada cuando la cuenta cierre.</string>
+    <string name="label_capture_several_labels">Hay más de una etiqueta en la foto: sus datos se mezclarían. Toma otra con una sola etiqueta.</string>
     <string name="label_capture_cannot_mark">Tu usuario puede guardar datos y evidencia, pero no marcar la partida como revisada.</string>
     <string name="label_capture_menu_more">Más opciones</string>
     <string name="label_capture_menu_save_only">Guardar sin marcar revisada</string>

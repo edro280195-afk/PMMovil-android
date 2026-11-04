@@ -1501,6 +1501,26 @@ class DetalleRevisionViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Qué pasaría al contar esta etiqueta, **sin contarla**: no toca el libro, ni la partida, ni los avisos.
+     * La tarjeta lo usa para saber si, con esta caja, la cuenta de la partida queda abierta y por eso no
+     * ofrecer «marcar revisada» (ver [PackageTally.leavesCountOpen]). Null si la etiqueta no trae lo que el
+     * conteo necesita.
+     */
+    fun previsualizarConteo(
+        campos: List<LabelFieldExtractor.CampoLeido>,
+        codigos: List<String>,
+        textoImpreso: String,
+        multiple: Int = 1
+    ): PackageTally.Result? {
+        val lectura = PackageTally.read(campos, codigos, textoImpreso) as? PackageTally.Reading.Ready ?: return null
+        return PackageTally.process(_partidas.value, _libroEmpaques.value, lectura.label, multiple)
+    }
+
+    /** Si la foto trae dos etiquetas distintas: la tarjeta mezclaría sus datos y no se ofrece guardar (ver [PackageTally.read]). */
+    fun hayVariasEtiquetas(codigos: List<String>): Boolean =
+        PackageTally.read(emptyList(), codigos) is PackageTally.Reading.SeveralLabels
+
     private fun aplicarConteo(resultado: PackageTally.Result.Added) {
         guardarLibro(_libroEmpaques.value.plus(resultado.counted))
         actualizarDatoPartida(resultado.partida, "nCantOut", resultado.totalAfter)

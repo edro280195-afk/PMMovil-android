@@ -120,6 +120,9 @@
     <string name="label_capture_primary_no_context">Couldn\'t load the line item</string>
     <string name="label_capture_nothing_read_selected">I couldn\'t read any data in this photo. Try another one that is closer and better lit, or keep it as progress from the menu at the top right.</string>
     <string name="label_capture_fine_print">By confirming you state that you physically inspected this line item; the label alone does not verify quantity or condition.</string>
+    <string name="label_capture_count_open_pieces">With this label you are at %1$s of %2$s pcs. The line item is marked inspected when the count closes.</string>
+    <string name="label_capture_count_open_kg">With this label you are at %1$s of %2$s kg. The line item is marked inspected when the count closes.</string>
+    <string name="label_capture_several_labels">There is more than one label in the photo: their data would get mixed. Take another with a single label.</string>
     <string name="label_capture_cannot_mark">Your account can save data and evidence, but cannot mark the line item as inspected.</string>
     <string name="label_capture_menu_more">More options</string>
     <string name="label_capture_menu_save_only">Save without marking as inspected</string>

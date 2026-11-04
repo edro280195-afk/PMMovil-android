@@ -8,6 +8,7 @@ import com.example.pmmovil.data.ocr.LabelFieldExtractor.QuantityScope
 import com.example.pmmovil.data.ocr.CorroboracionDeLectura
 import com.example.pmmovil.data.ocr.PackageId
 import com.example.pmmovil.data.ocr.PartidaMatcher
+import com.example.pmmovil.data.scanner.LabelDataIdentifiers
 
 /**
  * Cuenta empaques leídos de sus etiquetas y los suma por partida, en piezas o en kilos, sin contar dos veces el mismo.
@@ -227,6 +228,10 @@ object PackageTally {
      *   la cantidad no se da por buena: con cero margen de error, no saber es igual que no coincidir.
      */
     fun read(fields: List<CampoLeido>, codes: List<String>, textoImpreso: String = ""): Reading {
+        // Dos PDF417 distintos en la misma foto son dos etiquetas: la cantidad de una y el lote de la otra se
+        // mezclarían en una sola lectura (medido en el Pixel el 27-oct: 78.7 kg con el lote de la caja de 77.6).
+        val productCodes = codes.map(String::trim).filter(::isProductCode).distinct()
+        if (productCodes.size > 1) return Reading.SeveralLabels(productCodes)
         val packageId = when (val reading = PackageId.read(codes)) {
             is PackageId.Reading.Multiple -> return Reading.SeveralLabels(reading.values)
             is PackageId.Reading.Single -> reading.value
@@ -294,6 +299,17 @@ object PackageTally {
 
     fun stateOf(partida: PartidaRevisionDto, ledger: Ledger): State =
         stateOf(ledger.total(partida.IdRevdet), expectedQuantity(partida))
+
+    /**
+     * Si contar este empaque deja la cuenta **abierta**: se cuenta, pero la partida todavía no llega a lo que
+     * declara la factura (o se pasó). Con la cuenta abierta la tarjeta no debe marcar la partida como revisada:
+     * medido en el Pixel el 27-oct-2026, guardar la primera de cinco cajas la dejaba «revisada» con el 20 % contado y
+     * las otras cuatro ya no se contaban («la partida ya está revisada»).
+     *
+     * Solo una cuenta que **cierra exacta** deja marcar la revisión. Lo que no se puede contar ([Result.Added] es
+     * lo único que cuenta) sigue como siempre: el revisador decide con la tarjeta.
+     */
+    fun leavesCountOpen(result: Result?): Boolean = result is Result.Added && result.state != State.COMPLETE
 
     /**
      * Suma el empaque de [label] a su partida. No cambia nada por sí sola: devuelve qué pasó y, si [Result.Added],
@@ -387,6 +403,10 @@ object PackageTally {
             .filter { it.matchKind in exact }
             .map { it.partida }
     }
+
+    /** Un código que, él solo, ya trae la clave de un producto: el PDF417 de una etiqueta («+30S0049118845+Q…»). */
+    private fun isProductCode(code: String): Boolean =
+        code.startsWith("+") && LabelDataIdentifiers.leer(listOf(code)).clave != null
 
     private fun withoutLeadingZeros(key: String): String =
         if (key.length > 1 && key.all { it in '0'..'9' }) key.trimStart('0').ifEmpty { "0" } else key
