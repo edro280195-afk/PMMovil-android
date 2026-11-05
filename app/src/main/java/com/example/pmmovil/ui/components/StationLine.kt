@@ -44,13 +44,15 @@ import com.example.pmmovil.ui.theme.PmmTextSecondary
 import com.example.pmmovil.ui.theme.SignageType
 
 /**
- * Las cinco estaciones por las que pasa una caja o una entrada, en el orden en que ocurren. Es el hilo de todo el
- * producto: el Tablero, la ficha y las marcas del AR usan la misma línea.
+ * Las seis estaciones por las que pasa una caja o una entrada, en el orden en que ocurren. Es el hilo de todo el
+ * producto: el Tablero, la ficha y las marcas del AR usan la misma línea. «Carga» (Cargar mercancía) va entre la
+ * revisión y la relación: se carga la caja y después el supervisor autoriza la relación.
  */
 enum class Station(@param:StringRes val nameRes: Int, @param:StringRes val shortRes: Int) {
     Caseta(R.string.station_caseta, R.string.station_caseta_short),
     Entrada(R.string.station_entrada, R.string.station_entrada_short),
     Revision(R.string.station_revision, R.string.station_revision_short),
+    Carga(R.string.station_carga, R.string.station_carga_short),
     Relacion(R.string.station_relacion, R.string.station_relacion_short),
     Salida(R.string.station_salida, R.string.station_salida_short)
 }
@@ -77,7 +79,7 @@ enum class StationState(@param:StringRes val descriptionRes: Int) {
 }
 
 /**
- * Nodo de una estación sobre la línea. [number] es la posición (1 a 5); se dibuja dentro de los estados que no
+ * Nodo de una estación sobre la línea. [number] es la posición (1 a 6); se dibuja dentro de los estados que no
  * llevan símbolo.
  */
 @Composable
@@ -163,7 +165,7 @@ private fun DrawScope.drawNode(state: StationState) {
 }
 
 /**
- * La Línea completa en miniatura: cinco nodos unidos y, debajo de cada uno, la abreviatura de su estación. Es lo que
+ * La Línea completa en miniatura: seis nodos unidos y, debajo de cada uno, la abreviatura de su estación. Es lo que
  * lleva cada marca del AR y la tarjeta de «Siguiente».
  */
 @Composable

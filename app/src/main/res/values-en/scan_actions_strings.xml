@@ -47,6 +47,8 @@
     <string name="scan_action_find_in_yard_detail">Locates it in the gate hub</string>
     <string name="scan_action_open_relation">Open the release</string>
     <string name="scan_action_open_relation_detail">Shows the load and its authorisation</string>
+    <string name="scan_action_load_cargo">Load the goods</string>
+    <string name="scan_action_load_cargo_detail">Opens Load goods with this release so you can scan its packages</string>
     <string name="scan_action_open_entry">Open the entry</string>
     <string name="scan_action_open_entry_detail">View or edit the entry in the warehouse</string>
     <string name="scan_action_review_entry">Open the review</string>

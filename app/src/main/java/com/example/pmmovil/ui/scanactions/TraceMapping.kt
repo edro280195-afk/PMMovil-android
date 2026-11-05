@@ -23,6 +23,7 @@ internal fun stationOf(id: String): Station? = when (id) {
     "CASETA" -> Station.Caseta
     "ENTRADA" -> Station.Entrada
     "REVISION" -> Station.Revision
+    "CARGA" -> Station.Carga
     "RELACION" -> Station.Relacion
     "SALIDA" -> Station.Salida
     else -> null
@@ -46,7 +47,7 @@ internal fun signalKindOf(signal: String): SignalKind = when (signal) {
     else -> SignalKind.SinDato
 }
 
-/** Las cinco estaciones en el orden de La Línea, aunque el servidor mande menos o en otro orden. */
+/** Las seis estaciones en el orden de La Línea, aunque el servidor mande menos o en otro orden. */
 internal fun stationRows(result: TraceResultDto): List<StationRowUi> =
     Station.entries.map { station ->
         val dto = result.stations.firstOrNull { stationOf(it.id) == station }
@@ -161,6 +162,7 @@ internal fun traceFields(result: TraceResultDto, text: (Int, List<Any>) -> Strin
         }
 
         TraceKind.RELACION -> result.relacion?.let { relacion ->
+            add(R.string.trace_field_load, loadText(relacion, text))
             add(R.string.trace_field_status, relacion.estatusCarga)
             add(R.string.trace_field_transfer, relacion.transfer)
             add(R.string.trace_field_caja, relacion.caja)
@@ -188,6 +190,25 @@ internal fun traceFields(result: TraceResultDto, text: (Int, List<Any>) -> Strin
         }
     }
     return fields
+}
+
+/**
+ * Cómo va la carga de una relación, en palabras: «Sin cargar», «Cargando · jperez», «Cargada 04/11/2026 09:40»,
+ * «Bloqueada» o «Incompleta». Sale del `estatus_carga` y de las horas de inicio y fin que manda el servidor.
+ */
+internal fun loadText(relacion: com.example.pmmovil.data.model.TraceRelacionDto, text: (Int, List<Any>) -> String): String {
+    val finished = formatTraceDate(relacion.loadFinishedAt)
+    val who = relacion.loadedBy.trim()
+    return when (relacion.estatusCarga.trim().uppercase(Locale.ROOT)) {
+        "" -> text(R.string.trace_load_not_started, emptyList())
+        "CARGANDO" -> if (who.isNotEmpty()) text(R.string.trace_load_loading_by, listOf(who)) else text(R.string.trace_load_loading, emptyList())
+        "EN ESPERA" -> text(R.string.trace_load_paused, emptyList())
+        "BLOQUEO", "BLOQUEO REIMPRESION" -> text(R.string.trace_load_blocked, emptyList())
+        "INCOMPLETA" -> text(R.string.trace_load_incomplete, emptyList())
+        "CARGADA", "DEMASIADO RAPIDO", "AUTORIZADA", "SALIDA" ->
+            if (finished != null) text(R.string.trace_load_done_at, listOf(finished)) else text(R.string.trace_load_done, emptyList())
+        else -> relacion.estatusCarga
+    }
 }
 
 /** «Completa · 2/2 facturas · 14/14 partidas»; sin facturas, solo el estatus. */

@@ -4,6 +4,7 @@
     <string name="home_new_unit_caseta">en el patio</string>
     <string name="home_new_unit_entrada">capturadas hoy</string>
     <string name="home_new_unit_revision">tuyas por revisar</string>
+    <string name="home_new_unit_carga">cargándose ahora</string>
     <string name="home_new_unit_relacion">por supervisar</string>
     <string name="home_new_unit_salida">salidas hoy</string>
     <string name="home_new_figure_unavailable">sin dato</string>

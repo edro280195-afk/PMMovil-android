@@ -33,12 +33,24 @@ class ScanActionsTest {
     }
 
     @Test
-    fun `a release opens the release or gives exit`() {
+    fun `a release offers to load it, open it or give exit`() {
         val actions = ScanActionResolver.actionsFor(ScannedCode.Relacion("01I26104546"))
 
-        assertEquals(listOf(ScanActionId.OpenRelation, ScanActionId.ExitGate), actions.map { it.id })
-        assertEquals("relacion?barcode=01I26104546", actions.first().route)
-        assertEquals("salida_caseta?barcode=01I26104546", actions.last().route)
+        assertEquals(
+            listOf(ScanActionId.LoadCargo, ScanActionId.OpenRelation, ScanActionId.ExitGate),
+            actions.map { it.id }
+        )
+        assertEquals("salida?barcode=01I26104546", actions[0].route)
+        assertEquals("relacion?barcode=01I26104546", actions[1].route)
+        assertEquals("salida_caseta?barcode=01I26104546", actions[2].route)
+    }
+
+    @Test
+    fun `loading goods needs the load module and not the gate`() {
+        val load = ScanActionResolver.actionsFor(ScannedCode.Relacion("01I26104546")).first()
+
+        assertEquals(listOf(MobileModuleIds.WAREHOUSE_EXIT), load.modules)
+        assertEquals(ScanAction.LEVEL_READ, load.level)
     }
 
     @Test

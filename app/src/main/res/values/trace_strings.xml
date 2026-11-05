@@ -44,6 +44,7 @@
     <string name="trace_field_planta">Planta</string>
     <string name="trace_field_operacion">Operación</string>
     <string name="trace_field_arrival">Llegada</string>
+    <string name="trace_field_load">Carga</string>
     <string name="trace_field_status">Estatus</string>
     <string name="trace_field_transfer">Transfer</string>
     <string name="trace_field_authorized">Autorizada</string>
@@ -54,6 +55,16 @@
     <string name="trace_field_used">Usado</string>
     <string name="trace_field_label">Etiqueta</string>
     <string name="trace_label_position">%1$d de %2$d</string>
+
+    <!-- Cómo va la carga de una relación (Cargar mercancía). -->
+    <string name="trace_load_not_started">Sin cargar</string>
+    <string name="trace_load_loading">Cargándose ahora</string>
+    <string name="trace_load_loading_by">Cargándose · %1$s</string>
+    <string name="trace_load_paused">En espera (pausada)</string>
+    <string name="trace_load_blocked">Bloqueada: espera al supervisor</string>
+    <string name="trace_load_incomplete">Incompleta: espera al supervisor</string>
+    <string name="trace_load_done">Cargada</string>
+    <string name="trace_load_done_at">Cargada · %1$s</string>
 
     <!-- Relacionado: de qué es cada fila. -->
     <string name="trace_related_caja">Caja</string>

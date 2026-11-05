@@ -37,6 +37,7 @@ class TraceActionsTest {
         assertEquals(ScanActionId.ExitGate, TraceActionResolver.idOf("EXIT_GATE"))
         assertEquals(ScanActionId.FindInYard, TraceActionResolver.idOf("FIND_IN_YARD"))
         assertEquals(ScanActionId.OpenRelation, TraceActionResolver.idOf("OPEN_RELATION"))
+        assertEquals(ScanActionId.LoadCargo, TraceActionResolver.idOf("OPEN_LOAD"))
         assertEquals(ScanActionId.OpenEntry, TraceActionResolver.idOf("OPEN_ENTRY"))
         assertEquals(ScanActionId.ReviewEntry, TraceActionResolver.idOf("REVIEW_ENTRY"))
         assertEquals(ScanActionId.ShowOnMap, TraceActionResolver.idOf("SHOW_ON_MAP"))
@@ -47,7 +48,7 @@ class TraceActionsTest {
     @Test
     fun `every app action has a server name so none can be sent and lost`() {
         val mapped = listOf(
-            "CREATE_ENTRY", "EXIT_GATE", "FIND_IN_YARD", "OPEN_RELATION",
+            "CREATE_ENTRY", "EXIT_GATE", "FIND_IN_YARD", "OPEN_RELATION", "OPEN_LOAD",
             "OPEN_ENTRY", "REVIEW_ENTRY", "SHOW_ON_MAP", "REGISTER_PREREGISTRO"
         ).mapNotNull(TraceActionResolver::idOf)
 
@@ -68,6 +69,45 @@ class TraceActionsTest {
         assertEquals("entrada_nueva?barcode=E-017848%2F26", actions[0].route)
         assertEquals("caseta_hub?barcode=E-017848%2F26", actions[1].route)
         assertEquals("salida_caseta?barcode=E-017848%2F26", actions[2].route)
+    }
+
+    @Test
+    fun `a release that is not loaded yet leads with loading the goods and carries its own number`() {
+        val relacion = TraceRelacionDto(relno = "01I26104549", estatusCarga = "")
+        val result = TraceResultDto(
+            success = true,
+            kind = TraceKind.RELACION,
+            found = true,
+            actions = listOf("OPEN_LOAD", "OPEN_RELATION", "EXIT_GATE"),
+            relacion = relacion
+        )
+
+        val actions = TraceActionResolver.actionsFor(result, "01I26104549")
+
+        assertEquals(
+            listOf(ScanActionId.LoadCargo, ScanActionId.OpenRelation, ScanActionId.ExitGate),
+            actions.map { it.id }
+        )
+        assertEquals("salida?barcode=01I26104549", actions[0].route)
+    }
+
+    @Test
+    fun `a loader sees loading as the main action and a supervisor without that module does not`() {
+        val relacion = TraceRelacionDto(relno = "01I26104549", estatusCarga = "CARGANDO")
+        val result = TraceResultDto(
+            success = true, kind = TraceKind.RELACION, found = true,
+            actions = listOf("OPEN_LOAD", "OPEN_RELATION"), relacion = relacion
+        )
+
+        val loader: (Int, String) -> Boolean = { module, _ -> module == MobileModuleIds.WAREHOUSE_EXIT }
+        val supervisor: (Int, String) -> Boolean = { module, _ -> module == MobileModuleIds.WAREHOUSE_RELATION }
+
+        val forLoader = TraceActionResolver.available(result, "01I26104549", loader)
+        val forSupervisor = TraceActionResolver.available(result, "01I26104549", supervisor)
+
+        assertEquals(listOf(ScanActionId.LoadCargo), forLoader.map { it.id })
+        assertTrue(forLoader.single().primary)
+        assertEquals(listOf(ScanActionId.OpenRelation), forSupervisor.map { it.id })
     }
 
     @Test

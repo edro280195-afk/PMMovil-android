@@ -18,8 +18,13 @@ data class TraceCompactItemDto(
     val reason: String? = null,
     /** `ALTO`, `ATENCION`, `LISTO`, `AVISO`, `CERRADO` o `SIN_DATO`. */
     val signal: String = "SIN_DATO",
-    /** Estado de las cinco estaciones, en el orden de La Línea (caseta, entrada, revisión, relación, salida). */
+    /**
+     * Estado de las cinco estaciones originales, en su orden (caseta, entrada, revisión, relación, salida). La carga viaja
+     * aparte en [carga]: así un servidor anterior a «Carga» (que solo manda estas cinco) sigue entendiéndose.
+     */
     val states: List<String> = emptyList(),
+    /** Estado de «Carga»; `SIN_DATO` si el servidor no la manda. */
+    val carga: String = "SIN_DATO",
     val flags: List<String> = emptyList(),
     val customer: String = "",
     val box: String = "",

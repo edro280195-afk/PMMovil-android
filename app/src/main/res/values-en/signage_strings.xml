@@ -12,11 +12,13 @@
     <string name="station_caseta">Gatehouse</string>
     <string name="station_entrada">Receiving</string>
     <string name="station_revision">Review</string>
+    <string name="station_carga">Loading</string>
     <string name="station_relacion">Release</string>
     <string name="station_salida">Exit</string>
     <string name="station_caseta_short">GAT</string>
     <string name="station_entrada_short">REC</string>
     <string name="station_revision_short">REV</string>
+    <string name="station_carga_short">LOD</string>
     <string name="station_relacion_short">REL</string>
     <string name="station_salida_short">EXT</string>
 

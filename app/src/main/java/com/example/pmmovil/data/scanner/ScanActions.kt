@@ -17,6 +17,9 @@ enum class ScanActionId {
     /** Abrir la relación para supervisarla. */
     OpenRelation,
 
+    /** Ir a «Cargar mercancía» con la relación ya puesta, para escanear sus bultos. */
+    LoadCargo,
+
     /** Abrir la entrada en bodega. */
     OpenEntry,
 
@@ -59,7 +62,10 @@ object ScanActionResolver {
             build(ScanActionId.FindInYard, code.normalized)
         )
 
+        // Sin red no se sabe si ya se cargó: se ofrecen las tres y ninguna es la principal. Con servidor, la ficha
+        // manda solo la que corresponde (ver TraceActionResolver).
         is ScannedCode.Relacion -> listOf(
+            build(ScanActionId.LoadCargo, code.normalized),
             build(ScanActionId.OpenRelation, code.normalized),
             build(ScanActionId.ExitGate, code.normalized)
         )
@@ -128,6 +134,13 @@ object ScanActionResolver {
             id,
             "relacion?barcode=${encode(value)}",
             listOf(MobileModuleIds.WAREHOUSE_RELATION)
+        )
+
+        // La pantalla de carga recibe la relación como si la hubiera leído el escáner; leer nunca registra nada.
+        ScanActionId.LoadCargo -> ScanAction(
+            id,
+            "salida?barcode=${encode(value)}",
+            listOf(MobileModuleIds.WAREHOUSE_EXIT)
         )
 
         ScanActionId.OpenEntry -> ScanAction(

@@ -346,6 +346,7 @@ private fun actionTitle(id: ScanActionId): Int = when (id) {
     ScanActionId.ExitGate -> R.string.scan_action_exit_gate
     ScanActionId.FindInYard -> R.string.scan_action_find_in_yard
     ScanActionId.OpenRelation -> R.string.scan_action_open_relation
+    ScanActionId.LoadCargo -> R.string.scan_action_load_cargo
     ScanActionId.OpenEntry -> R.string.scan_action_open_entry
     ScanActionId.ReviewEntry -> R.string.scan_action_review_entry
     ScanActionId.ShowOnMap -> R.string.scan_action_show_on_map
@@ -358,6 +359,7 @@ private fun actionDetail(id: ScanActionId): Int = when (id) {
     ScanActionId.ExitGate -> R.string.scan_action_exit_gate_detail
     ScanActionId.FindInYard -> R.string.scan_action_find_in_yard_detail
     ScanActionId.OpenRelation -> R.string.scan_action_open_relation_detail
+    ScanActionId.LoadCargo -> R.string.scan_action_load_cargo_detail
     ScanActionId.OpenEntry -> R.string.scan_action_open_entry_detail
     ScanActionId.ReviewEntry -> R.string.scan_action_review_entry_detail
     ScanActionId.ShowOnMap -> R.string.scan_action_show_on_map_detail

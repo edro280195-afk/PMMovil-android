@@ -16,6 +16,7 @@
     <string name="home_new_station_caseta_desc">Cajas en el patio</string>
     <string name="home_new_station_entrada_desc">Recepción en bodega</string>
     <string name="home_new_station_revision_desc">Mercancía por revisar</string>
+    <string name="home_new_station_carga_desc">Subir la mercancía a la caja</string>
     <string name="home_new_station_relacion_desc">Cargas por supervisar</string>
     <string name="home_new_station_salida_desc">Salida de caseta</string>
     <string name="home_new_station_blocked">Tu puesto no tiene el módulo «%1$s».</string>

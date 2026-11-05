@@ -22,6 +22,7 @@ class BoardFiguresTest {
          "caseta":{"count":164,"exception":{"kind":"ATENCION","code":"OLD_IN_YARD","count":103}},
          "entrada":{"count":149,"exception":null},
          "revision":null,
+         "carga":{"count":3,"exception":null},
          "relacion":{"count":2,"exception":null},
          "salida":{"count":47,"exception":{"kind":"LISTO","code":"LISTAS_PARA_SALIR","count":11}},
          "cacheSeconds":30}
@@ -53,6 +54,7 @@ class BoardFiguresTest {
         assertEquals(164, figures.getValue(Station.Caseta)?.count)
         assertEquals(149, figures.getValue(Station.Entrada)?.count)
         assertNull(figures.getValue(Station.Revision))
+        assertEquals(3, figures.getValue(Station.Carga)?.count)
         assertEquals(2, figures.getValue(Station.Relacion)?.count)
         assertEquals(47, figures.getValue(Station.Salida)?.count)
     }

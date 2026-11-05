@@ -109,6 +109,7 @@ private fun stationModule(station: Station, modules: List<ModuleItem>): ModuleIt
     Station.Revision -> modules.firstOrNull {
         it.moduleId == MobileModuleIds.REVIEW && it.routeKey != HomeModuleRouteKeys.ENTRY_AR
     }
+    Station.Carga -> modules.firstOrNull { it.routeKey == HomeModuleRouteKeys.WAREHOUSE_LOADS }
     Station.Relacion -> modules.firstOrNull { it.routeKey == HomeModuleRouteKeys.WAREHOUSE_RELATION }
     Station.Salida -> modules.firstOrNull { it.routeKey == HomeModuleRouteKeys.GATE_RELATION_EXIT }
 }
@@ -118,12 +119,13 @@ private fun stationDescription(station: Station): Int = when (station) {
     Station.Caseta -> R.string.home_new_station_caseta_desc
     Station.Entrada -> R.string.home_new_station_entrada_desc
     Station.Revision -> R.string.home_new_station_revision_desc
+    Station.Carga -> R.string.home_new_station_carga_desc
     Station.Relacion -> R.string.home_new_station_relacion_desc
     Station.Salida -> R.string.home_new_station_salida_desc
 }
 
 /**
- * El inicio nuevo: el visor de escaneo universal, La Línea con las cinco estaciones, cada una con su cifra y su caso más
+ * El inicio nuevo: el visor de escaneo universal, La Línea con las seis estaciones, cada una con su cifra y su caso más
  * fuerte, y debajo los módulos que no son una estación.
  *
  * @param modules los módulos que el usuario puede abrir (los mismos que pinta el inicio de siempre).

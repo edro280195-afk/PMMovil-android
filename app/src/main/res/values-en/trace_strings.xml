@@ -44,6 +44,7 @@
     <string name="trace_field_planta">Plant</string>
     <string name="trace_field_operacion">Operation</string>
     <string name="trace_field_arrival">Arrival</string>
+    <string name="trace_field_load">Loading</string>
     <string name="trace_field_status">Status</string>
     <string name="trace_field_transfer">Transfer</string>
     <string name="trace_field_authorized">Authorised</string>
@@ -54,6 +55,16 @@
     <string name="trace_field_used">Used</string>
     <string name="trace_field_label">Label</string>
     <string name="trace_label_position">%1$d of %2$d</string>
+
+    <!-- How the loading of a release is going (Load goods). -->
+    <string name="trace_load_not_started">Not loaded</string>
+    <string name="trace_load_loading">Loading now</string>
+    <string name="trace_load_loading_by">Loading · %1$s</string>
+    <string name="trace_load_paused">Paused</string>
+    <string name="trace_load_blocked">Blocked: waiting for the supervisor</string>
+    <string name="trace_load_incomplete">Incomplete: waiting for the supervisor</string>
+    <string name="trace_load_done">Loaded</string>
+    <string name="trace_load_done_at">Loaded · %1$s</string>
 
     <!-- Related: what each row is. -->
     <string name="trace_related_caja">Box</string>

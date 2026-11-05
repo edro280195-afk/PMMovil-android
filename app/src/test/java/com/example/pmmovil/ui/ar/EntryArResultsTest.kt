@@ -116,13 +116,35 @@ class EntryArResultsTest {
     }
 
     @Test
-    fun `a full set of states maps in the order of the line`() {
+    fun `a full set of states maps in the order of the line with the load in its own place`() {
+        // El servidor manda las cinco originales por posición y la carga aparte: la carga queda entre revisión y relación.
         val states = compactStates(
-            TraceCompactItemDto(states = listOf("HECHA", "SIN_DATO", "SIN_DATO", "PENDIENTE", "NO_APLICA"))
+            TraceCompactItemDto(
+                states = listOf("HECHA", "SIN_DATO", "SIN_DATO", "PENDIENTE", "NO_APLICA"),
+                carga = "EN_CURSO"
+            )
         )
 
         assertEquals(
-            listOf(StationState.Done, StationState.Unknown, StationState.Unknown, StationState.Todo, StationState.NotApplicable),
+            listOf(
+                StationState.Done, StationState.Unknown, StationState.Unknown,
+                StationState.Now, StationState.Todo, StationState.NotApplicable
+            ),
+            states
+        )
+    }
+
+    @Test
+    fun `a server that does not send the load yet leaves it without data and moves nothing else`() {
+        val states = compactStates(
+            TraceCompactItemDto(states = listOf("HECHA", "HECHA", "HECHA", "EN_CURSO", "PENDIENTE"))
+        )
+
+        assertEquals(
+            listOf(
+                StationState.Done, StationState.Done, StationState.Done,
+                StationState.Unknown, StationState.Now, StationState.Todo
+            ),
             states
         )
     }

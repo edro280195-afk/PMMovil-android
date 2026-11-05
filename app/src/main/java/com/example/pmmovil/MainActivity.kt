@@ -502,9 +502,17 @@ class MainActivity : AppCompatActivity() {
                             )
                         }
 
-                        composable("salida") {
+                        composable(
+                            "salida?barcode={barcode}",
+                            arguments = listOf(optionalBarcodeArgument)
+                        ) { backStackEntry ->
+                            val barcodeResult by backStackEntry.rememberBarcodeResult()
                             com.example.pmmovil.ui.salida.SalidaScreen(
-                                onNavigateBack = { navController.popBackStack() }
+                                onNavigateBack = { navController.popBackStack() },
+                                barcodeScanResult = barcodeResult,
+                                onBarcodeScanConsumed = {
+                                    backStackEntry.savedStateHandle["barcode"] = null
+                                }
                             )
                         }
 

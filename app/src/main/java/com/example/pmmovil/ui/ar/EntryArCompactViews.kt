@@ -47,9 +47,20 @@ import com.example.pmmovil.ui.scanactions.stationStateOf
  * propia tarjeta (revisión, facturas, partidas) y no pasa por aquí.
  */
 
-/** El estado de las cinco estaciones, siempre cinco: lo que el servidor no mande queda «sin dato». */
-internal fun compactStates(compact: TraceCompactItemDto): List<StationState> =
-    List(Station.entries.size) { index -> compact.states.getOrNull(index)?.let(::stationStateOf) ?: StationState.Unknown }
+/**
+ * El estado de las seis estaciones en el orden de La Línea: lo que el servidor no mande queda «sin dato». El servidor
+ * manda cinco estados por posición (caseta, entrada, revisión, relación, salida) y la carga aparte; así una app y un
+ * servidor de versiones distintas siguen entendiéndose.
+ */
+internal fun compactStates(compact: TraceCompactItemDto): List<StationState> {
+    val original = listOf(Station.Caseta, Station.Entrada, Station.Revision, Station.Relacion, Station.Salida)
+    return Station.entries.map { station ->
+        when (station) {
+            Station.Carga -> stationStateOf(compact.carga)
+            else -> compact.states.getOrNull(original.indexOf(station))?.let(::stationStateOf) ?: StationState.Unknown
+        }
+    }
+}
 
 /** Lo que dice un QR de caja o de relación sobre sí mismo cuando todavía no hay ficha. */
 internal fun arKindLabel(kind: ArItemKind): String = when (kind) {

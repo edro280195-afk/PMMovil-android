@@ -58,11 +58,12 @@ internal fun boardFigureOf(dto: HomeStationSummaryDto?): BoardFigure? {
     return BoardFigure(count = dto.count.coerceAtLeast(0), exception = exception)
 }
 
-/** Las cinco cifras del servidor, por estación. Una estación sin cifra (sin módulo o con falla) queda en `null`. */
+/** Las seis cifras del servidor, por estación. Una estación sin cifra (sin módulo o con falla) queda en `null`. */
 internal fun boardFigures(dto: HomeSummaryDto): Map<Station, BoardFigure?> = mapOf(
     Station.Caseta to boardFigureOf(dto.caseta),
     Station.Entrada to boardFigureOf(dto.entrada),
     Station.Revision to boardFigureOf(dto.revision),
+    Station.Carga to boardFigureOf(dto.carga),
     Station.Relacion to boardFigureOf(dto.relacion),
     Station.Salida to boardFigureOf(dto.salida)
 )
@@ -73,6 +74,7 @@ internal fun stationUnit(station: Station): Int = when (station) {
     Station.Caseta -> R.string.home_new_unit_caseta
     Station.Entrada -> R.string.home_new_unit_entrada
     Station.Revision -> R.string.home_new_unit_revision
+    Station.Carga -> R.string.home_new_unit_carga
     Station.Relacion -> R.string.home_new_unit_relacion
     Station.Salida -> R.string.home_new_unit_salida
 }

@@ -16,6 +16,7 @@
     <string name="home_new_station_caseta_desc">Boxes in the yard</string>
     <string name="home_new_station_entrada_desc">Warehouse receiving</string>
     <string name="home_new_station_revision_desc">Goods to review</string>
+    <string name="home_new_station_carga_desc">Loading the box</string>
     <string name="home_new_station_relacion_desc">Loads to supervise</string>
     <string name="home_new_station_salida_desc">Gate exit</string>
     <string name="home_new_station_blocked">Your role does not have the “%1$s” module.</string>

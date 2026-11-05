@@ -12,6 +12,7 @@ data class HomeSummaryDto(
     val caseta: HomeStationSummaryDto? = null,
     val entrada: HomeStationSummaryDto? = null,
     val revision: HomeStationSummaryDto? = null,
+    val carga: HomeStationSummaryDto? = null,
     val relacion: HomeStationSummaryDto? = null,
     val salida: HomeStationSummaryDto? = null,
     /** Cuánto vale la respuesta del servidor antes de recalcularse. */

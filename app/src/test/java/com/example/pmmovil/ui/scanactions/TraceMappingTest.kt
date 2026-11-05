@@ -45,7 +45,7 @@ class TraceMappingTest {
     }
 
     @Test
-    fun `the line always has the five stations in order even if the server sends fewer or shuffled`() {
+    fun `the line always has the six stations in order even if the server sends fewer or shuffled`() {
         val result = TraceResultDto(
             stations = listOf(
                 TraceStationDto("SALIDA", "PENDIENTE"),
@@ -61,7 +61,42 @@ class TraceMappingTest {
         assertEquals("20/10/2026 08:30", rows[0].at)
         assertEquals(StationState.Unknown, rows[1].state)
         assertEquals(StationState.Unknown, rows[2].state)
-        assertEquals(StationState.Todo, rows[4].state)
+        assertEquals(StationState.Unknown, rows[3].state)
+        assertEquals(StationState.Todo, rows[5].state)
+    }
+
+    @Test
+    fun `the load station is read from the server by its id`() {
+        val rows = stationRows(
+            TraceResultDto(stations = listOf(TraceStationDto("CARGA", "EN_CURSO", "2026-11-04T09:00:00")))
+        )
+
+        val load = rows.single { it.station == Station.Carga }
+        assertEquals(StationState.Now, load.state)
+        assertEquals("04/11/2026 09:00", load.at)
+    }
+
+    @Test
+    fun `the load of a release is told in words`() {
+        fun text(res: Int, args: List<Any>) = "$res${args.joinToString(prefix = "(", postfix = ")")}"
+        fun say(status: String, who: String = "", end: String? = null) = loadText(
+            com.example.pmmovil.data.model.TraceRelacionDto(
+                relno = "01I26104549", estatusCarga = status, loadedBy = who, loadFinishedAt = end
+            ),
+            ::text
+        )
+
+        assertEquals(say("", ""), say("   "))
+        assertEquals("${R.string.trace_load_not_started}()", say(""))
+        assertEquals("${R.string.trace_load_loading_by}(jperez)", say("CARGANDO", "jperez"))
+        assertEquals("${R.string.trace_load_loading}()", say("CARGANDO"))
+        assertEquals("${R.string.trace_load_paused}()", say("EN ESPERA"))
+        assertEquals("${R.string.trace_load_blocked}()", say("BLOQUEO"))
+        assertEquals("${R.string.trace_load_incomplete}()", say("INCOMPLETA"))
+        assertEquals("${R.string.trace_load_done_at}(04/11/2026 09:40)", say("CARGADA", end = "2026-11-04T09:40:00"))
+        assertEquals("${R.string.trace_load_done}()", say("AUTORIZADA"))
+        // Un estatus que esta versión no conoce se muestra tal cual en lugar de inventar una frase.
+        assertEquals("OTRO", say("OTRO"))
     }
 
     @Test

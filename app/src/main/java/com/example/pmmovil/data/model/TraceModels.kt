@@ -56,7 +56,13 @@ data class TraceRelacionDto(
     val transfer: String = "",
     val authorizedAt: String? = null,
     val departureAt: String? = null,
-    val totalEntradas: Int = 0
+    val totalEntradas: Int = 0,
+    /** Cuándo se empezó a cargar; `null` si todavía no. */
+    val loadStartedAt: String? = null,
+    /** Cuándo se terminó de cargar; `null` si sigue pendiente o en proceso. */
+    val loadFinishedAt: String? = null,
+    /** Quién tiene tomada la carga; vacío si nadie. */
+    val loadedBy: String = ""
 )
 
 data class TraceBultoDto(

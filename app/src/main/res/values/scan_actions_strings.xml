@@ -47,6 +47,8 @@
     <string name="scan_action_find_in_yard_detail">La ubica en el hub de caseta</string>
     <string name="scan_action_open_relation">Abrir la relación</string>
     <string name="scan_action_open_relation_detail">Consulta la carga y su autorización</string>
+    <string name="scan_action_load_cargo">Cargar mercancía</string>
+    <string name="scan_action_load_cargo_detail">Abre Cargar mercancía con esta relación para escanear sus bultos</string>
     <string name="scan_action_open_entry">Abrir la entrada</string>
     <string name="scan_action_open_entry_detail">Ver o editar la entrada en bodega</string>
     <string name="scan_action_review_entry">Abrir la revisión</string>

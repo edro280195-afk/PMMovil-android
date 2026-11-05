@@ -35,9 +35,9 @@ class SignageComponentsTest {
     }
 
     @Test
-    fun `the line has five stations in the order the goods move`() {
+    fun `the line has six stations in the order the goods move`() {
         assertEquals(
-            listOf("Caseta", "Entrada", "Revision", "Relacion", "Salida"),
+            listOf("Caseta", "Entrada", "Revision", "Carga", "Relacion", "Salida"),
             Station.entries.map { it.name }
         )
     }
