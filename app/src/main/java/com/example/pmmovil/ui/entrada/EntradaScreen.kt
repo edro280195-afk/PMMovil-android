@@ -72,6 +72,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Refresh
@@ -1120,6 +1121,8 @@ private fun ReferenceSection(state: EntradaUiState, viewModel: EntradaViewModel,
             !state.consecutiveGenerated &&
             state.form.ref4.isBlank() &&
             !state.form.isExisting
+    val guide = remember(state.form) { EntradaCaptureGuide.of(state.form) }
+    val consecutiveStatus = guide.status(CaptureField.CONSECUTIVO)
     FormCard(title = "Referencia PMM", icon = Icons.Default.AutoAwesome) {
         // La referencia son seis tramos pero solo el consecutivo se teclea; los demás ya vienen puestos. Se muestran como
         // una vista previa debajo del campo, en lugar de seis cajitas que en una pantalla angosta partían la etiqueta.
@@ -1129,6 +1132,7 @@ private fun ReferenceSection(state: EntradaUiState, viewModel: EntradaViewModel,
             onValueChange = { value ->
                 viewModel.updateForm { it.copy(ref4 = value.filter(Char::isDigit), isExisting = false) }
             },
+            colors = captureTextFieldColors(consecutiveStatus),
             label = { Text("Consecutivo") },
             supportingText = {
                 Text(
@@ -1140,7 +1144,9 @@ private fun ReferenceSection(state: EntradaUiState, viewModel: EntradaViewModel,
             isError = "ref4" in state.invalidFields,
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .captureGlow(consecutiveStatus, cornerRadius = 4.dp)
         )
         Button(
             onClick = viewModel::generateConsecutive,
@@ -1165,12 +1171,14 @@ private fun ReferenceSection(state: EntradaUiState, viewModel: EntradaViewModel,
             value = state.form.bodega,
             items = state.catalogs.bodegas,
             enabled = enabled,
+            captureStatus = guide.status(CaptureField.BODEGA),
             onSelect = { item -> viewModel.updateForm { it.copy(bodega = item.value) } }
         )
         ArrivalDateTimeField(
             value = state.form.fecha,
             error = "fecha" in state.invalidFields,
             enabled = enabled,
+            captureStatus = guide.status(CaptureField.FECHA),
             onValueChange = { value ->
                 viewModel.updateForm { it.copy(fecha = value) }
             }
@@ -1184,7 +1192,8 @@ private fun ArrivalDateTimeField(
     value: String,
     error: Boolean,
     enabled: Boolean,
-    onValueChange: (String) -> Unit
+    onValueChange: (String) -> Unit,
+    captureStatus: CaptureStatus = CaptureStatus.NONE
 ) {
     val current = remember(value) {
         runCatching { LocalDateTime.parse(value.take(16)) }
@@ -1210,10 +1219,14 @@ private fun ArrivalDateTimeField(
         enabled = enabled,
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 64.dp),
-        color = if (error) Color(0xFFFFF1F1) else PmmBgSurface,
+            .heightIn(min = 64.dp)
+            .captureGlow(captureStatus),
+        color = if (error) Color(0xFFFFF1F1) else captureContainerColor(captureStatus, PmmBgSurface),
         shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, if (error) PmmRed else PmmNavyBorder)
+        border = BorderStroke(
+            captureBorderWidth(captureStatus),
+            if (error) PmmRed else captureBorderColor(captureStatus, PmmNavyBorder)
+        )
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
@@ -1348,6 +1361,7 @@ private fun ArrivalSection(
     onTakeDamagePhoto: () -> Unit,
     enabled: Boolean
 ) {
+    val guide = remember(state.form) { EntradaCaptureGuide.of(state.form) }
     FormCard(title = "Cliente y transporte", icon = Icons.Default.Search) {
         Text(
             if (state.form.casetaId.isNullOrBlank()) {
@@ -1370,7 +1384,8 @@ private fun ArrivalSection(
             frequentItems = state.frequentCustomers,
             onSearch = viewModel::searchLookup,
             onSelect = viewModel::selectLookup,
-            onClear = viewModel::clearLookupSelection
+            onClear = viewModel::clearLookupSelection,
+            captureStatus = guide.status(CaptureField.CLIENTE)
         )
         EntradaEntitySearchField(
             type = EntradaLookupType.TRANSPORT,
@@ -1383,7 +1398,8 @@ private fun ArrivalSection(
             frequentItems = state.frequentTransports,
             onSearch = viewModel::searchLookup,
             onSelect = viewModel::selectLookup,
-            onClear = viewModel::clearLookupSelection
+            onClear = viewModel::clearLookupSelection,
+            captureStatus = guide.status(CaptureField.TRANSPORTE)
         )
         EntradaEntitySearchField(
             type = EntradaLookupType.BOX,
@@ -1395,7 +1411,8 @@ private fun ArrivalSection(
             enabled = enabled,
             onSearch = viewModel::searchLookup,
             onSelect = viewModel::selectLookup,
-            onClear = viewModel::clearLookupSelection
+            onClear = viewModel::clearLookupSelection,
+            captureStatus = guide.status(CaptureField.CAJA)
         )
         EntradaCatalogPickerField(
             label = "Tipo de manejo",
@@ -1403,15 +1420,19 @@ private fun ArrivalSection(
             items = state.catalogs.manejos,
             error = "manejo" in state.invalidFields,
             enabled = enabled,
+            captureStatus = guide.status(CaptureField.MANEJO),
             onSelect = { item -> viewModel.updateForm { it.copy(manejo = item.value) } }
         )
         OutlinedTextField(
             value = state.form.guia,
             enabled = enabled,
             onValueChange = { value -> viewModel.updateForm { it.copy(guia = value) } },
+            colors = captureTextFieldColors(guide.status(CaptureField.GUIA)),
             label = { Text("Guía / B.L.") },
             singleLine = true,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .captureGlow(guide.status(CaptureField.GUIA), cornerRadius = 4.dp)
         )
     }
     FormCard(title = "Condiciones especiales", icon = Icons.Default.Warning) {
@@ -1431,15 +1452,19 @@ private fun ArrivalSection(
                 items = state.catalogs.clasesHazmat,
                 error = "claseHazmat" in state.invalidFields,
                 enabled = enabled,
+                captureStatus = guide.status(CaptureField.HAZMAT_CLASE),
                 onSelect = { item -> viewModel.updateForm { it.copy(claseHazmat = item.value) } }
             )
             OutlinedTextField(
                 value = state.form.un,
                 enabled = enabled,
                 onValueChange = { value -> viewModel.updateForm { it.copy(un = value) } },
+                colors = captureTextFieldColors(guide.status(CaptureField.HAZMAT_UN)),
                 label = { Text("Número UN") },
                 isError = "un" in state.invalidFields,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .captureGlow(guide.status(CaptureField.HAZMAT_UN), cornerRadius = 4.dp)
             )
         }
         ToggleRow("Mercancía dañada", state.form.danada, enabled = enabled) { checked ->
@@ -1451,12 +1476,15 @@ private fun ArrivalSection(
             OutlinedTextField(
                 value = state.form.danadaDescripcion,
                 onValueChange = { value -> viewModel.updateForm { it.copy(danadaDescripcion = value) } },
+                colors = captureTextFieldColors(guide.status(CaptureField.DANO_DESCRIPCION)),
                 label = { Text("Describe el daño") },
                 placeholder = { Text("Ej. caja aplastada en una esquina, mercancía mojada...") },
                 isError = "danadaDescripcion" in state.invalidFields,
                 minLines = 2,
                 enabled = enabled,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .captureGlow(guide.status(CaptureField.DANO_DESCRIPCION), cornerRadius = 4.dp)
             )
             DamagePhotoSection(state, viewModel, onTakeDamagePhoto, enabled)
             if ("danadaFotos" in state.invalidFields) {
@@ -1477,9 +1505,12 @@ private fun ArrivalSection(
                 value = state.form.inBondVal,
                 enabled = enabled,
                 onValueChange = { value -> viewModel.updateForm { it.copy(inBondVal = value) } },
+                colors = captureTextFieldColors(guide.status(CaptureField.INBOND_VALOR)),
                 label = { Text("Número IN-BOND") },
                 isError = "inBondVal" in state.invalidFields,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .captureGlow(guide.status(CaptureField.INBOND_VALOR), cornerRadius = 4.dp)
             )
         }
     }
@@ -1598,6 +1629,29 @@ private fun MerchandiseSection(state: EntradaUiState, viewModel: EntradaViewMode
         location = ""
     }
 
+    // Guía de captura: mientras no haya ningún concepto, cantidad y descripción son lo que sigue (en ese orden) y el
+    // botón «Agregar» destella cuando ambas ya están. Con conceptos ya agregados, el editor queda neutro: un concepto
+    // nuevo es opcional y no tiene por qué llamar la atención.
+    val guide = remember(state.form) { EntradaCaptureGuide.of(state.form) }
+    val quantityOk = (quantity.replace(",", "").toDoubleOrNull() ?: 0.0) > 0.0
+    val descriptionOk = description.isNotBlank()
+    val needsFirstConcept = state.form.detalles.isEmpty()
+    val merchandiseIsNext = guide.next == CaptureField.MERCANCIA
+    val quantityStatus = when {
+        quantityOk -> CaptureStatus.CAPTURED
+        needsFirstConcept && merchandiseIsNext -> CaptureStatus.NEXT
+        needsFirstConcept -> CaptureStatus.PENDING
+        else -> CaptureStatus.NONE
+    }
+    val descriptionStatus = when {
+        descriptionOk -> CaptureStatus.CAPTURED
+        needsFirstConcept && merchandiseIsNext && quantityOk -> CaptureStatus.NEXT
+        needsFirstConcept -> CaptureStatus.PENDING
+        else -> CaptureStatus.NONE
+    }
+    val addButtonStatus =
+        if (merchandiseIsNext && quantityOk && descriptionOk) CaptureStatus.NEXT else CaptureStatus.NONE
+
     FormCard(title = "Mercancía recibida", icon = Icons.Default.Inventory2) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1635,10 +1689,13 @@ private fun MerchandiseSection(state: EntradaUiState, viewModel: EntradaViewMode
                 value = quantity,
                 enabled = enabled,
                 onValueChange = { quantity = it },
+                colors = captureTextFieldColors(quantityStatus),
                 label = { Text("Cantidad") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 singleLine = true,
-                modifier = Modifier.weight(0.8f)
+                modifier = Modifier
+                    .weight(0.8f)
+                    .captureGlow(quantityStatus, cornerRadius = 4.dp)
             )
             Box(Modifier.weight(1.2f)) {
                 EntradaCatalogPickerField(
@@ -1646,6 +1703,7 @@ private fun MerchandiseSection(state: EntradaUiState, viewModel: EntradaViewMode
                     value = detailClass,
                     items = state.catalogs.clases,
                     enabled = enabled,
+                    captureStatus = if (detailClass.isNotBlank()) CaptureStatus.CAPTURED else CaptureStatus.NONE,
                     onSelect = { detailClass = it.value }
                 )
             }
@@ -1654,15 +1712,21 @@ private fun MerchandiseSection(state: EntradaUiState, viewModel: EntradaViewMode
             value = description,
             enabled = enabled,
             onValueChange = { description = it },
+            colors = captureTextFieldColors(descriptionStatus),
             label = { Text("Descripción de mercancía") },
             minLines = 2,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .captureGlow(descriptionStatus, cornerRadius = 4.dp)
         )
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedTextField(
                 value = bundles,
                 enabled = enabled,
                 onValueChange = { bundles = it },
+                colors = captureTextFieldColors(
+                    if (bundles.isNotBlank()) CaptureStatus.CAPTURED else CaptureStatus.NONE
+                ),
                 label = { Text("Atados / observación") },
                 singleLine = true,
                 modifier = Modifier.weight(1f)
@@ -1673,6 +1737,7 @@ private fun MerchandiseSection(state: EntradaUiState, viewModel: EntradaViewMode
                     value = location,
                     items = state.catalogs.ubicaciones,
                     enabled = enabled,
+                    captureStatus = if (location.isNotBlank()) CaptureStatus.CAPTURED else CaptureStatus.NONE,
                     onSelect = { location = it.value }
                 )
             }
@@ -1713,7 +1778,9 @@ private fun MerchandiseSection(state: EntradaUiState, viewModel: EntradaViewMode
                     contentColor = Color.White
                 ),
                 enabled = enabled,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .captureGlow(addButtonStatus, cornerRadius = 20.dp)
             ) {
                 Icon(if (editingIndex == null) Icons.Default.Add else Icons.Default.Check, null)
                 Spacer(Modifier.width(6.dp))
@@ -1771,6 +1838,7 @@ private fun MerchandiseSection(state: EntradaUiState, viewModel: EntradaViewMode
                 value = state.form.pesoLbs,
                 onValue = viewModel::updatePounds,
                 enabled = enabled,
+                captureStatus = guide.status(CaptureField.PESO),
                 modifier = Modifier.weight(1f)
             )
             WeightField(
@@ -1778,6 +1846,7 @@ private fun MerchandiseSection(state: EntradaUiState, viewModel: EntradaViewMode
                 value = state.form.pesoKgs,
                 onValue = viewModel::updateKilos,
                 enabled = enabled,
+                captureStatus = guide.status(CaptureField.PESO),
                 modifier = Modifier.weight(1f)
             )
         }
@@ -1798,17 +1867,19 @@ private fun CloseSection(
     enabled: Boolean
 ) {
     FormCard(title = "Cierre de recepción", icon = Icons.Default.CheckCircle) {
-        OutlinedTextField(
-            value = state.form.recibio,
-            enabled = enabled,
-            onValueChange = { value -> viewModel.updateForm { it.copy(recibio = value) } },
-            label = { Text("Recibió") },
-            modifier = Modifier.fillMaxWidth()
+        // «Recibió» no se captura: es quien guarda la entrada. El API guarda su nombre completo (no su clave).
+        ReadOnlyCapturedField(
+            label = "Recibió",
+            value = state.form.recibio.trim().uppercase(),
+            hint = "Se registra con tu usuario"
         )
         OutlinedTextField(
             value = state.form.observaciones,
             enabled = enabled,
             onValueChange = { value -> viewModel.updateForm { it.copy(observaciones = value) } },
+            colors = captureTextFieldColors(
+                if (state.form.observaciones.isNotBlank()) CaptureStatus.CAPTURED else CaptureStatus.NONE
+            ),
             label = { Text("Observaciones") },
             minLines = 3,
             modifier = Modifier.fillMaxWidth()
@@ -2295,7 +2366,8 @@ private fun EntradaEntitySearchField(
     frequentItems: List<EntradaFrequentItem> = emptyList(),
     onSearch: (EntradaLookupType, String) -> Unit,
     onSelect: (EntradaLookupItem) -> Unit,
-    onClear: (EntradaLookupType) -> Unit
+    onClear: (EntradaLookupType) -> Unit,
+    captureStatus: CaptureStatus = CaptureStatus.NONE
 ) {
     var openSearch by remember(type) { mutableStateOf(false) }
     val selectedLabel = listOf(code, name).filter(String::isNotBlank).joinToString(" · ")
@@ -2310,7 +2382,8 @@ private fun EntradaEntitySearchField(
             openSearch = true
             onSearch(type, "")
         },
-        onClear = if (enabled && selectedLabel.isNotBlank()) ({ onClear(type) }) else null
+        onClear = if (enabled && selectedLabel.isNotBlank()) ({ onClear(type) }) else null,
+        status = captureStatus
     )
 
     if (openSearch) {
@@ -2339,25 +2412,35 @@ private fun SelectionDisplayCard(
     error: String?,
     enabled: Boolean = true,
     onClick: () -> Unit,
-    onClear: (() -> Unit)?
+    onClear: (() -> Unit)?,
+    status: CaptureStatus = CaptureStatus.NONE
 ) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 64.dp)
+            .captureGlow(status)
             .clickable(enabled = enabled, onClick = onClick),
-        color = PmmBgSurface,
+        color = captureContainerColor(status, PmmBgSurface),
         shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, if (error != null) PmmRed else PmmNavyBorder)
+        border = BorderStroke(
+            captureBorderWidth(status),
+            if (error != null) PmmRed else captureBorderColor(status, PmmNavyBorder)
+        )
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Icon(Icons.Default.Search, contentDescription = null, tint = PmmTextMuted)
+            Icon(Icons.Default.Search, contentDescription = null, tint = if (status == CaptureStatus.CAPTURED) CaptureGreenLine else PmmTextMuted)
             Column(modifier = Modifier.weight(1f)) {
-                Text(label, color = if (error != null) PmmRed else PmmTextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                CaptureLabel(
+                    label = label,
+                    status = status,
+                    baseColor = PmmTextSecondary,
+                    errorColor = if (error != null) PmmRed else null
+                )
                 Text(
                     text = value.ifBlank { placeholder },
                     color = if (value.isBlank()) PmmTextMuted else PmmTextPrimary,
@@ -2609,6 +2692,7 @@ private fun EntradaCatalogPickerField(
     items: List<EntradaCatalogItem>,
     error: Boolean = false,
     enabled: Boolean = true,
+    captureStatus: CaptureStatus = CaptureStatus.NONE,
     onSelect: (EntradaCatalogItem) -> Unit
 ) {
     var open by remember { mutableStateOf(false) }
@@ -2622,7 +2706,8 @@ private fun EntradaCatalogPickerField(
         error = if (error) "Selecciona una opción." else null,
         enabled = enabled,
         onClick = { open = true },
-        onClear = null
+        onClear = null,
+        status = captureStatus
     )
 
     if (open) {
@@ -2892,13 +2977,47 @@ private fun DetailCard(
     }
 }
 
+/** Dato que la app llena sola y no se puede editar: mismo verde de «capturado», con candado. */
+@Composable
+private fun ReadOnlyCapturedField(label: String, value: String, hint: String) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 64.dp),
+        color = CaptureGreenFill,
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, CaptureGreenLine)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Icon(Icons.Default.Lock, contentDescription = null, tint = CaptureGreenLine)
+            Column(modifier = Modifier.weight(1f)) {
+                CaptureLabel(label = label, status = CaptureStatus.CAPTURED, baseColor = PmmTextSecondary)
+                Text(
+                    text = value.ifBlank { "—" },
+                    color = PmmTextPrimary,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(hint, color = PmmTextSecondary, fontSize = 11.sp)
+            }
+        }
+    }
+}
+
 @Composable
 private fun WeightField(
     label: String,
     value: Double,
     onValue: (Double) -> Unit,
     enabled: Boolean = true,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    captureStatus: CaptureStatus = CaptureStatus.NONE
 ) {
     var text by remember(value) {
         mutableStateOf(if (value == 0.0) "" else formatNumber(value))
@@ -2911,6 +3030,7 @@ private fun WeightField(
             it.replace(",", "").toDoubleOrNull()?.let(onValue)
             if (it.isBlank()) onValue(0.0)
         },
+        colors = captureTextFieldColors(captureStatus),
         label = { Text(label) },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         singleLine = true,
