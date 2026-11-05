@@ -44,6 +44,7 @@ import java.io.File
 import java.util.UUID
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -59,6 +60,8 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 enum class CasetaEntradaLookupType {
@@ -147,6 +150,8 @@ data class CasetaEntradaForm(
     val updated: Boolean = false,
     val localPhotoPaths: List<String> = emptyList(),
     val remotePhotos: List<CasetaEntradaRemotePhoto> = emptyList(),
+    val remotePhotoIndices: List<Int> = emptyList(),
+    val deletedRemotePhotoIndices: List<Int> = emptyList(),
     // Dato de procedencia (vino de un QR de pre-registro escaneado en garita).
     // Ya NO decide que campos son obligatorios -- eso lo hace tipoRegistro.
     val origenPreRegistro: Boolean = false,
@@ -173,7 +178,14 @@ data class CasetaEntradaForm(
         get() = buildCatalogLabel(idCountry, countryName)
 
     val photoCount: Int
-        get() = localPhotoPaths.size + remotePhotos.size
+        get() {
+            val deletedIndices = deletedRemotePhotoIndices.toSet()
+            val indexedRemoteCount = (remotePhotoIndices + remotePhotos.mapNotNull { it.sourceIndex })
+                .distinct()
+                .count { it !in deletedIndices }
+            val unindexedRemoteCount = remotePhotos.count { it.sourceIndex == null }
+            return localPhotoPaths.size + indexedRemoteCount + unindexedRemoteCount
+        }
 }
 
 data class CasetaEntradaRemotePhoto(
@@ -282,6 +294,8 @@ data class CasetaEntradaUiState(
     val isSaving: Boolean = false,
     val isSearching: Boolean = false,
     val isLoadingRecord: Boolean = false,
+    val isLoadingRemotePhotos: Boolean = false,
+    val remotePhotosLoadIncomplete: Boolean = false,
     val showImportQuestion: Boolean = false,
     val showConfirm: Boolean = false,
     val fieldErrors: Map<String, String> = emptyMap(),
@@ -392,6 +406,7 @@ class CasetaEntradaViewModel @Inject constructor(
     private var defaultWarehouseApplied = false
     private var historyJob: Job? = null
     private var captureJob: Job? = null
+    private var remotePhotosLoadJob: Job? = null
 
     // Identidad del borrador que se autoguarda mientras el usuario captura. Se
     // renueva al empezar de cero, al cargar un registro existente o al guardar.
@@ -582,15 +597,73 @@ class CasetaEntradaViewModel @Inject constructor(
     // borrador porque llegan como Bitmap). El resto de los campos ya vino del
     // borrador reanudado y no se debe pisar con lo que haya en el servidor.
     private fun refreshRemotePhotosOnly(casetaId: String) {
-        viewModelScope.launch {
+        remotePhotosLoadJob?.cancel()
+        remotePhotosLoadJob = viewModelScope.launch {
             repository.getRecord(casetaId, photosBase64 = false)
                 .onSuccess { response ->
-                    val remotePhotos = loadRemotePhotos(
-                        casetaId = casetaId,
-                        photosBase64 = response.fotosBase64,
-                        photoInfos = response.fotos
-                    )
-                    _uiState.update { it.copy(form = it.form.copy(remotePhotos = remotePhotos)) }
+                    val photoIndices = response.fotos.map { photo -> photo.indice }.distinct()
+                    val shouldLoadPhotos = photoIndices.isNotEmpty() ||
+                        response.fotosBase64.any(String::isNotBlank)
+                    _uiState.update { state ->
+                        if (!state.form.casetaId.equals(casetaId, ignoreCase = true)) {
+                            state
+                        } else {
+                            state.copy(
+                                form = state.form.copy(
+                                    remotePhotoIndices = photoIndices,
+                                    deletedRemotePhotoIndices = emptyList()
+                                ),
+                                isLoadingRemotePhotos = shouldLoadPhotos,
+                                remotePhotosLoadIncomplete = false
+                            )
+                        }
+                    }
+
+                    val remotePhotos = try {
+                        loadRemotePhotos(
+                            casetaId = casetaId,
+                            photosBase64 = response.fotosBase64,
+                            photoInfos = response.fotos
+                        )
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        Log.w("CasetaEntrada", "No se pudieron actualizar las fotos del registro $casetaId", error)
+                        emptyList()
+                    }
+                    val loadedIndices = remotePhotos.mapNotNull { photo -> photo.sourceIndex }.toSet()
+                    val photosIncomplete = photoIndices.any { it !in loadedIndices }
+                    _uiState.update { state ->
+                        if (!state.form.casetaId.equals(casetaId, ignoreCase = true)) {
+                            state
+                        } else {
+                            if (baselineForm.casetaId.equals(casetaId, ignoreCase = true)) {
+                                baselineForm = baselineForm.copy(
+                                    remotePhotos = remotePhotos,
+                                    remotePhotoIndices = photoIndices
+                                )
+                            }
+                            state.copy(
+                                form = state.form.copy(
+                                    remotePhotos = remotePhotos,
+                                    remotePhotoIndices = photoIndices,
+                                    deletedRemotePhotoIndices = emptyList()
+                                ),
+                                isLoadingRemotePhotos = false,
+                                remotePhotosLoadIncomplete = photosIncomplete
+                            )
+                        }
+                    }
+                }
+                .onFailure { error ->
+                    Log.w("CasetaEntrada", "No se pudieron consultar las fotos del registro $casetaId", error)
+                    _uiState.update { state ->
+                        if (state.form.casetaId.equals(casetaId, ignoreCase = true)) {
+                            state.copy(isLoadingRemotePhotos = false, remotePhotosLoadIncomplete = true)
+                        } else {
+                            state
+                        }
+                    }
                 }
         }
     }
@@ -1075,9 +1148,13 @@ class CasetaEntradaViewModel @Inject constructor(
             return
         }
         _uiState.update { state ->
+            val sourceIndex = state.form.remotePhotos.getOrNull(index)?.sourceIndex?.takeIf { it > 0 }
             state.copy(
                 form = state.form.copy(
-                    remotePhotos = state.form.remotePhotos.filterIndexed { i, _ -> i != index }
+                    remotePhotos = state.form.remotePhotos.filterIndexed { i, _ -> i != index },
+                    deletedRemotePhotoIndices = sourceIndex?.let { deleted ->
+                        (state.form.deletedRemotePhotoIndices + deleted).distinct()
+                    } ?: state.form.deletedRemotePhotoIndices
                 )
             )
         }
@@ -1389,10 +1466,14 @@ class CasetaEntradaViewModel @Inject constructor(
     fun loadRecord(casetaId: String) {
         val clean = casetaId.trim()
         if (clean.isBlank()) return
+        remotePhotosLoadJob?.cancel()
+        remotePhotosLoadJob = null
         viewModelScope.launch {
             _uiState.update {
                 it.copy(
                     isLoadingRecord = true,
+                    isLoadingRemotePhotos = false,
+                    remotePhotosLoadIncomplete = false,
                     recordLoadError = null,
                     recordLoadingHint = "Cargando registro..."
                 )
@@ -1404,23 +1485,9 @@ class CasetaEntradaViewModel @Inject constructor(
                 .onSuccess { response ->
                     val data = response.datos
                     val detailCasetaId = data?.casetaId?.takeIf(String::isNotBlank) ?: clean
-                    val photoCount = response.fotosBase64.count(String::isNotBlank)
-                        .takeIf { it > 0 }
-                        ?: response.fotos.size
-                    _uiState.update {
-                        it.copy(
-                            recordLoadingHint = if (photoCount > 0) {
-                                "Cargando $photoCount fotos de evidencia..."
-                            } else {
-                                "Preparando formulario..."
-                            }
-                        )
-                    }
-                    val remotePhotos = loadRemotePhotos(
-                        casetaId = detailCasetaId,
-                        photosBase64 = response.fotosBase64,
-                        photoInfos = response.fotos
-                    )
+                    val photoIndices = response.fotos.map { photo -> photo.indice }.distinct()
+                    val shouldLoadRemotePhotos = photoIndices.isNotEmpty() ||
+                        response.fotosBase64.any(String::isNotBlank)
                     // Registro existente cargado: arranca su propio borrador, separado
                     // de cualquier captura nueva que se haya estado llenando antes.
                     draftId = UUID.randomUUID().toString()
@@ -1428,10 +1495,15 @@ class CasetaEntradaViewModel @Inject constructor(
                     draftDiscarded = false
                     _uiState.update { state ->
                         // El registro tal como llegó es la línea base: abrirlo y salir no cuenta como cambio.
-                        val loadedForm = data?.toForm(remotePhotos) ?: state.form
+                        val loadedForm = data?.toForm(
+                            remotePhotos = emptyList(),
+                            remotePhotoIndices = photoIndices
+                        ) ?: state.form
                         baselineForm = loadedForm
                         state.copy(
                             isLoadingRecord = false,
+                            isLoadingRemotePhotos = data != null && shouldLoadRemotePhotos,
+                            remotePhotosLoadIncomplete = false,
                             recordLoadError = null,
                             recordLoadingHint = "",
                             form = loadedForm,
@@ -1440,12 +1512,66 @@ class CasetaEntradaViewModel @Inject constructor(
                             feedbackSeq = state.feedbackSeq + 1
                         )
                     }
+
+                    if (data != null && shouldLoadRemotePhotos) {
+                        remotePhotosLoadJob = viewModelScope.launch {
+                            val remotePhotos = try {
+                                loadRemotePhotos(
+                                    casetaId = detailCasetaId,
+                                    photosBase64 = response.fotosBase64,
+                                    photoInfos = response.fotos
+                                )
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (error: Exception) {
+                                Log.w("CasetaEntrada", "No se pudieron cargar las fotos del registro $detailCasetaId", error)
+                                emptyList()
+                            }
+                            val loadedIndices = remotePhotos.mapNotNull { photo -> photo.sourceIndex }.toSet()
+                            val photosIncomplete = photoIndices.any { it !in loadedIndices }
+
+                            _uiState.update { state ->
+                                if (!state.form.casetaId.equals(detailCasetaId, ignoreCase = true)) {
+                                    state
+                                } else {
+                                    val deletedIndices = state.form.deletedRemotePhotoIndices.toSet()
+                                    val visiblePhotos = remotePhotos.filterNot { photo ->
+                                        photo.sourceIndex?.let(deletedIndices::contains) == true
+                                    }
+                                    val updatedForm = state.form.copy(
+                                        remotePhotos = visiblePhotos,
+                                        remotePhotoIndices = photoIndices
+                                    )
+                                    if (baselineForm.casetaId.equals(detailCasetaId, ignoreCase = true)) {
+                                        baselineForm = baselineForm.copy(
+                                            remotePhotos = remotePhotos,
+                                            remotePhotoIndices = photoIndices
+                                        )
+                                    }
+                                    state.copy(
+                                        form = updatedForm,
+                                        isLoadingRemotePhotos = false,
+                                        remotePhotosLoadIncomplete = photosIncomplete
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        _uiState.update {
+                            it.copy(
+                                isLoadingRemotePhotos = false,
+                                remotePhotosLoadIncomplete = false
+                            )
+                        }
+                    }
                 }
                 .onFailure { error ->
                     val message = error.message ?: "No se pudo cargar el registro."
                     _uiState.update {
                         it.copy(
                             isLoadingRecord = false,
+                            isLoadingRemotePhotos = false,
+                            remotePhotosLoadIncomplete = false,
                             recordLoadError = message,
                             recordLoadingHint = "",
                             message = message,
@@ -1647,9 +1773,12 @@ class CasetaEntradaViewModel @Inject constructor(
             // Las fotos nuevas no viajan en el guardado principal. Se conservan
             // como archivos locales y se mandan despues en lotes pequenos. Los
             // marcadores keep preservan las fotos remotas cuando se edita.
-            val existingPhotoMarkers = state.form.remotePhotos.mapNotNull { remote ->
-                remote.sourceIndex?.takeIf { it > 0 }?.let { "keep:$it" }
-            }
+            val deletedRemotePhotoIndices = state.form.deletedRemotePhotoIndices.distinct()
+            val existingPhotoMarkers = (
+                state.form.remotePhotoIndices + state.form.remotePhotos.mapNotNull { it.sourceIndex }
+                ).filter { it > 0 && it !in deletedRemotePhotoIndices }
+                .distinct()
+                .map { "keep:$it" }
 
             // La evidencia queda respaldada localmente; activar el guardado del folio.
             _uiState.update { st ->
@@ -1670,11 +1799,23 @@ class CasetaEntradaViewModel @Inject constructor(
 
             // Posicion de cada foto nueva en el servidor: las mismas con las que se encolan mas abajo y las que el
             // servidor espera para saber que ya llegaron todas.
-            val firstPhotoIndex = state.form.remotePhotos.mapNotNull { it.sourceIndex }.maxOrNull()?.plus(1) ?: 1
-            val expectedPhotoIndexes = List(state.form.localPhotoPaths.size) { firstPhotoIndex + it }
+            val usedPhotoIndices = (
+                state.form.remotePhotoIndices + state.form.remotePhotos.mapNotNull { it.sourceIndex }
+                ).filter { it > 0 && it !in deletedRemotePhotoIndices }
+                .toMutableSet()
+            val expectedPhotoIndexes = buildList {
+                var nextIndex = 1
+                repeat(state.form.localPhotoPaths.size) {
+                    while (nextIndex in usedPhotoIndices) nextIndex++
+                    add(nextIndex)
+                    usedPhotoIndices.add(nextIndex)
+                    nextIndex++
+                }
+            }
 
             val request = state.form.toRequest(
                 photos = existingPhotoMarkers,
+                indicesFotosEliminar = deletedRemotePhotoIndices,
                 user = state.currentUser,
                 userName = state.currentUserName.ifBlank { state.currentUser },
                 plant = state.currentPlant,
@@ -1695,7 +1836,7 @@ class CasetaEntradaViewModel @Inject constructor(
                     val queuedPhotos = enqueueCasetaPhotos(
                         casetaIds = casetaIds,
                         paths = state.form.localPhotoPaths,
-                        firstPhotoIndex = firstPhotoIndex,
+                        photoIndices = expectedPhotoIndexes,
                         isUpdate = state.form.updated
                     )
 
@@ -1706,11 +1847,15 @@ class CasetaEntradaViewModel @Inject constructor(
                     draftId = UUID.randomUUID().toString()
                     draftCreatedAt = System.currentTimeMillis()
                     draftDiscarded = false
+                    remotePhotosLoadJob?.cancel()
+                    remotePhotosLoadJob = null
                     baselineForm = CasetaEntradaForm()
 
                     _uiState.update { st ->
                         st.copy(
                             isSaving = false,
+                            isLoadingRemotePhotos = false,
+                            remotePhotosLoadIncomplete = false,
                             form = CasetaEntradaForm(),
                             fieldErrors = emptyMap(),
                             capture = CasetaEntradaOcrState.Idle,
@@ -1775,6 +1920,8 @@ class CasetaEntradaViewModel @Inject constructor(
             denyPermission("limpiar una captura de caseta")
             return
         }
+        remotePhotosLoadJob?.cancel()
+        remotePhotosLoadJob = null
         // El usuario decidio empezar de cero: el borrador viejo ya no aplica. Sus fotos locales tampoco: el aviso de
         // «Limpiar» ya dice que se quitan, y sin borrarlas quedaban en el disco para siempre sin dueño. Va en
         // `applicationScope` para que termine aunque la pantalla se cierre enseguida.
@@ -1797,6 +1944,8 @@ class CasetaEntradaViewModel @Inject constructor(
                 capture = CasetaEntradaOcrState.Idle,
                 historySuggestions = emptyList(),
                 isLoadingHistory = false,
+                isLoadingRemotePhotos = false,
+                remotePhotosLoadIncomplete = false,
                 historySearch = "",
                 templateSource = "",
                 showConfirm = false,
@@ -1845,7 +1994,13 @@ class CasetaEntradaViewModel @Inject constructor(
                 val layout = zebraLabelLayoutPreferences.getLayout(
                     com.example.pmmovil.data.printing.ZebraLabelType.CASETA
                 )
-                val zpl = labelZplFactory.buildLabels(listOf(labelData), compress = true, layoutOverride = layout)
+                val targetDpi = zebraPrinterService.readPrintheadResolutionDpi(config).getOrThrow()
+                val zpl = labelZplFactory.buildLabels(
+                    listOf(labelData),
+                    compress = true,
+                    layoutOverride = layout,
+                    targetDpi = targetDpi
+                )
                 val result = zebraPrinterService.printZpl(config, zpl, copies)
                 _uiState.update {
                     it.copy(
@@ -1883,24 +2038,32 @@ class CasetaEntradaViewModel @Inject constructor(
                 .take(MAX_REMOTE_PHOTOS)
         }
 
-        if (directPhotos.isNotEmpty() || casetaId.isBlank() || photoInfos.isEmpty()) {
+        // El servidor debe devolver base64 alineado con `fotos`. Si una version
+        // anterior omitio imagenes que no pudo leer, esos arreglos quedan de
+        // distinto tamaño y no se pueden asociar por posicion con seguridad.
+        if (photosBase64.size == photoInfos.size) {
             return directPhotos
         }
 
+        if (casetaId.isBlank() || photoInfos.isEmpty()) return directPhotos
+
         return coroutineScope {
+            val downloadSemaphore = Semaphore(3)
             photoInfos.take(MAX_REMOTE_PHOTOS).mapIndexed { index, info ->
                 async {
-                    val bytes = repository.downloadGatePhoto(casetaId, info.indice).getOrNull()
-                        ?: return@async null
-                    withContext(Dispatchers.Default) {
-                        val dataUrl = photoBytesToDataUrl(bytes)
-                        CasetaEntradaRemotePhoto(
-                            key = "remote-${info.indice}-$index",
-                            label = info.nombreArchivo.ifBlank { "Guardada ${info.indice}" },
-                            model = decodeRemotePhotoBitmap(bytes) ?: dataUrl,
-                            base64 = dataUrl,
-                            sourceIndex = info.indice
-                        )
+                    downloadSemaphore.withPermit {
+                        val bytes = repository.downloadGatePhoto(casetaId, info.indice).getOrNull()
+                            ?: return@withPermit null
+                        withContext(Dispatchers.Default) {
+                            val dataUrl = photoBytesToDataUrl(bytes)
+                            CasetaEntradaRemotePhoto(
+                                key = "remote-${info.indice}-$index",
+                                label = info.nombreArchivo.ifBlank { "Guardada ${info.indice}" },
+                                model = decodeRemotePhotoBitmap(bytes) ?: dataUrl,
+                                base64 = dataUrl,
+                                sourceIndex = info.indice
+                            )
+                        }
                     }
                 }
             }.awaitAll().filterNotNull()
@@ -2354,10 +2517,11 @@ class CasetaEntradaViewModel @Inject constructor(
     private suspend fun enqueueCasetaPhotos(
         casetaIds: List<String>,
         paths: List<String>,
-        firstPhotoIndex: Int,
+        photoIndices: List<Int>,
         isUpdate: Boolean
     ): Int {
         if (casetaIds.isEmpty() || paths.isEmpty()) return 0
+        require(photoIndices.size == paths.size) { "Cada foto local debe tener un índice de servidor." }
 
         var queued = 0
         casetaIds.forEachIndexed { casetaPosition, casetaId ->
@@ -2366,7 +2530,7 @@ class CasetaEntradaViewModel @Inject constructor(
                     CasetaEntradaPhotoSyncEntity(
                         casetaId = casetaId,
                         localFilePath = path,
-                        photoIndex = firstPhotoIndex + pathPosition,
+                        photoIndex = photoIndices[pathPosition],
                         // Solo el ultimo folio debe disparar el correo cuando
                         // RequiereImpo genera dos entradas para la misma captura.
                         notifyWhenFinished = casetaPosition == casetaIds.lastIndex &&
@@ -2608,7 +2772,10 @@ object CasetaEntradaRules {
     }
 }
 
-private fun CasetaEntradaDetalle.toForm(remotePhotos: List<CasetaEntradaRemotePhoto>): CasetaEntradaForm {
+private fun CasetaEntradaDetalle.toForm(
+    remotePhotos: List<CasetaEntradaRemotePhoto>,
+    remotePhotoIndices: List<Int> = remotePhotos.mapNotNull { it.sourceIndex }.distinct()
+): CasetaEntradaForm {
     return CasetaEntradaForm(
         casetaId = casetaId,
         idCaseta = idCaseta.takeIf { it > 0 }?.toString().orEmpty(),
@@ -2639,7 +2806,8 @@ private fun CasetaEntradaDetalle.toForm(remotePhotos: List<CasetaEntradaRemotePh
         pedimento = pedimento,
         guideCount = guias.takeIf { it > 0 }?.toString().orEmpty(),
         updated = true,
-        remotePhotos = remotePhotos
+        remotePhotos = remotePhotos,
+        remotePhotoIndices = remotePhotoIndices
     )
 }
 
@@ -2664,6 +2832,7 @@ private fun CasetaEntradaDetalle.toTemplateForm(localPhotoPaths: List<String>): 
 
 private fun CasetaEntradaForm.toRequest(
     photos: List<String>,
+    indicesFotosEliminar: List<Int> = emptyList(),
     user: String,
     userName: String,
     plant: String,
@@ -2705,6 +2874,7 @@ private fun CasetaEntradaForm.toRequest(
         pedimento = pedimento,
         guia = guideCount,
         fotos = photos,
+        indicesFotosEliminar = indicesFotosEliminar,
         diferirCorreo = diferirCorreo,
         indicesFotosEsperadas = indicesFotosEsperadas,
         requiereImpo = requiresImport,

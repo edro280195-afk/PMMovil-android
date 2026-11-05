@@ -3832,6 +3832,34 @@ private fun PhotosSection(
             Spacer(Modifier.height(8.dp))
         }
 
+        if (state.isLoadingRemotePhotos) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    color = PmmBlueDeep
+                )
+                Text(
+                    text = "El registro ya está disponible; cargando fotos en segundo plano.",
+                    color = PmmTextSecondary,
+                    fontSize = 12.sp
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+
+        if (state.remotePhotosLoadIncomplete && !state.isLoadingRemotePhotos) {
+            Text(
+                text = "Algunas fotos no pudieron mostrarse. El registro sigue disponible y las fotos guardadas se conservarán.",
+                color = PmmAmberDark,
+                fontSize = 12.sp
+            )
+            Spacer(Modifier.height(8.dp))
+        }
+
         if (photoCount > 0) {
             val previewPhotos = buildCasetaEntradaPreviewPhotos(state.form)
             LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

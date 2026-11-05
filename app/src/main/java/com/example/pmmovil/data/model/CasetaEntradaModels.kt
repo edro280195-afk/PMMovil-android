@@ -116,6 +116,8 @@ data class CasetaEntradaGuardarRequest(
     val pedimento: String = "",
     val guia: String = "",
     val fotos: List<String> = emptyList(),
+    /** Índices de fotos remotas que el usuario pidió eliminar explícitamente. */
+    val indicesFotosEliminar: List<Int> = emptyList(),
     /** Cuando es true, el API guarda primero la entrada y el correo se envía al terminar la cola de fotos. */
     val diferirCorreo: Boolean = false,
     /**
