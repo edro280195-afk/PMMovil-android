@@ -137,7 +137,13 @@ class CasetaSearchEditViewModel @Inject constructor(
                     copies = copies
                 )
                 val layout = zebraLabelLayoutPreferences.getLayout(ZebraLabelType.CASETA)
-                val zpl = labelZplFactory.buildLabels(listOf(labelData), compress = true, layoutOverride = layout)
+                val targetDpi = zebraPrinterService.readPrintheadResolutionDpi(config).getOrThrow()
+                val zpl = labelZplFactory.buildLabels(
+                    listOf(labelData),
+                    compress = true,
+                    layoutOverride = layout,
+                    targetDpi = targetDpi
+                )
                 zebraPrinterService.printZpl(config, zpl, copies)
                 _uiState.update { it.copy(message = "Etiqueta enviada a impresión") }
             } catch (e: Exception) {

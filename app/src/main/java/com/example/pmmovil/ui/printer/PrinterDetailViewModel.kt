@@ -264,10 +264,36 @@ class PrinterDetailViewModel @Inject constructor(
                 it.copy(isBusy = true, message = "Enviando prueba de ${type.title} a ${config.host}:${config.port}...", lastSuccess = null)
             }
             val result = if (BuildConfig.USE_IMAGE_LABELS) {
-                val zpl = labelZplFactory.buildLabels(
-                    listOf(testLabel),
-                    layoutOverride = layoutPreferences.getLayout(type)
-                )
+                val resolution = printerService.readPrintheadResolutionDpi(config)
+                val targetDpi = resolution.getOrNull()
+                if (targetDpi == null) {
+                    val errorMessage = resolution.exceptionOrNull()?.message
+                        ?: "No se pudo leer la resolución de la Zebra."
+                    _uiState.update {
+                        it.copy(
+                            isBusy = false,
+                            message = "${type.title}: No se imprimió. $errorMessage",
+                            lastSuccess = false
+                        )
+                    }
+                    return@launch
+                }
+                val zpl = try {
+                    labelZplFactory.buildLabels(
+                        listOf(testLabel),
+                        layoutOverride = layoutPreferences.getLayout(type),
+                        targetDpi = targetDpi
+                    )
+                } catch (error: com.example.pmmovil.data.printing.LabelQrUnavailableException) {
+                    _uiState.update {
+                        it.copy(
+                            isBusy = false,
+                            message = "${type.title}: No se imprimió. ${error.message}",
+                            lastSuccess = false
+                        )
+                    }
+                    return@launch
+                }
                 printerService.printZpl(config, zpl, labelCount = 1)
             } else {
                 printerService.printLabels(config, listOf(testLabel))

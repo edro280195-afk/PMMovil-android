@@ -22,6 +22,7 @@ import com.example.pmmovil.data.model.EntradaSaveRequest
 import com.example.pmmovil.data.model.ZebraPrinterDto
 import com.example.pmmovil.data.model.toPrinterDto
 import com.example.pmmovil.data.preferences.EntradaDraftStore
+import com.example.pmmovil.data.printing.LabelQrUnavailableException
 import com.example.pmmovil.data.printing.LabelZplFactory
 import com.example.pmmovil.data.printing.ZebraPrinterPreferences
 import com.example.pmmovil.data.printing.ZebraPrinterService
@@ -160,6 +161,13 @@ class EntradaViewModel @Inject constructor(
     private var lastScanCode = ""
     private var lastScanAt = 0L
 
+    // Buscadores en memoria de clientes y transportes: se arman una vez al leer los catalogos guardados.
+    // OJO: deben declararse ANTES del bloque init. Kotlin ejecuta inicializadores e init en orden; si el catalogo ya esta
+    // en memoria (segunda entrada a la pantalla) loadInitialData() corre completo dentro del init sin suspenderse, y un
+    // inicializador declarado despues del init lo vaciaria justo despues (solo quedaban los 8 "Frecuentes").
+    private var customerIndex = lookupIndex(emptyList())
+    private var transportIndex = lookupIndex(emptyList())
+
     fun canCreate(): Boolean = authRepository.hasPermission(153, "Agregar")
 
     fun canEdit(): Boolean = authRepository.hasPermission(153, "Modificar")
@@ -227,10 +235,6 @@ class EntradaViewModel @Inject constructor(
             )
         }
     }
-
-    // Buscadores en memoria de clientes y transportes: se arman una vez al leer los catalogos guardados.
-    private var customerIndex = lookupIndex(emptyList())
-    private var transportIndex = lookupIndex(emptyList())
 
     /** Los catalogos de Entrada tal como estan en la tableta, o null si todavia falta lo indispensable. */
     private suspend fun readLocalCatalogs(): EntradaCatalogs? {
@@ -1235,7 +1239,15 @@ class EntradaViewModel @Inject constructor(
         val labels = ZebraZplBuilder.fromEntradaForm(form)
         val result = if (BuildConfig.USE_IMAGE_LABELS) {
             // Etiqueta renderizada como imagen (^GF): mismo socket, mismo modo que el ZPL de texto.
-            val zpl = labelZplFactory.buildLabels(labels)
+            val resolution = zebraPrinterService.readPrintheadResolutionDpi(config)
+            val targetDpi = resolution.getOrNull()
+                ?: return "No se imprimió: ${resolution.exceptionOrNull()?.message ?: "no se pudo leer la resolución de la Zebra."}"
+            val zpl = try {
+                labelZplFactory.buildLabels(labels, targetDpi = targetDpi)
+            } catch (error: LabelQrUnavailableException) {
+                // Antes la etiqueta salía sin QR en silencio. Ahora el lote se detiene antes de tocar la impresora.
+                return "No se imprimió ninguna etiqueta: no se pudo generar un QR legible para \"${error.qrValue}\"."
+            }
             val labelCount = labels.sumOf { it.copies.coerceAtLeast(1) }
             zebraPrinterService.printZpl(config, zpl, labelCount)
         } else {

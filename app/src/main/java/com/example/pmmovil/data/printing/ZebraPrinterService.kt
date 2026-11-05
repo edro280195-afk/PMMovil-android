@@ -28,6 +28,41 @@ class ZebraPrinterService @Inject constructor(
     private val labelLayoutPreferences: ZebraLabelLayoutPreferences
 ) {
 
+    /** Lee únicamente los dpi de la cabeza para crear el raster del tamaño físico correcto. */
+    suspend fun readPrintheadResolutionDpi(config: ZebraPrinterConfig): Result<Int> =
+        withContext(Dispatchers.IO) {
+            val validation = validateConfig(config)
+            if (validation != null) {
+                return@withContext Result.failure(IllegalArgumentException(validation.userMessage()))
+            }
+
+            val host = config.host.trim()
+            try {
+                val dpi = requestSgdValue(
+                    host = host,
+                    port = config.port,
+                    key = SGD_PRINTHEAD_DPI,
+                    connectTimeoutMillis = config.connectTimeoutMillis,
+                    readTimeoutMillis = config.writeTimeoutMillis
+                ).toZebraInt() ?: throw IOException(
+                    "La Zebra no reportó los dpi de su cabeza de impresión."
+                )
+
+                if (dpi !in ZebraLabelLayout.SUPPORTED_PRINTHEAD_DPI) {
+                    throw IOException(
+                        "La Zebra reportó $dpi dpi; PMMovil admite cabezales de 203 o 300 dpi. No se imprimió."
+                    )
+                }
+
+                Result.success(dpi)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Log.e(TAG, "No se pudo leer la resolución Zebra host=$host port=${config.port}", error)
+                Result.failure(error)
+            }
+        }
+
     /**
      * Consulta exclusivamente las preferencias seguras de impresión. Nunca aplica valores
      * predeterminados de PMMovil: lo mostrado proviene de la Zebra seleccionada.

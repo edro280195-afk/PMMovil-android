@@ -841,12 +841,38 @@ class ZebraLabelDesignerViewModel @Inject constructor(
                     lastActionSucceeded = null
                 )
             }
+            val resolution = printerService.readPrintheadResolutionDpi(config)
+            val targetDpi = resolution.getOrNull()
+            if (targetDpi == null) {
+                val errorMessage = resolution.exceptionOrNull()?.message
+                    ?: "No se pudo leer la resolución de la Zebra."
+                _uiState.update {
+                    it.copy(
+                        isPrinting = false,
+                        message = "No se imprimió. $errorMessage",
+                        lastActionSucceeded = false
+                    )
+                }
+                return@launch
+            }
             val result = if (BuildConfig.USE_IMAGE_LABELS) {
-                printerService.printZpl(
-                    config,
-                    labelZplFactory.buildLabels(listOf(testLabel), layoutOverride = layout),
-                    labelCount = 1
-                )
+                val zpl = try {
+                    labelZplFactory.buildLabels(
+                        listOf(testLabel),
+                        layoutOverride = layout,
+                        targetDpi = targetDpi
+                    )
+                } catch (error: com.example.pmmovil.data.printing.LabelQrUnavailableException) {
+                    _uiState.update {
+                        it.copy(
+                            isPrinting = false,
+                            message = "No se imprimió: ${error.message}",
+                            lastActionSucceeded = false
+                        )
+                    }
+                    return@launch
+                }
+                printerService.printZpl(config, zpl, labelCount = 1)
             } else {
                 printerService.printLabels(config, listOf(testLabel))
             }

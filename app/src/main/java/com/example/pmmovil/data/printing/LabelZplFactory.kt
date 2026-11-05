@@ -31,10 +31,12 @@ class LabelZplFactory @Inject constructor(
     suspend fun buildLabels(
         labels: List<ZebraLabelData>,
         compress: Boolean = true,
-        layoutOverride: ZebraLabelLayout? = null
+        layoutOverride: ZebraLabelLayout? = null,
+        targetDpi: Int = ZebraLabelLayout.REFERENCE_PRINTHEAD_DPI
     ): String {
         // Una instantánea evita mezclar dos diseños si el usuario guarda mientras se imprime un lote.
-        val layout = layoutOverride ?: layoutPreferences.getLayout()
+        val layout = (layoutOverride ?: layoutPreferences.getLayout())
+            .scaledForPrintheadDpi(targetDpi)
         return withContext(Dispatchers.Default) {
             labels.joinToString(separator = "\n") { buildSingleLabel(it, layout, compress) }
         }

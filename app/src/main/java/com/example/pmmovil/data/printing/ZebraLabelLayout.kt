@@ -1,6 +1,7 @@
 package com.example.pmmovil.data.printing
 
 import com.example.pmmovil.R
+import kotlin.math.roundToInt
 
 /**
  * Medidas en puntos del raster de cada etiqueta. La plantilla de entrada bodega
@@ -72,9 +73,55 @@ data class ZebraLabelLayout(
         ZebraLabelElementId.COUNTER -> copy(counter = element)
     }
 
+    /**
+     * Convierte la plantilla de referencia de 300 dpi a los puntos físicos que espera la cabeza.
+     * Las coordenadas guardadas y el diseñador permanecen en la escala de referencia.
+     */
+    fun scaledForPrintheadDpi(printheadDpi: Int): ZebraLabelLayout {
+        require(printheadDpi in SUPPORTED_PRINTHEAD_DPI) {
+            "Resolución Zebra no soportada: $printheadDpi dpi."
+        }
+        if (printheadDpi == REFERENCE_PRINTHEAD_DPI) return this
+
+        val factor = printheadDpi.toFloat() / REFERENCE_PRINTHEAD_DPI
+        fun scaleDots(value: Int): Int = (value * factor).roundToInt()
+        fun scaleElement(element: ZebraLabelElement): ZebraLabelElement = element.copy(
+            x = scaleDots(element.x),
+            y = scaleDots(element.y),
+            width = scaleDots(element.width),
+            height = scaleDots(element.height),
+            fontHeight = scaleDots(element.fontHeight),
+            fontWidth = scaleDots(element.fontWidth),
+            borderWidth = scaleDots(element.borderWidth)
+        )
+
+        return copy(
+            widthDots = scaleDots(widthDots),
+            heightDots = scaleDots(heightDots),
+            logo = scaleElement(logo),
+            qr = scaleElement(qr),
+            arrivalLabel = scaleElement(arrivalLabel),
+            arrivalDate = scaleElement(arrivalDate),
+            reference = scaleElement(reference),
+            customerLabel = scaleElement(customerLabel),
+            customerValue = scaleElement(customerValue),
+            boxLabel = scaleElement(boxLabel),
+            boxValue = scaleElement(boxValue),
+            guideLabel = scaleElement(guideLabel),
+            guideValue = scaleElement(guideValue),
+            locationLabel = scaleElement(locationLabel),
+            locationValue = scaleElement(locationValue),
+            counter = scaleElement(counter),
+            customTexts = customTexts.map { it.copy(element = scaleElement(it.element)) },
+            customImages = customImages.map { it.copy(element = scaleElement(it.element)) }
+        )
+    }
+
     companion object {
         const val READING_WIDTH_DOTS = 1_800
         const val READING_HEIGHT_DOTS = 1_200
+        const val REFERENCE_PRINTHEAD_DPI = 300
+        val SUPPORTED_PRINTHEAD_DPI = setOf(203, REFERENCE_PRINTHEAD_DPI)
         // v4: qrLogoEnabled (Boolean suelto) pasó a ser el objeto qrStyle con forma de módulos,
         // ojos, placa y zona de silencio. La migración conserva el valor anterior del logo.
         const val CURRENT_SCHEMA_VERSION = 4
