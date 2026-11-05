@@ -1508,9 +1508,12 @@ private fun BarcodeCandidateOverlay(
             val value = candidate.value?.takeIf(String::isNotBlank) ?: return@forEachIndexed
             decodedLabelIndex += 1
             val frame = candidate.frame
+            // En una cámara chica (la flotante de Cargar mercancía mide ~160 dp) la etiqueta no cabe: el tope derecho
+            // queda a la izquierda del izquierdo y `coerceIn` lanza IllegalArgumentException (cerró la app en el CT60).
+            // `coerceAtLeast` deja el rango siempre válido y la etiqueta pegada al borde izquierdo.
             val left = (
                 frame.centerX * constraints.maxWidth - labelWidth / 2f
-            ).coerceIn(6f, constraints.maxWidth - labelWidth - 6f)
+            ).coerceIn(6f, (constraints.maxWidth - labelWidth - 6f).coerceAtLeast(6f))
             val top = (
                 (frame.centerY - frame.height / 2f) * constraints.maxHeight - labelHeight - 6f
             ).coerceAtLeast(6f)

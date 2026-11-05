@@ -46,6 +46,21 @@ data class SalidaBloqueo(
     val etiquetasBloqueadas: Int
 )
 
+/**
+ * Lo último que leyó el escáner durante la carga: un bulto de la relación (se aceptó) o uno que no (se rechazó).
+ * La pantalla lo muestra fijo arriba de la lista para que el cargador vea qué pasó con lo que acaba de escanear.
+ */
+data class SalidaUltimoEscaneo(
+    /** El texto que se leyó (la etiqueta). */
+    val texto: String,
+    val aceptado: Boolean,
+    /** Por qué se rechazó («NO PERTENECE»…); `null` si se aceptó. */
+    val motivo: String? = null,
+    /** Se aceptó pero ya estaba escaneado: no suma. */
+    val yaEscaneado: Boolean = false,
+    val atMillis: Long = System.currentTimeMillis()
+)
+
 data class SalidaConfirm(
     val title: String,
     val message: String,
@@ -59,6 +74,7 @@ data class SalidaUiState(
     val stage: SalidaStage = SalidaStage.IDLE,
     val captureMode: SalidaCaptureMode = SalidaCaptureMode.PHYSICAL,
     val captureStep: SalidaCaptureStep = SalidaCaptureStep.CASETA_QR,
+    val requiereCasetaQr: Boolean = false,
     val casetaQrToken: String? = null,
     val casetaQrSecondsRemaining: Int = 0,
     val relacion: SalidaRelacion? = null,
@@ -78,6 +94,10 @@ data class SalidaUiState(
     val feedbackSeq: Int = 0,
     /** Última etiqueta escaneada con éxito (para animación de transición). */
     val lastScanned: String? = null,
+    /** Lo último que se leyó, bueno o malo; ver [SalidaUltimoEscaneo]. */
+    val ultimoEscaneo: SalidaUltimoEscaneo? = null,
+    /** Los bultos escaneados en esta pantalla, en el orden en que se leyeron. */
+    val escaneosLocales: List<SalidaEscaneoLocal> = emptyList(),
     /** Mensaje para snackbar; prefijos ✓ ⚠ ✗ definen el color (ver PmmSnackbarHost). */
     val message: String? = null,
     val usuario: String = ""
@@ -86,6 +106,12 @@ data class SalidaUiState(
     val escaneados: Int get() = etiquetas.count { it.escaneado }
     val pendientes: Int get() = total - escaneados
     val progreso: Float get() = if (total == 0) 0f else escaneados.toFloat() / total
+
+    /** Los bultos que faltan, en el orden de la lista. */
+    val porEscanear: List<SalidaEtiqueta> get() = enOrdenNatural(etiquetas.filterNot { it.escaneado })
+
+    /** Los bultos escaneados con su número de orden; ver [escaneadosEnOrden]. */
+    val historial: List<SalidaEscaneado> get() = escaneadosEnOrden(etiquetas, escaneosLocales)
     val todoEscaneado: Boolean get() = total > 0 && escaneados == total
     val descargaTotal: Int get() = etiquetasDescarga.size
     val descargados: Int get() = etiquetasDescarga.count { it.escaneado }
@@ -147,9 +173,27 @@ class SalidaViewModel @Inject constructor(
     fun onScannerInput(raw: String) {
         val code = raw.trim()
         if (code.isEmpty()) return
+        // El QR de un gafete (`usuario;clave`) lleva una credencial: ni se manda al servidor (se guardaba en el registro de
+        // etiquetas ajenas) ni se muestra en pantalla. Con la cámara abierta es fácil leerlo sin querer.
+        if (com.example.pmmovil.data.scanner.ScannedCodeClassifier.classify(code) == com.example.pmmovil.data.scanner.ScannedCode.Gafete) {
+            flash(SalidaFlash.ERROR)
+            toast("⚠ Eso es un gafete, no una etiqueta. No se registró.")
+            return
+        }
         when (_state.value.stage) {
-            SalidaStage.IDLE ->
-                if (_state.value.mode == SalidaMode.NORMAL) loadRelacion(code) else loadEntrada(code)
+            SalidaStage.IDLE -> {
+                // Ya no hay selector «Con relación / Sin relación»: lo que se escanea lo decide. Una carpeta (o la
+                // referencia o un bulto de una entrada) carga esa entrada sin relación; cualquier otra cosa se trata
+                // como relación o QR de caseta, con las mismas validaciones de siempre.
+                val entrada = entradaDirectaDe(code)
+                if (entrada != null) {
+                    _state.update { it.copy(mode = SalidaMode.SIN_RELACION) }
+                    loadEntrada(entrada)
+                } else {
+                    _state.update { it.copy(mode = SalidaMode.NORMAL) }
+                    loadRelacion(code)
+                }
+            }
             SalidaStage.ACTIVE ->
                 if (_state.value.captureStep == SalidaCaptureStep.CASETA_QR) {
                     onCasetaQrScan(code)
@@ -252,7 +296,9 @@ class SalidaViewModel @Inject constructor(
         viewModelScope.launch {
             repository.validarCasetaQr("", "", casetaId)
                 .onSuccess { qr ->
-                    if (!qr.success || qr.relacion == null || qr.autorizacionToken.isNullOrBlank()) {
+                    if (!qr.success || qr.relacion == null ||
+                        (qr.requiereCasetaQr && qr.autorizacionToken.isNullOrBlank())
+                    ) {
                         _state.update {
                             it.copy(
                                 stage = SalidaStage.IDLE,
@@ -271,7 +317,8 @@ class SalidaViewModel @Inject constructor(
                         etiquetas = qr.etiquetas,
                         estatusCarga = qr.estatusCarga,
                         totBultos = qr.totBultos,
-                        versionHoja = qr.versionHoja
+                        versionHoja = qr.versionHoja,
+                        requiereCasetaQr = qr.requiereCasetaQr
                     )
                     _state.update {
                         it.copy(
@@ -312,7 +359,7 @@ class SalidaViewModel @Inject constructor(
         if (estatusMercancia != "COMPLETA") {
             if (estatusMercancia in ESTATUS_QUE_PERMITEN_CAPTURA) {
                 // Igual que el legacy: con diferencia de bultos se puede escanear, y sin etiquetas se puede pedir autorización.
-                activarCapturaCarga(null, 0)
+                activarCapturaCarga(null, 0, res.requiereCasetaQr)
                 _state.update { it.copy(estatusMsg = estatusMercancia) }
             } else {
                 // Cualquier otro estado ("INFORMACION INCORRECTA…", "EN PROCESO", "ERROR…"): el legacy esconde el escáner
@@ -353,13 +400,13 @@ class SalidaViewModel @Inject constructor(
                                 )
                             }
                         } else {
-                            activarCapturaCarga(null, 0)
+                            activarCapturaCarga(null, 0, res.requiereCasetaQr)
                         }
                     }
-                    .onFailure { activarCapturaCarga(null, 0) }
+                    .onFailure { activarCapturaCarga(null, 0, res.requiereCasetaQr) }
             }
         } else {
-            activarCapturaCarga(initialQrToken, initialQrSeconds)
+            activarCapturaCarga(initialQrToken, initialQrSeconds, res.requiereCasetaQr)
         }
     }
 
@@ -411,7 +458,7 @@ class SalidaViewModel @Inject constructor(
                             toast("⚠ Ya fue cargada.")
                             limpiar()
                         }
-                        else -> activarCapturaCarga(null, 0)
+                        else -> activarCapturaCarga(null, 0, res.requiereCasetaQr)
                     }
                 }
                 .onFailure { error ->
@@ -429,13 +476,18 @@ class SalidaViewModel @Inject constructor(
 
     // ── Escaneo de bultos (carga) ──────────────────────────────────────────────
 
-    private fun activarCapturaCarga(token: String?, seconds: Int) {
+    private fun activarCapturaCarga(token: String?, seconds: Int, requiereCasetaQr: Boolean) {
         casetaQrTimerJob?.cancel()
-        val tieneAutorizacion = !token.isNullOrBlank() && seconds > 0
+        val tieneAutorizacion = requiereCasetaQr && !token.isNullOrBlank() && seconds > 0
         _state.update {
             it.copy(
                 stage = SalidaStage.ACTIVE,
-                captureStep = if (tieneAutorizacion) SalidaCaptureStep.BULTO else SalidaCaptureStep.CASETA_QR,
+                captureStep = if (requiereCasetaQr && !tieneAutorizacion) {
+                    SalidaCaptureStep.CASETA_QR
+                } else {
+                    SalidaCaptureStep.BULTO
+                },
+                requiereCasetaQr = requiereCasetaQr,
                 casetaQrToken = token?.takeIf { tieneAutorizacion },
                 casetaQrSecondsRemaining = if (tieneAutorizacion) seconds else 0,
                 lastScanned = if (tieneAutorizacion) null else it.lastScanned
@@ -481,7 +533,7 @@ class SalidaViewModel @Inject constructor(
         casetaQrTimerJob = null
         _state.update {
             it.copy(
-                captureStep = SalidaCaptureStep.CASETA_QR,
+                captureStep = if (it.requiereCasetaQr) SalidaCaptureStep.CASETA_QR else SalidaCaptureStep.BULTO,
                 casetaQrToken = null,
                 casetaQrSecondsRemaining = 0
             )
@@ -504,8 +556,8 @@ class SalidaViewModel @Inject constructor(
             )
                 .onSuccess { qr ->
                     _state.update { it.copy(isProcessingScan = false) }
-                    if (qr.success && !qr.autorizacionToken.isNullOrBlank()) {
-                        activarCapturaCarga(qr.autorizacionToken, qr.expiraEnSegundos)
+                    if (qr.success && (!qr.requiereCasetaQr || !qr.autorizacionToken.isNullOrBlank())) {
+                        activarCapturaCarga(qr.autorizacionToken, qr.expiraEnSegundos, qr.requiereCasetaQr)
                         flash(SalidaFlash.OK)
                         toast("✓ QR válido. Escanea el bulto en ${qr.expiraEnSegundos} segundos.")
                     } else {
@@ -526,8 +578,11 @@ class SalidaViewModel @Inject constructor(
         if (_state.value.isProcessingScan) return
         if (!acceptScan(code)) return
 
-        val autorizacionToken = _state.value.casetaQrToken
-        if (autorizacionToken.isNullOrBlank() || _state.value.casetaQrSecondsRemaining <= 0) {
+        val state = _state.value
+        val autorizacionToken = state.casetaQrToken
+        if (state.requiereCasetaQr &&
+            (autorizacionToken.isNullOrBlank() || state.casetaQrSecondsRemaining <= 0)
+        ) {
             clearCasetaQrAuthorization()
             flash(SalidaFlash.ERROR)
             toast("⚠ Primero escanea el QR de caseta y después el bulto.")
@@ -537,6 +592,7 @@ class SalidaViewModel @Inject constructor(
         val existing = _state.value.etiquetas.firstOrNull { it.textoEtiqueta == code }
         if (existing?.escaneado == true) {
             flash(SalidaFlash.OK)
+            _state.update { it.copy(ultimoEscaneo = SalidaUltimoEscaneo(code, aceptado = true, yaEscaneado = true)) }
             toast("✓ Bulto ya escaneado")
             return
         }
@@ -544,9 +600,9 @@ class SalidaViewModel @Inject constructor(
         _state.update { it.copy(isProcessingScan = true) }
         viewModelScope.launch {
             val result = if (_state.value.mode == SalidaMode.NORMAL) {
-                repository.scan(rel.relno, code, autorizacionToken)
+                repository.scan(rel.relno, code, autorizacionToken.orEmpty())
             } else {
-                repository.scanSinRelacion(rel.relno, code, autorizacionToken)
+                repository.scanSinRelacion(rel.relno, code, autorizacionToken.orEmpty())
             }
             result
                 .onSuccess { res ->
@@ -560,12 +616,15 @@ class SalidaViewModel @Inject constructor(
                         "NO_PERTENECE" -> {
                             clearCasetaQrAuthorization()
                             flash(SalidaFlash.ERROR)
+                            _state.update { it.copy(ultimoEscaneo = SalidaUltimoEscaneo(code, aceptado = false, motivo = "NO PERTENECE")) }
                             showErrorBanner("NO PERTENECE")
                         }
                         "ETIQUETA_OTRA_RELACION" -> {
                             clearCasetaQrAuthorization()
                             flash(SalidaFlash.ERROR)
-                            showErrorBanner(res.message ?: "El bulto pertenece a otra relación")
+                            val motivo = res.message ?: "El bulto pertenece a otra relación"
+                            _state.update { it.copy(ultimoEscaneo = SalidaUltimoEscaneo(code, aceptado = false, motivo = motivo)) }
+                            showErrorBanner(motivo)
                         }
                         "BLOQUEADO" -> {
                             clearCasetaQrAuthorization()
@@ -580,7 +639,9 @@ class SalidaViewModel @Inject constructor(
                             clearCasetaQrAuthorization()
                             marcarEscaneado(code)
                             flash(SalidaFlash.OK)
-                            _state.update { it.copy(lastScanned = code) }
+                            _state.update {
+                                it.copy(lastScanned = code, ultimoEscaneo = SalidaUltimoEscaneo(code, aceptado = true))
+                            }
                             if (_state.value.todoEscaneado) {
                                 toast("✓ ¡Completo! ${_state.value.escaneados}/${_state.value.total} — Finaliza ahora")
                             }
@@ -718,7 +779,7 @@ class SalidaViewModel @Inject constructor(
                                 message = "✓ Descarga completada. Continúa con la carga."
                             )
                         }
-                        activarCapturaCarga(null, 0)
+                        activarCapturaCarga(null, 0, _state.value.requiereCasetaQr)
                     } else {
                         toast("✗ ${res.message ?: "Error al finalizar descarga."}")
                     }
@@ -731,6 +792,31 @@ class SalidaViewModel @Inject constructor(
     }
 
     // ── Acciones con confirmación (pausar / cancelar / autorización) ───────────
+
+    /** «Pedir autorización» desde el menú: solo con relación; una entrada directa no tiene supervisor que autorice. */
+    fun requestAuthorization() {
+        val state = _state.value
+        if (state.relacion == null || state.stage != SalidaStage.ACTIVE) return
+        if (state.mode == SalidaMode.SIN_RELACION) {
+            toast("⚠ Una entrada directa no se autoriza: hay que escanear todos los bultos.")
+            return
+        }
+        _state.update {
+            it.copy(
+                confirm = SalidaConfirm(
+                    title = "Pedir autorización",
+                    message = if (it.pendientes > 0) {
+                        "Aún faltan ${it.pendientes} bulto(s) sin escanear. ¿Pides autorización al supervisor para continuar?"
+                    } else {
+                        "Esta relación necesita la autorización del supervisor para finalizar."
+                    },
+                    confirmLabel = "Pedir autorización",
+                    kind = SalidaConfirmKind.WARNING,
+                    action = SalidaConfirmAction.REQUEST_AUTH
+                )
+            )
+        }
+    }
 
     fun requestPause() {
         _state.update {
@@ -846,6 +932,11 @@ class SalidaViewModel @Inject constructor(
     private fun marcarEscaneado(code: String, nuevoEstatus: String? = null) {
         _state.update { st ->
             st.copy(
+                escaneosLocales = if (st.escaneosLocales.any { it.textoEtiqueta == code }) {
+                    st.escaneosLocales
+                } else {
+                    st.escaneosLocales + SalidaEscaneoLocal(code, java.time.LocalTime.now().format(HORA))
+                },
                 etiquetas = st.etiquetas.map {
                     if (it.textoEtiqueta == code) {
                         it.copy(escaneado = true, estatus = nuevoEstatus ?: it.estatus)
@@ -923,6 +1014,8 @@ class SalidaViewModel @Inject constructor(
         if (error is IOException) "✗ Sin conexión con el servidor." else "✗ ${error.message ?: fallback}"
 
     private companion object {
+        val HORA: java.time.format.DateTimeFormatter = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
+
         /** Estados de mercancía con los que el legacy deja trabajar al cargador además de COMPLETA. */
         val ESTATUS_QUE_PERMITEN_CAPTURA = setOf("DIFERENCIA EN BULTOS-ETIQUETAS", "NO DISP ETIQUETAS EN MCIA")
     }

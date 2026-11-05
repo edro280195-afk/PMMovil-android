@@ -52,7 +52,8 @@ data class CargarRelacionResponse(
     val etiquetas: List<SalidaEtiqueta>? = null,
     val estatusCarga: String? = null,
     val totBultos: Int = 0,
-    val versionHoja: String? = null
+    val versionHoja: String? = null,
+    val requiereCasetaQr: Boolean = false
 )
 
 data class EtiquetasDescargaResponse(
@@ -71,7 +72,7 @@ data class SalidaScanResponse(
     val estatusCarga: String? = null,
     val bloqueoMotivo: String? = null,
     val etiquetasBloqueadas: Int? = null,
-    val requiereCasetaQr: Boolean = true
+    val requiereCasetaQr: Boolean = false
 )
 
 data class SalidaCasetaQrResponse(
@@ -86,7 +87,8 @@ data class SalidaCasetaQrResponse(
     val etiquetas: List<SalidaEtiqueta>? = null,
     val estatusCarga: String? = null,
     val totBultos: Int = 0,
-    val versionHoja: String? = null
+    val versionHoja: String? = null,
+    val requiereCasetaQr: Boolean = false
 )
 
 data class SalidaOperacionResponse(

@@ -37,3 +37,19 @@ internal fun leerRelacion(raw: String): LecturaDeRelacion = when (val oficial = 
 
 /** La entrada de una carpeta leída con su cliente; si no es una carpeta, el texto tal cual. */
 internal fun leerEntrada(raw: String): String = OfficialQrParser.entradaOf(raw) ?: raw.trim()
+
+private val ENTRADA_SUELTA = Regex("""^\d{2}[Cc][A-Za-z0-9]{12}$""")
+private val BULTO_DE_ENTRADA = Regex("""^(\d{2}[Cc][A-Za-z0-9]{12})\s+\d{1,6}-\d{1,6}$""")
+
+/**
+ * La entrada a cargar «sin relación», si lo que se escaneó es de una entrada: su carpeta, su referencia suelta o la
+ * etiqueta de uno de sus bultos. `null` si es una relación o un QR de caseta. Así la pantalla de carga ya no necesita que
+ * el cargador elija «Con relación» o «Sin relación»: se deduce de lo que escanea.
+ */
+internal fun entradaDirectaDe(raw: String): String? = when (val lectura = leerRelacion(raw)) {
+    is LecturaDeRelacion.Carpeta -> lectura.entrada
+    is LecturaDeRelacion.Relacion -> null
+    is LecturaDeRelacion.Texto ->
+        lectura.valor.takeIf { ENTRADA_SUELTA.matches(it) }
+            ?: BULTO_DE_ENTRADA.matchEntire(lectura.valor)?.groupValues?.get(1)
+}
