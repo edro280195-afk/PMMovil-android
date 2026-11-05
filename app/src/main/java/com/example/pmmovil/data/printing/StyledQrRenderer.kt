@@ -56,7 +56,7 @@ class StyledQrRenderer {
         // La verificación real siempre corre en el render de impresión.
         if (!verify) {
             val draft = runCatching {
-                drawQr(value, targetSideDots, requested, logoBitmap, logoAspectRatio)
+                drawQr(value, targetSideDots, requested, logoBitmap, logoAspectRatio, errorCorrectionFor(requested))
             }.getOrNull() ?: return null
             return StyledQrResult(
                 bitmap = draft.bitmap,
@@ -72,28 +72,39 @@ class StyledQrRenderer {
         }
 
         for (candidate in degradationChain(requested, logoBitmap)) {
-            val attempt = runCatching {
-                drawQr(value, targetSideDots, candidate, logoBitmap, logoAspectRatio)
-            }.getOrElse {
-                Log.w(TAG, "No se pudo dibujar el QR con $candidate: ${it.message}")
-                null
-            } ?: continue
+            val hasLogo = candidate.logoEnabled && logoBitmap != null
+            val levels = QrErrorCorrectionPlan.levelsToTry(errorCorrectionFor(candidate), hasLogo)
+            for ((levelIndex, level) in levels.withIndex()) {
+                val attempt = runCatching {
+                    drawQr(value, targetSideDots, candidate, logoBitmap, logoAspectRatio, level)
+                }.getOrElse {
+                    Log.w(TAG, "No se pudo dibujar el QR con $candidate y corrección $level: ${it.message}")
+                    null
+                } ?: continue
 
-            if (decodesTo(attempt.bitmap, value)) {
-                return StyledQrResult(
-                    bitmap = attempt.bitmap,
-                    report = QrRenderReport(
-                        requested = requested,
-                        applied = candidate,
-                        downgraded = candidate != requested,
-                        verified = true,
-                        moduleCount = attempt.moduleCount,
-                        moduleSizeDots = attempt.moduleSize
+                if (decodesTo(attempt.bitmap, value)) {
+                    if (levelIndex > 0) {
+                        // El nivel preferido no pasó pero otro sí: es el falso negativo de ZXing que describe
+                        // QrErrorCorrectionPlan. Queda en el log para poder contarlos.
+                        Log.i(TAG, "El QR de \"$value\" no se leyó con ${levels.first()}; se imprime con $level")
+                    }
+                    return StyledQrResult(
+                        bitmap = attempt.bitmap,
+                        report = QrRenderReport(
+                            requested = requested,
+                            applied = candidate,
+                            downgraded = candidate != requested,
+                            verified = true,
+                            moduleCount = attempt.moduleCount,
+                            moduleSizeDots = attempt.moduleSize,
+                            errorCorrection = level.name
+                        )
                     )
-                )
+                }
+                Log.w(TAG, "El QR con estilo $candidate y corrección $level no pasó la verificación de lectura")
+                attempt.bitmap.recycle()
             }
-            Log.w(TAG, "El QR con estilo $candidate no pasó la verificación de lectura; se prueba el siguiente")
-            attempt.bitmap.recycle()
+            Log.w(TAG, "Ningún nivel de corrección pasó con el estilo $candidate; se prueba el siguiente estilo")
         }
         return null
     }
@@ -143,9 +154,10 @@ class StyledQrRenderer {
         targetSideDots: Int,
         style: QrStyleOptions,
         logoBitmap: Bitmap?,
-        logoAspectRatio: Float
+        logoAspectRatio: Float,
+        level: ErrorCorrectionLevel
     ): DrawResult {
-        val matrix = Encoder.encode(value, errorCorrectionFor(style)).matrix
+        val matrix = Encoder.encode(value, level).matrix
         val moduleCount = matrix.width
         val quiet = style.quietZoneModules
         val totalModules = moduleCount + quiet * 2

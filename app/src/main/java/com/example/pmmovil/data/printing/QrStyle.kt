@@ -136,7 +136,9 @@ data class QrRenderReport(
     val downgraded: Boolean,
     val verified: Boolean,
     val moduleCount: Int,
-    val moduleSizeDots: Int
+    val moduleSizeDots: Int,
+    /** Nivel de corrección con el que se imprimió (`L`, `M`, `Q` o `H`); vacío si no se verificó. */
+    val errorCorrection: String = ""
 ) {
     /** Mensaje corto listo para mostrar junto al lienzo del diseñador. */
     fun statusText(): String = when {

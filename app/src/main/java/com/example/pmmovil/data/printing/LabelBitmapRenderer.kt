@@ -19,6 +19,12 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
+ * No se logró un QR legible para el valor de una etiqueta. Al imprimir se lanza en lugar de mandar una etiqueta sin QR.
+ */
+class LabelQrUnavailableException(val qrValue: String) :
+    IllegalStateException("No se pudo generar un QR legible para \"$qrValue\".")
+
+/**
  * Dibuja cualquier etiqueta como bitmap. Todas las coordenadas provienen de
  * [ZebraLabelLayout] y se interpretan en la orientación definida por la plantilla.
  */
@@ -49,13 +55,20 @@ class LabelBitmapRenderer @Inject constructor(
     fun renderReadingOrientation(
         label: ZebraLabelData,
         layout: ZebraLabelLayout,
+        strictQr: Boolean = false,
         onQrReport: ((QrRenderReport) -> Unit)? = null
     ): Bitmap {
         val reading = Bitmap.createBitmap(layout.widthDots, layout.heightDots, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(reading).apply { drawColor(Color.WHITE) }
 
         drawLogo(canvas, layout.logo)
-        drawQr(canvas, layout.qr, label.qrValue, layout.qrStyle, onQrReport)
+        val qrDrawn = drawQr(canvas, layout.qr, label.qrValue, layout.qrStyle, onQrReport)
+        if (!qrDrawn && strictQr) {
+            // Al imprimir, una etiqueta sin QR es una etiqueta tirada que nadie nota hasta que no escanea en bodega:
+            // mejor detener el lote y decirlo. Con los niveles de QrErrorCorrectionPlan esto ya no debería pasar.
+            reading.recycle()
+            throw LabelQrUnavailableException(label.qrValue.trim())
+        }
 
         drawText(canvas, layout.arrivalLabel, "F. ARRIBO:")
         drawText(canvas, layout.arrivalDate, label.fechaArribo)
@@ -81,7 +94,7 @@ class LabelBitmapRenderer @Inject constructor(
 
     /** Renderiza una etiqueta portrait 1200 x 1800 lista para codificarse como ^GF. */
     fun render(label: ZebraLabelData, layout: ZebraLabelLayout): Bitmap {
-        val reading = renderReadingOrientation(label, layout)
+        val reading = renderReadingOrientation(label, layout, strictQr = true)
         return try {
             rotateToPortrait(reading, layout)
         } finally {
@@ -124,6 +137,9 @@ class LabelBitmapRenderer @Inject constructor(
      * devolverlo. Si ni el QR más conservador resultó legible, no se dibuja nada: es preferible
      * una etiqueta sin QR (que salta a la vista) que una con un QR roto que nadie nota hasta
      * que falla el escaneo en bodega.
+     *
+     * @return `false` solo cuando había un QR que dibujar y no se logró; `true` si se dibujó o
+     * si la plantilla no lleva QR (oculto, sin valor o sin tamaño).
      */
     private fun drawQr(
         canvas: Canvas,
@@ -131,12 +147,12 @@ class LabelBitmapRenderer @Inject constructor(
         rawValue: String,
         style: QrStyleOptions,
         onQrReport: ((QrRenderReport) -> Unit)?
-    ) {
-        if (!element.visible) return
+    ): Boolean {
+        if (!element.visible) return true
         val value = rawValue.trim()
-        if (value.isEmpty()) return
+        if (value.isEmpty()) return true
         val side = min(element.width, element.height)
-        if (side <= 0) return
+        if (side <= 0) return true
 
         val result = styledQrRenderer.render(
             value = value,
@@ -147,7 +163,7 @@ class LabelBitmapRenderer @Inject constructor(
         )
         if (result == null) {
             Log.w(TAG, "Ningún estilo de QR resultó legible para \"$value\"; no se dibuja nada")
-            return
+            return false
         }
         onQrReport?.invoke(result.report)
 
@@ -156,6 +172,7 @@ class LabelBitmapRenderer @Inject constructor(
         val top = element.y + (element.height - qr.height) / 2
         canvas.drawBitmap(qr, left.toFloat(), top.toFloat(), null)
         qr.recycle()
+        return true
     }
 
     private fun drawCounter(canvas: Canvas, element: ZebraLabelElement, label: ZebraLabelData, layout: ZebraLabelLayout) {
