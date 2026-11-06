@@ -1,0 +1,952 @@
+{
+  "kind": "evidence-bundle-subset",
+  "records": [
+    {
+      "evidence_id": "ev_0805bde4a4636068d5b9d99452425654bac6a2e4dacc6fbf7fd36e23742c7bcd",
+      "subject": null,
+      "provider": {
+        "id": "adb",
+        "name": "Android Debug Bridge",
+        "version": "36.0.2-14143358"
+      },
+      "analysis_profile": null,
+      "predicate_type": "rea.analysis",
+      "operation": "read_adb_logcat",
+      "parameters": {
+        "serial": "21163D84E9",
+        "count": 1500,
+        "buffer": "main",
+        "pid": 3130
+      },
+      "raw_result": null,
+      "normalized_result": {
+        "client": {
+          "binary_path": "C:\\Users\\eduardo.rdz\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe",
+          "path_source": "environment",
+          "version": "36.0.2-14143358",
+          "installed_path": "C:\\Users\\eduardo.rdz\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe"
+        },
+        "serial": "21163D84E9",
+        "count": 1500,
+        "buffer": "main",
+        "pid": 3130,
+        "lines": [
+          "11-05 10:38:44.573  3130  4354 I chatty  : uid=1000(system) Binder:3130_4 expire 10 lines",
+          "11-05 10:43:19.410  3130  4336 I chatty  : uid=1000(system) Thread-345 expire 6 lines",
+          "11-05 10:43:19.440  3130  4354 I chatty  : uid=1000(system) Binder:3130_4 expire 51 lines",
+          "11-05 10:43:19.804  3130  4336 I chatty  : uid=1000(system) Thread-345 expire 2 lines",
+          "11-05 10:43:19.806  3130  4354 I chatty  : uid=1000(system) Binder:3130_4 expire 43 lines",
+          "11-05 10:43:19.814  3130  3163 I chatty  : uid=1000(system) Binder:3130_2 expire 36 lines",
+          "11-05 10:43:20.141  3130  4336 I chatty  : uid=1000(system) Thread-345 expire 5 lines",
+          "11-05 10:43:20.156  3130  3163 I chatty  : uid=1000(system) Binder:3130_2 expire 61 lines",
+          "11-05 10:43:20.841  3130  4336 I chatty  : uid=1000(system) Thread-345 expire 3 lines",
+          "11-05 10:43:20.855  3130  4354 I chatty  : uid=1000(system) Binder:3130_4 expire 29 lines",
+          "11-05 10:43:21.533  3130  4336 I chatty  : uid=1000(system) Thread-345 expire 5 lines",
+          "11-05 10:43:21.550  3130  4354 I chatty  : uid=1000(system) Binder:3130_4 expire 10 lines",
+          "11-05 10:43:21.553  3130  3163 I chatty  : uid=1000(system) Binder:3130_2 expire 70 lines",
+          "11-05 10:43:22.169  3130  4336 I chatty  : uid=1000(system) Thread-345 expire 8 lines",
+          "11-05 10:43:22.185  3130  4354 I chatty  : uid=1000(system) Binder:3130_4 expire 12 lines",
+          "11-05 10:43:22.563  3130  3163 I chatty  : uid=1000(system) Binder:3130_2 expire 47 lines",
+          "11-05 10:43:23.190  3130  4336 I chatty  : uid=1000(system) Thread-345 expire 3 lines",
+          "11-05 10:43:23.200  3130  3163 I chatty  : uid=1000(system) Binder:3130_2 expire 131 lines",
+          "11-05 10:43:23.550  3130  4336 I chatty  : uid=1000(system) Thread-345 expire 13 lines",
+          "11-05 10:43:24.359  3130  3163 I chatty  : uid=1000(system) Binder:3130_2 expire 49 lines",
+          "11-05 10:43:24.729  3130  4336 I chatty  : uid=1000(system) Thread-345 expire 3 lines",
+          "11-05 10:43:24.736  3130  3163 I chatty  : uid=1000(system) Binder:3130_2 expire 25 lines",
+          "11-05 10:43:24.738  3130  3163 I DCS-OSAL: --IALLock(handle:0xca05a880, mutex:0xc5b4001)",
+          "11-05 10:43:24.738  3130  3163 I DCS-OSAL: +-IALUnLock(handle:0xca05a880, mutex:0xc5b4001)",
+          "11-05 10:43:24.738  3130  3163 I DCS-OSAL: +-IALBroadcast(handle:0xca05a880, cond:0x194)",
+          "11-05 10:43:24.738  3130  3163 I DCS-OSAL: ++IALLock(handle:0xca05a880, mutex:0x4000)",
+          "11-05 10:43:24.738  3130  3163 I DCS-OSAL: --IALLock(handle:0xca05a880, mutex:0xc5b4001)",
+          "11-05 10:43:24.738  3130  3163 I DCS-OSAL: +-IALUnLock(handle:0xca05a880, mutex:0xc5b4001)",
+          "11-05 10:43:24.738  3130  3163 I DCS-Decodes: --DecodesContainerImpl::setIlluminationState duration 1 ms",
+          "11-05 10:43:24.738  3130  3163 D DCS-0   : execute  response.action: {\"id\":277,\"result\":null,\"jsonrpc\":\"2.0\"}",
+          "11-05 10:43:24.738  3130  3163 I DCS-Decodes: ++DecodesContainerImpl::setVideoState(0)",
+          "11-05 10:43:24.739  3130  3163 I DCS-Decodes: ++DecodesContainerImpl::enableDecoding(0)",
+          "11-05 10:43:24.739  3130  3163 I DCS-OSAL: ++IALLock(handle:0xca05a880, mutex:0x4000)",
+          "11-05 10:43:24.739  3130  3163 I DCS-OSAL: --IALLock(handle:0xca05a880, mutex:0xc5b4001)",
+          "11-05 10:43:24.739  3130  3163 I DCS-OSAL: +-IALUnLock(handle:0xca05a880, mutex:0xc5b4001)",
+          "11-05 10:43:24.739  3130  3163 I DCS-Decodes: --DecodesContainerImpl::enableDecoding duration 0 ms",
+          "11-05 10:43:24.739  3130  3163 I DCS-Decodes: --DecodesContainerImpl::setVideoState duration 0 ms",
+          "11-05 10:43:24.740  3130  3163 D DCS-0   : execute  response.action: {\"id\":278,\"result\":null,\"jsonrpc\":\"2.0\"}",
+          "11-05 10:43:25.233  3130  4336 D Imager#Proxy: keyEventThread: scan button DOWN",
+          "11-05 10:43:25.233  3130  4336 I DCS-Platform: ++AndroidPlatform::acquireScreen",
+          "11-05 10:43:25.236  3130  4336 I DCS-Platform: --AndroidPlatform::acquireScreen duration 2 ms",
+          "11-05 10:43:25.236  3130  4336 I DCS-TriggerManager: ++TriggerManagerImpl::handleTrigger(1). mTrigScanMode=0 mTrigControlMode=2",
+          "11-05 10:43:25.246  3130  4336 I DCS-TriggerManager: --TriggerManagerImpl::handleTrigger duration 10 ms",
+          "11-05 10:43:25.246  3130  3163 I DCS-Decodes: ++DecodesContainerImpl::setAimerState(1)",
+          "11-05 10:43:25.246  3130  3163 I DCS-HWL : ++HWLSetAimPinHigh",
+          "11-05 10:43:25.247  3130  3163 I DCS-HWL : --HWLSetAimPinHigh duration 0 ms",
+          "11-05 10:43:25.247  3130  3163 I DCS-HWL : ++HWLTransferBus",
+          "11-05 10:43:25.247  3130  3163 I DCS-HWL : --HWLTransferBus duration 1 ms",
+          "11-05 10:43:25.247  3130  3163 I DCS-OSAL: ++IALLock(handle:0xca05a880, mutex:0x4000)",
+          "11-05 10:43:25.247  3130  3163 I DCS-OSAL: --IALLock(handle:0xca05a880, mutex:0xc5b4001)",
+          "11-05 10:43:25.247  3130  3163 I DCS-OSAL: +-IALUnLock(handle:0xca05a880, mutex:0xc5b4001)",
+          "11-05 10:43:25.247  3130  3163 I DCS-Decodes: --DecodesContainerImpl::setAimerState. result=1",
+          "11-05 10:43:25.247  3130  3163 D DCS-0   : execute  response.action: {\"id\":279,\"result\":null,\"jsonrpc\":\"2.0\"}",
+          "11-05 10:43:25.251  3130  3163 I DCS-Decodes: ++DecodesContainerImpl::setIlluminationState(1)",
+          "11-05 10:43:25.251  3130  3163 I DCS-HWL : ++HWLTransferBus",
+          "11-05 10:43:25.252  3130  3163 I DCS-HWL : --HWLTransferBus duration 0 ms",
+          "11-05 10:43:25.252  3130  3163 I DCS-HWL : ++HWLTransferBus",
+          "11-05 10:43:25.252  3130  3163 I DCS-HWL : --HWLTransferBus duration 0 ms",
+          "11-05 10:43:25.252  3130  3163 I DCS-HWL : ++HWLSetIllumPinHigh",
+          "11-05 10:43:25.252  3130  3163 I DCS-HWL : --HWLSetIllumPinHigh duration 1 ms",
+          "11-05 10:43:25.252  3130  3163 I DCS-OSAL: ++IALLock(handle:0xca05a880, mutex:0x4000)",
+          "11-05 10:43:25.252  3130  3163 I DCS-OSAL: --IALLock(handle:0xca05a880, mutex:0xc5b4001)",
+          "11-05 10:43:25.252  3130  3163 I DCS-HWL : ++HWLTransferBus2",
+          "11-05 10:43:25.252  3130  3163 I DCS-HWL : --HWLTransferBus2 duration 0 ms",
+          "11-05 10:43:25.252  3130  3163 I DCS-HWL : ++HWLTransferBus2",
+          "11-05 10:43:25.253  3130  3163 I DCS-HWL : --HWLTransferBus2 duration 0 ms",
+          "11-05 10:43:25.253  3130  3163 I DCS-HWL : ++HWLSetProperty",
+          "11-05 10:43:25.253  3130  3163 I DCS-HWL : --HWLSetProperty duration 0 ms",
+          "11-05 10:43:25.253  3130  3163 I DCS-HWL : ++HWLTransferBus2",
+          "11-05 10:43:25.254  3130  3163 I DCS-HWL : --HWLTransferBus2 duration 0 ms",
+          "11-05 10:43:25.254  3130  3163 I DCS-HWL : ++HWLSetAimPinLow",
+          "11-05 10:43:25.254  3130  3163 I DCS-HWL : --HWLSetAimPinLow duration 0 ms",
+          "11-05 10:43:25.254  3130  3163 I DCS-HWL : ++HWLSetIllumPinLow",
+          "11-05 10:43:25.254  3130  3163 I DCS-HWL : --HWLSetIllumPinLow duration 0 ms",
+          "11-05 10:43:25.254  3130  3163 I DCS-HWL : ++HWLTransferBus",
+          "11-05 10:43:25.254  3130  3163 I DCS-HWL : --HWLTransferBus duration 1 ms",
+          "11-05 10:43:25.254  3130  3163 I DCS-OSAL: +-IALBroadcast(handle:0xca05a880, cond:0x198)",
+          "11-05 10:43:25.254  3130  3163 I DCS-OSAL: +-IALUnLock(handle:0xca05a880, mutex:0xc5b4001)",
+          "11-05 10:43:25.254  3130  3163 I DCS-OSAL: ++IALLock(handle:0xca05a880, mutex:0x4000)",
+          "11-05 10:43:25.254  3130  3163 I DCS-OSAL: --IALLock(handle:0xca05a880, mutex:0xc5b4001)",
+          "11-05 10:43:25.254  3130  3163 I DCS-OSAL: +-IALUnLock(handle:0xca05a880, mutex:0xc5b4001)",
+          "11-05 10:43:25.254  3130  3163 I DCS-Decodes: --DecodesContainerImpl::setIlluminationState duration 4 ms",
+          "11-05 10:43:25.254  3130  3163 D DCS-0   : execute  response.action: {\"id\":280,\"result\":null,\"jsonrpc\":\"2.0\"}",
+          "11-05 10:43:25.255  3130  3163 I DCS-Decodes: ++DecodesContainerImpl::setVideoState(1)",
+          "11-05 10:43:25.255  3130  3163 I DCS-Decodes: ++DecodesContainerImpl::enableDecoding(1)",
+          "11-05 10:43:25.255  3130  3163 I DCS-OSAL: ++IALLock(handle:0xca05a880, mutex:0x4000)",
+          "11-05 10:43:25.255  3130  3163 I DCS-OSAL: --IALLock(handle:0xca05a880, mutex:0xc5b4001)",
+          "11-05 10:43:25.255  3130  3163 I DCS-OSAL: +-IALUnLock(handle:0xca05a880, mutex:0xc5b4001)",
+          "11-05 10:43:25.255  3130  3163 I DCS-Decodes: --DecodesContainerImpl::enableDecoding duration 0 ms",
+          "11-05 10:43:25.255  3130  3163 I DCS-Platform: ++:mIncreaseCounterMethod",
+          "11-05 10:43:25.257  3130  3163 I DCS-Decodes: --DecodesContainerImpl::setVideoState duration 2 ms",
+          "11-05 10:43:25.257  3130  3163 D DCS-0   : execute  response.action: {\"id\":281,\"result\":null,\"jsonrpc\":\"2.0\"}",
+          "11-05 10:43:25.698  3130  4336 D Imager#Proxy: keyEventThread: scan button UP",
+          "11-05 10:43:25.701  3130  4336 I DCS-TriggerManager: ++TriggerManagerImpl::handleTrigger(0). mTrigScanMode=0 mTrigControlMode=2",
+          "11-05 10:43:25.702  3130  4336 I DCS-TriggerManager: --TriggerManagerImpl::handleTrigger duration 0 ms",
+          "11-05 10:43:25.703  3130  3163 I DCS-Decodes: ++DecodesContainerImpl::setAimerState(0)",
+          "11-05 10:43:25.703  3130  3163 I DCS-HWL : ++HWLSetAimPinLow",
+          "11-05 10:43:25.703  3130  3163 I DCS-HWL : --HWLSetAimPinLow duration 0 ms",
+          "11-05 10:43:25.703  3130  3163 I DCS-HWL : ++HWLTransferBus",
+          "11-05 10:43:25.703  3130  3163 I DCS-HWL : --HWLTransferBus duration 0 ms",
+          "11-05 10:43:25.703  3130  3163 I DCS-HWL : ++HWLSetAimPinLow",
+          "11-05 10:43:25.703  3130  3163 I DCS-HWL : --HWLSetAimPinLow duration 0 ms",
+          "11-05 10:43:25.703  3130  3163 I DCS-OSAL: ++IALLock(handle:0xca05a880, mutex:0x4000)",
+          "11-05 10:43:25.704  3130  3163 I DCS-OSAL: --IALLock(handle:0xca05a880, mutex:0xc5b4001)",
+          "11-05 10:43:25.704  3130  3163 I DCS-OSAL: +-IALUnLock(handle:0xca05a880, mutex:0xc5b4001)",
+          "11-05 10:43:25.704  3130  3163 I DCS-Decodes: --DecodesContainerImpl::setAimerState. result=1",
+          "11-05 10:43:25.704  3130  3163 D DCS-0   : execute  response.action: {\"id\":282,\"result\":null,\"jsonrpc\":\"2.0\"}",
+          "11-05 10:43:25.704  3130  3163 I DCS-Decodes: ++DecodesContainerImpl::setIlluminationState(0)",
+          "11-05 10:43:25.704  3130  3163 I DCS-HWL : ++HWLTransferBus",
+          "11-05 10:43:25.705  3130  3163 I DCS-HWL : --HWLTransferBus duration 1 ms",
+          "11-05 10:43:25.705  3130  3163 I DCS-HWL : ++HWLTransferBus",
+          "11-05 10:43:25.706  3130  3163 I DCS-HWL : --HWLTransferBus duration 0 ms",
+          "11-05 10:43:25.706  3130  3163 I DCS-HWL : ++HWLSetIllumPinLow",
+          "11-05 10:43:25.706  3130  3163 I DCS-HWL : --HWLSetIllumPinLow duration 0 ms",
+          "11-05 10:43:25.706  3130  3163 I DCS-OSAL: ++IALLock(handle:0xca05a880, mutex:0x4000)",
+          "11-05 10:43:25.706  3130  3163 I DCS-OSAL: --IALLock(handle:0xca05a880, mutex:0xc5b4001)",
+          "11-05 10:43:25.706  3130  3163 I DCS-OSAL: +-IALUnLock(handle:0xca05a880, mutex:0xc5b4001)",
+          "11-05 10:43:25.706  3130  3163 I DCS-HWL : ++HWLTransferBus2",
+          "11-05 10:43:25.706  3130  3163 I DCS-HWL : --HWLTransferBus2 duration 1 ms",
+          "11-05 10:43:25.706  3130  3163 I DCS-OSAL: ++IALLock(handle:0xca05a880, mutex:0x4000)",
+          "11-05 10:43:25.706  3130  3163 I DCS-OSAL: --IALLock(handle:0xca05a880, mutex:0xc5b4001)",
+          "11-05 10:43:25.706  3130  3163 I DCS-OSAL: +-IALUnLock(handle:0xca05a880, mutex:0xc5b4001)",
+          "11-05 10:43:25.706  3130  3163 I DCS-OSAL: +-IALBroadcast(handle:0xca05a880, cond:0x19c)",
+          "11-05 10:43:25.706  3130  3163 I DCS-OSAL: ++IALLock(handle:0xca05a880, mutex:0x4000)",
+          "11-05 10:43:25.706  3130  3163 I DCS-OSAL: --IALLock(handle:0xca05a880, mutex:0xc5b4001)",
+          "11-05 10:43:25.706  3130  3163 I DCS-OSAL: +-IALUnLock(handle:0xca05a880, mutex:0xc5b4001)",
+          "11-05 10:43:25.706  3130  3163 I DCS-Decodes: --DecodesContainerImpl::setIlluminationState duration 2 ms",
+          "11-05 10:43:25.706  3130  3163 D DCS-0   : execute  response.action: {\"id\":283,\"result\":null,\"jsonrpc\":\"2.0\"}",
+          "11-05 10:43:25.709  3130  3163 I DCS-Decodes: ++DecodesContainerImpl::setVideoState(0)",
+          "11-05 10:43:25.709  3130  3163 I DCS-Decodes: ++DecodesContainerImpl::enableDecoding(0)",
+          "11-05 10:43:25.709  3130  3163 I DCS-OSAL: ++IALLock(handle:0xca05a880, mutex:0x4000)",
+          "11-05 10:43:25.709  3130  3163 I DCS-OSAL: --IALLock(handle:0xca05a880, mutex:0xc5b4001)",
+          "11-05 10:43:25.709  3130  3163 I DCS-OSAL: +-IALUnLock(handle:0xca05a880, mutex:0xc5b4001)",
+          "11-05 10:43:25.709  3130  3163 I DCS-Decodes: --DecodesContainerImpl::enableDecoding duration 0 ms",
+          "11-05 10:43:25.709  3130  3163 I DCS-Decodes: --DecodesContainerImpl::setVideoState duration 1 ms",
+          "11-05 10:43:25.709  3130  3163 D DCS-0   : execute  response.action: {\"id\":284,\"result\":null,\"jsonrpc\":\"2.0\"}",
+          "11-05 10:43:28.709  3130  4366 I DCS-HWL : ++HWLGetProperty(12)",
+          "11-05 10:43:28.710  3130  4366 I DCS-HWL : --HWLGetProperty duration 1 ms",
+          "11-05 10:43:28.710  3130  4366 I DCS-HWL : ++HWLStopScanning",
+          "11-05 10:43:28.728  3130  4366 I DCS-HWL : --HWLStopScanning duration 19 ms",
+          "11-05 10:43:28.728  3130  4366 I DCS-HWL : ++HWLSetProperty",
+          "11-05 10:43:28.731  3130  4366 I DCS-HWL : --HWLSetProperty duration 3 ms"
+        ],
+        "total_bytes": 12183,
+        "coverage": "complete"
+      },
+      "confidence": "observed",
+      "authority": "shipped-artifact",
+      "environment": null,
+      "limitations": [
+        "Artifact identity is unavailable for this observation.",
+        "Reads a bounded dump (logcat -d); the newest lines are kept when the count cap trims",
+        "coverage is partial when the requested count or capture budget truncated the dump"
+      ],
+      "relationship_coverage": null,
+      "locations": [],
+      "evidence_links": []
+    },
+    {
+      "evidence_id": "ev_28fff83e24f3e4163fec6ad8901b728ab7fbc2d2756f2425c449628bf7afc3ef",
+      "subject": null,
+      "provider": {
+        "id": "adb",
+        "name": "Android Debug Bridge",
+        "version": "36.0.2-14143358"
+      },
+      "analysis_profile": null,
+      "predicate_type": "rea.analysis",
+      "operation": "read_adb_logcat",
+      "parameters": {
+        "serial": "21163D84E9",
+        "count": 1200,
+        "buffer": "main",
+        "pid": 4493
+      },
+      "raw_result": null,
+      "normalized_result": {
+        "client": {
+          "binary_path": "C:\\Users\\eduardo.rdz\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe",
+          "path_source": "environment",
+          "version": "36.0.2-14143358",
+          "installed_path": "C:\\Users\\eduardo.rdz\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe"
+        },
+        "serial": "21163D84E9",
+        "count": 1200,
+        "buffer": "main",
+        "pid": 4493,
+        "lines": [
+          "11-05 10:38:44.616  4493  4493 D ScanDemo: Claim reader1 scanner",
+          "11-05 10:38:44.619  4493  4493 D ScanDemo: Start restore scanner property settings",
+          "11-05 10:38:44.619  4493  4493 D ScanDemo: End restore scanner property settings",
+          "11-05 10:43:19.437  4493  4511 D ScanDemo: OnTriggerEvent status: true",
+          "11-05 10:43:19.437  4493  4523 D ScanDemo: Start a new Scan!",
+          "11-05 10:43:19.806  4493 17558 D ScanDemo: OnTriggerEvent status: false",
+          "11-05 10:43:19.813  4493  4523 D ScanDemo: Cancel last Scan!",
+          "11-05 10:43:20.152  4493 17558 D ScanDemo: OnTriggerEvent status: true",
+          "11-05 10:43:20.152  4493  4523 D ScanDemo: Start a new Scan!",
+          "11-05 10:43:20.849  4493  4523 D ScanDemo: Cancel last Scan!",
+          "11-05 10:43:20.849  4493  4511 D ScanDemo: OnTriggerEvent status: false",
+          "11-05 10:43:20.865  4493  4493 D ScanDemo: Enter onFailureEvent ===> 2026-11-05T10:43:20.860-6:00",
+          "11-05 10:43:21.547  4493  4523 D ScanDemo: Start a new Scan!",
+          "11-05 10:43:21.547  4493  4511 D ScanDemo: OnTriggerEvent status: true",
+          "11-05 10:43:22.182  4493  4812 D ScanDemo: OnTriggerEvent status: false",
+          "11-05 10:43:22.183  4493  4523 D ScanDemo: Cancel last Scan!",
+          "11-05 10:43:22.196  4493  4493 D ScanDemo: Enter onFailureEvent ===> 2026-11-05T10:43:22.193-6:00",
+          "11-05 10:43:22.562  4493 11728 D ScanDemo: OnTriggerEvent status: true",
+          "11-05 10:43:22.562  4493  4523 D ScanDemo: Start a new Scan!",
+          "11-05 10:43:23.199  4493 11728 D ScanDemo: OnTriggerEvent status: false",
+          "11-05 10:43:23.199  4493  4523 D ScanDemo: Cancel last Scan!",
+          "11-05 10:43:23.207  4493  4493 D ScanDemo: Enter onFailureEvent ===> 2026-11-05T10:43:23.206-6:00",
+          "11-05 10:43:23.554  4493 11728 D ScanDemo: OnTriggerEvent status: true",
+          "11-05 10:43:23.554  4493  4523 D ScanDemo: Start a new Scan!",
+          "11-05 10:43:24.044  4493  4523 D ScanDemo: Cancel last Scan!",
+          "11-05 10:43:24.044  4493  4812 D ScanDemo: OnTriggerEvent status: false",
+          "11-05 10:43:24.049  4493  4493 D ScanDemo: Enter onFailureEvent ===> 2026-11-05T10:43:24.048-6:00",
+          "11-05 10:43:24.357  4493  4812 D ScanDemo: OnTriggerEvent status: true",
+          "11-05 10:43:24.357  4493  4523 D ScanDemo: Start a new Scan!",
+          "11-05 10:43:24.735  4493  4812 D ScanDemo: OnTriggerEvent status: false",
+          "11-05 10:43:24.735  4493  4523 D ScanDemo: Cancel last Scan!",
+          "11-05 10:43:24.740  4493  4493 D ScanDemo: Enter onFailureEvent ===> 2026-11-05T10:43:24.739-6:00",
+          "11-05 10:43:25.244  4493  4812 D ScanDemo: OnTriggerEvent status: true",
+          "11-05 10:43:25.244  4493  4523 D ScanDemo: Start a new Scan!",
+          "11-05 10:43:25.702  4493 11728 D ScanDemo: OnTriggerEvent status: false",
+          "11-05 10:43:25.702  4493  4523 D ScanDemo: Cancel last Scan!",
+          "11-05 10:43:25.710  4493  4493 D ScanDemo: Enter onFailureEvent ===> 2026-11-05T10:43:25.709-6:00"
+        ],
+        "total_bytes": 2709,
+        "coverage": "complete"
+      },
+      "confidence": "observed",
+      "authority": "shipped-artifact",
+      "environment": null,
+      "limitations": [
+        "Artifact identity is unavailable for this observation.",
+        "Reads a bounded dump (logcat -d); the newest lines are kept when the count cap trims",
+        "coverage is partial when the requested count or capture budget truncated the dump"
+      ],
+      "relationship_coverage": null,
+      "locations": [],
+      "evidence_links": []
+    },
+    {
+      "evidence_id": "ev_31d00453130bb2dd76a31f954d7b94fb5630f650a4aee2d0fcd0d9a99370de16",
+      "subject": null,
+      "provider": {
+        "id": "adb",
+        "name": "Android Debug Bridge",
+        "version": "36.0.2-14143358"
+      },
+      "analysis_profile": null,
+      "predicate_type": "rea.analysis",
+      "operation": "inspect_adb_package",
+      "parameters": {
+        "serial": "21163D84E9",
+        "package": "com.honeywell.demos.scandemo"
+      },
+      "raw_result": null,
+      "normalized_result": {
+        "client": {
+          "binary_path": "C:\\Users\\eduardo.rdz\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe",
+          "path_source": "environment",
+          "version": "36.0.2-14143358",
+          "installed_path": "C:\\Users\\eduardo.rdz\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe"
+        },
+        "serial": "21163D84E9",
+        "package_name": "com.honeywell.demos.scandemo",
+        "version_name": "9.03.00.7060",
+        "version_code": 9999,
+        "first_install_time": "2008-12-31 10:00:00",
+        "last_update_time": "2008-12-31 10:00:00",
+        "installer_package_name": null,
+        "user_id": 10115,
+        "pkg_flags": "[ SYSTEM HAS_CODE ALLOW_CLEAR_USER_DATA ]",
+        "requested_permissions_count": 13,
+        "coverage": "complete"
+      },
+      "confidence": "observed",
+      "authority": "shipped-artifact",
+      "environment": null,
+      "limitations": [
+        "Artifact identity is unavailable for this observation.",
+        "Fields are a fixed projection of dumpsys package output; version-dependent sections are ignored rather than guessed",
+        "requested_permissions_count counts the listed requested permissions section only"
+      ],
+      "relationship_coverage": null,
+      "locations": [],
+      "evidence_links": []
+    },
+    {
+      "evidence_id": "ev_6117df7cc08a15db86cdf97432e060bb2c22acac051f4a1727917458d9f2383b",
+      "subject": null,
+      "provider": {
+        "id": "adb",
+        "name": "Android Debug Bridge",
+        "version": "36.0.2-14143358"
+      },
+      "analysis_profile": null,
+      "predicate_type": "rea.analysis",
+      "operation": "inspect_adb_device",
+      "parameters": {
+        "serial": "21163D84E9"
+      },
+      "raw_result": null,
+      "normalized_result": {
+        "client": {
+          "binary_path": "C:\\Users\\eduardo.rdz\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe",
+          "path_source": "environment",
+          "version": "36.0.2-14143358",
+          "installed_path": "C:\\Users\\eduardo.rdz\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe"
+        },
+        "serial": "21163D84E9",
+        "properties": [
+          {
+            "name": "ro.build.version.release",
+            "value": "9"
+          },
+          {
+            "name": "ro.build.version.sdk",
+            "value": "28"
+          },
+          {
+            "name": "ro.build.version.security_patch",
+            "value": "2021-01-05"
+          },
+          {
+            "name": "ro.build.id",
+            "value": "88.00.13"
+          },
+          {
+            "name": "ro.build.fingerprint",
+            "value": "Honeywell/CT60/CT60-L1-C:9/88.00.13/0153:user/release-keys"
+          },
+          {
+            "name": "ro.build.characteristics",
+            "value": "nosdcard"
+          },
+          {
+            "name": "ro.debuggable",
+            "value": "0"
+          },
+          {
+            "name": "ro.product.brand",
+            "value": "Honeywell"
+          },
+          {
+            "name": "ro.product.device",
+            "value": "CT60-L1-C"
+          },
+          {
+            "name": "ro.product.manufacturer",
+            "value": "Honeywell"
+          },
+          {
+            "name": "ro.product.model",
+            "value": "CT60"
+          },
+          {
+            "name": "ro.product.cpu.abilist",
+            "value": "arm64-v8a,armeabi-v7a,armeabi"
+          }
+        ],
+        "property_count": 12,
+        "emulator_observed": null
+      },
+      "confidence": "observed",
+      "authority": "shipped-artifact",
+      "environment": null,
+      "limitations": [
+        "Artifact identity is unavailable for this observation.",
+        "Properties are a fixed whitelist of build identity facts, not the full getprop dump",
+        "emulator_observed is null when the build does not report ro.kernel.qemu"
+      ],
+      "relationship_coverage": null,
+      "locations": [],
+      "evidence_links": []
+    },
+    {
+      "evidence_id": "ev_663f2cb1acf4e4906b9f5145e922d0f3249891349a44de291f259781e65c0cbd",
+      "subject": null,
+      "provider": {
+        "id": "adb",
+        "name": "Android Debug Bridge",
+        "version": "36.0.2-14143358"
+      },
+      "analysis_profile": null,
+      "predicate_type": "rea.analysis",
+      "operation": "pull_adb_package",
+      "parameters": {
+        "serial": "21163D84E9",
+        "package": "com.intermec.datacollectionservice",
+        "output_directory": "C:\\Users\\eduardo.rdz\\AndroidStudioProjects\\PMMovil\\rea-evidence\\honeywell-apks"
+      },
+      "raw_result": null,
+      "normalized_result": {
+        "client": {
+          "binary_path": "C:\\Users\\eduardo.rdz\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe",
+          "path_source": "environment",
+          "version": "36.0.2-14143358",
+          "installed_path": "C:\\Users\\eduardo.rdz\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe"
+        },
+        "serial": "21163D84E9",
+        "package_name": "com.intermec.datacollectionservice",
+        "output_directory": "C:\\Users\\eduardo.rdz\\AndroidStudioProjects\\PMMovil\\rea-evidence\\honeywell-apks",
+        "artifacts": [
+          {
+            "device_path": "/system/app/DataCollectionService/DataCollectionService.apk",
+            "file_name": "DataCollectionService.apk",
+            "local_path": "C:\\Users\\eduardo.rdz\\AndroidStudioProjects\\PMMovil\\rea-evidence\\honeywell-apks\\com.intermec.datacollectionservice\\DataCollectionService.apk",
+            "bytes": 13858309,
+            "sha256": "c2b9ef99a809fe1b3614b6567521128df2be88a08eddc50cb1c879bc1799f061",
+            "role": "unknown",
+            "role_basis": "file_name"
+          }
+        ],
+        "failures": [],
+        "coverage": "complete"
+      },
+      "confidence": "observed",
+      "authority": "shipped-artifact",
+      "environment": null,
+      "limitations": [
+        "Artifact identity is unavailable for this observation.",
+        "APK role names derive from the pulled file names (base.apk, split_*.apk)",
+        "Pulled artifacts are host-local copies; the device retains the originals"
+      ],
+      "relationship_coverage": null,
+      "locations": [],
+      "evidence_links": []
+    },
+    {
+      "evidence_id": "ev_a1068c953cc8b10be7e4858a921c756fda6c6c6bb4149583eb66f657d859c300",
+      "subject": null,
+      "provider": {
+        "id": "adb",
+        "name": "Android Debug Bridge",
+        "version": "36.0.2-14143358"
+      },
+      "analysis_profile": null,
+      "predicate_type": "rea.analysis",
+      "operation": "capture_adb_screen",
+      "parameters": {
+        "serial": "21163D84E9",
+        "output_directory": "C:\\Users\\eduardo.rdz\\AndroidStudioProjects\\PMMovil\\rea-evidence\\honeywell-ct60-test1"
+      },
+      "raw_result": null,
+      "normalized_result": {
+        "client": {
+          "binary_path": "C:\\Users\\eduardo.rdz\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe",
+          "path_source": "environment",
+          "version": "36.0.2-14143358",
+          "installed_path": "C:\\Users\\eduardo.rdz\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe"
+        },
+        "serial": "21163D84E9",
+        "local_path": "C:\\Users\\eduardo.rdz\\AndroidStudioProjects\\PMMovil\\rea-evidence\\honeywell-ct60-test1\\screen.png",
+        "bytes": 129431,
+        "sha256": "04fa20a171b9766ed4db4d1ffdbe6b543ea742e08eadf140ee78c67901311094",
+        "width": 720,
+        "height": 1280
+      },
+      "confidence": "observed",
+      "authority": "shipped-artifact",
+      "environment": null,
+      "limitations": [
+        "Artifact identity is unavailable for this observation.",
+        "The capture is one frame at read time; no recording or interaction occurred"
+      ],
+      "relationship_coverage": null,
+      "locations": [],
+      "evidence_links": []
+    },
+    {
+      "evidence_id": "ev_a977e275cc61b47e3f4e46167ca67f067bc9b80ce87a99d380f482678a8756bb",
+      "subject": null,
+      "provider": {
+        "id": "adb",
+        "name": "Android Debug Bridge",
+        "version": "36.0.2-14143358"
+      },
+      "analysis_profile": null,
+      "predicate_type": "rea.analysis",
+      "operation": "list_adb_features",
+      "parameters": {
+        "serial": "21163D84E9"
+      },
+      "raw_result": null,
+      "normalized_result": {
+        "client": {
+          "binary_path": "C:\\Users\\eduardo.rdz\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe",
+          "path_source": "environment",
+          "version": "36.0.2-14143358",
+          "installed_path": "C:\\Users\\eduardo.rdz\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe"
+        },
+        "serial": "21163D84E9",
+        "features": [
+          {
+            "name": "reqGlEsVersion",
+            "version": 196610
+          },
+          {
+            "name": "android.hardware.audio.output",
+            "version": null
+          },
+          {
+            "name": "android.hardware.bluetooth",
+            "version": null
+          },
+          {
+            "name": "android.hardware.bluetooth_le",
+            "version": null
+          },
+          {
+            "name": "android.hardware.camera",
+            "version": null
+          },
+          {
+            "name": "android.hardware.camera.any",
+            "version": null
+          },
+          {
+            "name": "android.hardware.camera.autofocus",
+            "version": null
+          },
+          {
+            "name": "android.hardware.camera.capability.manual_post_processing",
+            "version": null
+          },
+          {
+            "name": "android.hardware.camera.capability.manual_sensor",
+            "version": null
+          },
+          {
+            "name": "android.hardware.camera.capability.raw",
+            "version": null
+          },
+          {
+            "name": "android.hardware.camera.flash",
+            "version": null
+          },
+          {
+            "name": "android.hardware.camera.level.full",
+            "version": null
+          },
+          {
+            "name": "android.hardware.faketouch",
+            "version": null
+          },
+          {
+            "name": "android.hardware.location",
+            "version": null
+          },
+          {
+            "name": "android.hardware.location.gps",
+            "version": null
+          },
+          {
+            "name": "android.hardware.location.network",
+            "version": null
+          },
+          {
+            "name": "android.hardware.microphone",
+            "version": null
+          },
+          {
+            "name": "android.hardware.nfc",
+            "version": null
+          },
+          {
+            "name": "android.hardware.nfc.any",
+            "version": null
+          },
+          {
+            "name": "android.hardware.nfc.hce",
+            "version": null
+          },
+          {
+            "name": "android.hardware.nfc.hcef",
+            "version": null
+          },
+          {
+            "name": "android.hardware.opengles.aep",
+            "version": null
+          },
+          {
+            "name": "android.hardware.ram.normal",
+            "version": null
+          },
+          {
+            "name": "android.hardware.screen.landscape",
+            "version": null
+          },
+          {
+            "name": "android.hardware.screen.portrait",
+            "version": null
+          },
+          {
+            "name": "android.hardware.sensor.accelerometer",
+            "version": null
+          },
+          {
+            "name": "android.hardware.sensor.barometer",
+            "version": null
+          },
+          {
+            "name": "android.hardware.sensor.compass",
+            "version": null
+          },
+          {
+            "name": "android.hardware.sensor.gyroscope",
+            "version": null
+          },
+          {
+            "name": "android.hardware.sensor.light",
+            "version": null
+          },
+          {
+            "name": "android.hardware.sensor.proximity",
+            "version": null
+          },
+          {
+            "name": "android.hardware.sensor.stepcounter",
+            "version": null
+          },
+          {
+            "name": "android.hardware.sensor.stepdetector",
+            "version": null
+          },
+          {
+            "name": "android.hardware.telephony",
+            "version": null
+          },
+          {
+            "name": "android.hardware.telephony.cdma",
+            "version": null
+          },
+          {
+            "name": "android.hardware.telephony.gsm",
+            "version": null
+          },
+          {
+            "name": "android.hardware.touchscreen",
+            "version": null
+          },
+          {
+            "name": "android.hardware.touchscreen.multitouch",
+            "version": null
+          },
+          {
+            "name": "android.hardware.touchscreen.multitouch.distinct",
+            "version": null
+          },
+          {
+            "name": "android.hardware.touchscreen.multitouch.jazzhand",
+            "version": null
+          },
+          {
+            "name": "android.hardware.usb.accessory",
+            "version": null
+          },
+          {
+            "name": "android.hardware.usb.host",
+            "version": null
+          },
+          {
+            "name": "android.hardware.vulkan.compute",
+            "version": null
+          },
+          {
+            "name": "android.hardware.vulkan.level",
+            "version": null
+          },
+          {
+            "name": "android.hardware.vulkan.version",
+            "version": 4198400
+          },
+          {
+            "name": "android.hardware.wifi",
+            "version": null
+          },
+          {
+            "name": "android.hardware.wifi.direct",
+            "version": null
+          },
+          {
+            "name": "android.hardware.wifi.rtt",
+            "version": null
+          },
+          {
+            "name": "android.software.activities_on_secondary_displays",
+            "version": null
+          },
+          {
+            "name": "android.software.adoptable_storage",
+            "version": null
+          },
+          {
+            "name": "android.software.app_widgets",
+            "version": null
+          },
+          {
+            "name": "android.software.autofill",
+            "version": null
+          },
+          {
+            "name": "android.software.backup",
+            "version": null
+          },
+          {
+            "name": "android.software.cant_save_state",
+            "version": null
+          },
+          {
+            "name": "android.software.companion_device_setup",
+            "version": null
+          },
+          {
+            "name": "android.software.connectionservice",
+            "version": null
+          },
+          {
+            "name": "android.software.cts",
+            "version": null
+          },
+          {
+            "name": "android.software.device_admin",
+            "version": null
+          },
+          {
+            "name": "android.software.home_screen",
+            "version": null
+          },
+          {
+            "name": "android.software.input_methods",
+            "version": null
+          },
+          {
+            "name": "android.software.live_wallpaper",
+            "version": null
+          },
+          {
+            "name": "android.software.managed_users",
+            "version": null
+          },
+          {
+            "name": "android.software.midi",
+            "version": null
+          },
+          {
+            "name": "android.software.picture_in_picture",
+            "version": null
+          },
+          {
+            "name": "android.software.print",
+            "version": null
+          },
+          {
+            "name": "android.software.sip",
+            "version": null
+          },
+          {
+            "name": "android.software.sip.voip",
+            "version": null
+          },
+          {
+            "name": "android.software.verified_boot",
+            "version": null
+          },
+          {
+            "name": "android.software.voice_recognizers",
+            "version": null
+          },
+          {
+            "name": "android.software.webview",
+            "version": null
+          },
+          {
+            "name": "com.google.android.apps.dialer.SUPPORTED",
+            "version": null
+          },
+          {
+            "name": "com.google.android.feature.WELLBEING",
+            "version": null
+          },
+          {
+            "name": "com.google.android.feature.ZERO_TOUCH",
+            "version": null
+          },
+          {
+            "name": "com.honeywell.hardware",
+            "version": null
+          },
+          {
+            "name": "com.honeywell.hardware.imager",
+            "version": null
+          },
+          {
+            "name": "com.nxp.mifare",
+            "version": null
+          }
+        ],
+        "unparsed_lines": [],
+        "coverage": "complete"
+      },
+      "confidence": "observed",
+      "authority": "shipped-artifact",
+      "environment": null,
+      "limitations": [
+        "Artifact identity is unavailable for this observation."
+      ],
+      "relationship_coverage": null,
+      "locations": [],
+      "evidence_links": []
+    },
+    {
+      "evidence_id": "ev_bac792d557a48bb18213d28b5a96895c9e21dfde4bbbf792c9d4b6d4678683fd",
+      "subject": null,
+      "provider": {
+        "id": "adb",
+        "name": "Android Debug Bridge",
+        "version": "36.0.2-14143358"
+      },
+      "analysis_profile": null,
+      "predicate_type": "rea.analysis",
+      "operation": "list_adb_devices",
+      "parameters": {},
+      "raw_result": null,
+      "normalized_result": {
+        "client": {
+          "binary_path": "C:\\Users\\eduardo.rdz\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe",
+          "path_source": "environment",
+          "version": "36.0.2-14143358",
+          "installed_path": "C:\\Users\\eduardo.rdz\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe"
+        },
+        "devices": [
+          {
+            "serial": "21163D84E9",
+            "state": "device",
+            "transport": "unknown",
+            "product": "CT60",
+            "model": "CT60",
+            "device": "CT60-L1-C",
+            "transport_id": 43,
+            "kind": "unknown",
+            "kind_basis": "none"
+          },
+          {
+            "serial": "47091FDAS009UK",
+            "state": "device",
+            "transport": "unknown",
+            "product": "komodo",
+            "model": "Pixel_9_Pro_XL",
+            "device": "komodo",
+            "transport_id": 42,
+            "kind": "unknown",
+            "kind_basis": "none"
+          }
+        ],
+        "may_have_started_adb_server": false
+      },
+      "confidence": "observed",
+      "authority": "shipped-artifact",
+      "environment": null,
+      "limitations": [
+        "Artifact identity is unavailable for this observation.",
+        "Device kind is inferred from the emulator serial prefix and USB transport metadata, not from device attestation",
+        "Kind stays unknown for TCP transports unless the serial is an emulator port"
+      ],
+      "relationship_coverage": null,
+      "locations": [],
+      "evidence_links": []
+    },
+    {
+      "evidence_id": "ev_d22dc0a32c4bb9676dc2194f1410df421606dae45c3186cda0968a44b5a7c18a",
+      "subject": null,
+      "provider": {
+        "id": "adb",
+        "name": "Android Debug Bridge",
+        "version": "36.0.2-14143358"
+      },
+      "analysis_profile": null,
+      "predicate_type": "rea.analysis",
+      "operation": "inspect_adb_package",
+      "parameters": {
+        "serial": "21163D84E9",
+        "package": "com.intermec.datacollectionservice"
+      },
+      "raw_result": null,
+      "normalized_result": {
+        "client": {
+          "binary_path": "C:\\Users\\eduardo.rdz\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe",
+          "path_source": "environment",
+          "version": "36.0.2-14143358",
+          "installed_path": "C:\\Users\\eduardo.rdz\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe"
+        },
+        "serial": "21163D84E9",
+        "package_name": "com.intermec.datacollectionservice",
+        "version_name": "1.97.00.0287",
+        "version_code": 197000287,
+        "first_install_time": "2008-12-31 10:00:00",
+        "last_update_time": "2008-12-31 10:00:00",
+        "installer_package_name": null,
+        "user_id": 1000,
+        "pkg_flags": "[ SYSTEM HAS_CODE PERSISTENT ALLOW_CLEAR_USER_DATA ]",
+        "requested_permissions_count": 28,
+        "coverage": "complete"
+      },
+      "confidence": "observed",
+      "authority": "shipped-artifact",
+      "environment": null,
+      "limitations": [
+        "Artifact identity is unavailable for this observation.",
+        "Fields are a fixed projection of dumpsys package output; version-dependent sections are ignored rather than guessed",
+        "requested_permissions_count counts the listed requested permissions section only"
+      ],
+      "relationship_coverage": null,
+      "locations": [],
+      "evidence_links": []
+    }
+  ]
+}
