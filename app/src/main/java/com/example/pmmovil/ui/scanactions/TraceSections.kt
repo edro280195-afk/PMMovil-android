@@ -101,7 +101,7 @@ internal fun TraceFlags(flags: List<Int>, modifier: Modifier = Modifier) {
 }
 
 /**
- * La Línea en vertical: cinco estaciones unidas por un hilo, cada una con su estado y, si se sabe, cuándo pasó. Cada
+ * La Línea en vertical: seis estaciones unidas por un hilo, cada una con su estado y, si se sabe, cuándo pasó. Cada
  * nodo dice lo mismo con forma, símbolo y palabra, nunca solo con color.
  */
 @Composable

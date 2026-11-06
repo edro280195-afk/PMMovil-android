@@ -197,6 +197,8 @@ internal fun traceFields(result: TraceResultDto, text: (Int, List<Any>) -> Strin
  * «Bloqueada» o «Incompleta». Sale del `estatus_carga` y de las horas de inicio y fin que manda el servidor.
  */
 internal fun loadText(relacion: com.example.pmmovil.data.model.TraceRelacionDto, text: (Int, List<Any>) -> String): String {
+    if (relacion.loadNotRequired) return text(R.string.trace_load_not_required, emptyList())
+
     val finished = formatTraceDate(relacion.loadFinishedAt)
     val who = relacion.loadedBy.trim()
     return when (relacion.estatusCarga.trim().uppercase(Locale.ROOT)) {

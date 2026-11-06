@@ -58,6 +58,7 @@
 
     <!-- Cómo va la carga de una relación (Cargar mercancía). -->
     <string name="trace_load_not_started">Sin cargar</string>
+    <string name="trace_load_not_required">No requiere carga</string>
     <string name="trace_load_loading">Cargándose ahora</string>
     <string name="trace_load_loading_by">Cargándose · %1$s</string>
     <string name="trace_load_paused">En espera (pausada)</string>

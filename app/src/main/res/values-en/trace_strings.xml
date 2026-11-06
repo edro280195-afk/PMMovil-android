@@ -58,6 +58,7 @@
 
     <!-- How the loading of a release is going (Load goods). -->
     <string name="trace_load_not_started">Not loaded</string>
+    <string name="trace_load_not_required">Loading not required</string>
     <string name="trace_load_loading">Loading now</string>
     <string name="trace_load_loading_by">Loading · %1$s</string>
     <string name="trace_load_paused">Paused</string>

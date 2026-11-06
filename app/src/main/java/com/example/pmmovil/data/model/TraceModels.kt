@@ -13,7 +13,7 @@ data class TraceRequest(
 )
 
 data class TraceStationDto(
-    /** `CASETA`, `ENTRADA`, `REVISION`, `RELACION` o `SALIDA`. */
+    /** `CASETA`, `ENTRADA`, `REVISION`, `CARGA`, `RELACION` o `SALIDA`. */
     val id: String = "",
     /** `HECHA`, `EN_CURSO`, `PENDIENTE`, `ATENCION`, `SIN_DATO` o `NO_APLICA`. */
     val state: String = "SIN_DATO",
@@ -62,7 +62,9 @@ data class TraceRelacionDto(
     /** Cuándo se terminó de cargar; `null` si sigue pendiente o en proceso. */
     val loadFinishedAt: String? = null,
     /** Quién tiene tomada la carga; vacío si nadie. */
-    val loadedBy: String = ""
+    val loadedBy: String = "",
+    /** La relación está marcada para omitir el proceso de carga. */
+    val loadNotRequired: Boolean = false
 )
 
 data class TraceBultoDto(
