@@ -88,6 +88,20 @@ class ZebraPrinterService @Inject constructor(
                         return@withContext Result.failure(IOException(problem))
                     }
                 }
+                if (outcome is StatusOutcome.Failed) {
+                    if (outcome.error !is ZebraSilentPrinterException) {
+                        // Sin red, apagada o fuera de alcance: se dice ya, sin gastar otro intento ni dibujar las
+                        // etiquetas para nada.
+                        Log.e(TAG, "Zebra inalcanzable host=$host port=${config.port}", outcome.error)
+                        return@withContext Result.failure(
+                            IOException(mapError(outcome.error, host, config.port, connected = false).userMessage(), outcome.error)
+                        )
+                    }
+                    if (printerKey(config) in printersThatAnsweredStatus) {
+                        Log.w(TAG, "Zebra sin atender tras esperar host=$host port=${config.port}")
+                        return@withContext Result.failure(IOException(BUSY_PRINTER_MESSAGE, outcome.error))
+                    }
+                }
 
                 val reading: Int? = try {
                     requestSgdValue(
@@ -592,25 +606,48 @@ class ZebraPrinterService @Inject constructor(
         port: Int,
         connected: Boolean
     ): ZebraPrintResult {
+        val unreachableAdvice = "Revisa que esté encendida y que esta tableta esté en la misma red que la impresora."
         return when (error) {
             is UnknownHostException ->
                 ZebraPrintResult.InvalidAddress("IP o host invalido para Zebra: $host.")
             is SocketTimeoutException,
             is TimeoutCancellationException ->
-                ZebraPrintResult.Timeout("Tiempo agotado al comunicar con Zebra $host:$port.", error)
+                if (connected) {
+                    ZebraPrintResult.Timeout("Tiempo agotado al comunicar con Zebra $host:$port.", error)
+                } else {
+                    ZebraPrintResult.Timeout(
+                        "No se pudo conectar con la Zebra $host:$port: no contesta en la red. $unreachableAdvice",
+                        error
+                    )
+                }
             is ConnectException ->
-                ZebraPrintResult.ConnectionError("No se pudo conectar a Zebra $host:$port.", error)
+                ZebraPrintResult.ConnectionError(
+                    "No se pudo conectar con la Zebra $host:$port${error.shortReason()}. $unreachableAdvice",
+                    error
+                )
             is NoRouteToHostException ->
-                ZebraPrintResult.ConnectionError("No hay ruta de red hacia Zebra $host:$port.", error)
+                ZebraPrintResult.ConnectionError(
+                    "No hay ruta de red hacia la Zebra $host:$port. $unreachableAdvice",
+                    error
+                )
             is IOException ->
                 if (connected) {
                     ZebraPrintResult.WriteError("Error al enviar ZPL a Zebra $host:$port.", error)
                 } else {
-                    ZebraPrintResult.ConnectionError("Puerto Zebra no disponible en $host:$port.", error)
+                    ZebraPrintResult.ConnectionError(
+                        "Puerto Zebra no disponible en $host:$port. $unreachableAdvice",
+                        error
+                    )
                 }
             else ->
                 ZebraPrintResult.UnknownError("Error inesperado al imprimir en Zebra: ${error.message}", error)
         }
+    }
+
+    /** «(Network is unreachable)» / «(Connection refused)» del sistema, para que el mensaje diga por qué. */
+    private fun Throwable.shortReason(): String {
+        val reason = message?.substringAfterLast("connect failed: ", "")?.trim().orEmpty()
+        return if (reason.isBlank()) "" else " ($reason)"
     }
 
     /** Resultado de preguntarle su estado a la Zebra (`~HS`). */

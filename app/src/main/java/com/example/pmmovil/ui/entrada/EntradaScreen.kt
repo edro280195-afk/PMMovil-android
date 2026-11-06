@@ -15,8 +15,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -33,6 +31,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -152,6 +151,7 @@ import com.example.pmmovil.data.model.EntradaFrequentItem
 import com.example.pmmovil.data.model.EntradaLookupItem
 import com.example.pmmovil.data.model.EntradaPhotoInfo
 import com.example.pmmovil.data.model.ZebraPrinterDto
+import com.example.pmmovil.data.printing.ZebraSendProgress
 import com.example.pmmovil.di.NetworkModule
 import com.example.pmmovil.ui.camera.LocalEvidenceCameraScreen
 import com.example.pmmovil.ui.camera.LocalEvidencePhoto
@@ -193,9 +193,8 @@ fun EntradaScreen(
     crefToLoad: String? = null,
     // true cuando en el modal del listado se eligió «Escanear QR de caseta»: la captura abre directo el lector.
     startWithScan: Boolean = false,
-    // Tras guardar una entrada nueva e imprimir/cancelar las etiquetas del picker automático,
-    // se dispara este callback (ver EntradaUiState.navigateToListEvent). Default = onNavigateBack
-    // para que las rutas que no lo personalizan (p. ej. entrada_editar) no queden sin manejar.
+    // Se usa al terminar la evidencia de una entrada nueva. Default = onNavigateBack
+    // para que las rutas que no lo personalizan (p. ej. entrada_editar) sigan funcionando.
     onNavigateToList: () -> Unit = onNavigateBack,
     viewModel: EntradaViewModel = hiltViewModel()
 ) {
@@ -246,13 +245,6 @@ fun EntradaScreen(
             viewModel.dismissMessage()
         }
     }
-    LaunchedEffect(state.navigateToListEvent) {
-        if (state.navigateToListEvent) {
-            viewModel.consumeNavigateToListEvent()
-            onNavigateToList()
-        }
-    }
-
     // Abre el share sheet nativo de Android con el link de seguimiento --
     // así el revisor lo manda por lo que ya usa (WhatsApp, correo), no algo
     // nuevo que aprender.
@@ -325,7 +317,12 @@ fun EntradaScreen(
                     title = {
                         Column {
                             Text(
-                                if (state.isEditMode) "Editar Entrada" else "Nueva Entrada",
+                                when (state.workflowStage) {
+                                    EntradaWorkflowStage.PRINT_LABELS -> "Entrada guardada"
+                                    EntradaWorkflowStage.TAKE_PHOTOS -> "Finalizar recepción"
+                                    EntradaWorkflowStage.COMPLETE -> "Recepción lista"
+                                    null -> if (state.isEditMode) "Editar Entrada" else "Nueva Entrada"
+                                },
                                 fontWeight = FontWeight.Black
                             )
                             Text(
@@ -341,13 +338,13 @@ fun EntradaScreen(
                         }
                     },
                     actions = {
-                        if (state.lastDraftSavedAt != null) {
+                        if (state.workflowStage == null && state.lastDraftSavedAt != null) {
                             Icon(Icons.Default.CloudDone, null, tint = PmmYellow)
                             Spacer(Modifier.width(8.dp))
                         }
                         // Solo tiene sentido compartir una entrada que ya existe --
                         // una nueva sin guardar todavía no tiene cref que enlazar.
-                        if (state.isEditMode) {
+                        if (state.workflowStage == null && state.isEditMode) {
                             IconButton(onClick = viewModel::compartirEntrada, enabled = !state.isSharingLink) {
                                 if (state.isSharingLink) {
                                     CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
@@ -356,8 +353,10 @@ fun EntradaScreen(
                                 }
                             }
                         }
-                        IconButton(onClick = requestNewEntry, enabled = state.puedeAgregar) {
-                            Icon(Icons.Default.Refresh, "Nueva entrada")
+                        if (state.workflowStage == null) {
+                            IconButton(onClick = requestNewEntry, enabled = state.puedeAgregar) {
+                                Icon(Icons.Default.Refresh, "Nueva entrada")
+                            }
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
@@ -370,11 +369,21 @@ fun EntradaScreen(
             }
         },
         bottomBar = {
-            EntradaBottomBar(
-                state = state,
-                onPrimary = viewModel::executePrimaryAction,
-                onPrint = viewModel::requestPrint
-            )
+            if (state.workflowStage == null) {
+                EntradaBottomBar(
+                    state = state,
+                    onPrimary = viewModel::executePrimaryAction,
+                    onPrint = viewModel::requestPrint
+                )
+            } else {
+                EntradaWorkflowBottomBar(
+                    state = state,
+                    onPrint = viewModel::requestPrint,
+                    onTakePhotos = { showCamera = true },
+                    onSavePhotos = viewModel::executePrimaryAction,
+                    onFinish = onNavigateToList
+                )
+            }
         },
         snackbarHost = { PmmSnackbarHost(snackbar) }
     ) { padding ->
@@ -386,8 +395,14 @@ fun EntradaScreen(
                 // vuelve a sumarla encima del teclado y queda un bloque en blanco tapando parte de la pantalla.
                 .consumeWindowInsets(padding)
         ) {
-            val tabletLandscape = maxWidth >= 840.dp
-            if (tabletLandscape) {
+            if (state.workflowStage != null) {
+                EntradaWorkflowContent(
+                    state = state,
+                    viewModel = viewModel,
+                    onTakePhoto = { showCamera = true },
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else if (maxWidth >= 840.dp) {
                 Row(Modifier.fillMaxSize()) {
                     EntradaSidePanel(
                         state = state,
@@ -465,7 +480,13 @@ fun EntradaScreen(
             pickerState = picker,
             isBusy = state.isBusy,
             onDismiss = viewModel::dismissPrinterPicker,
-            onPrint = viewModel::printToSelectedPrinter
+            onPrint = viewModel::printToSelectedPrinter,
+            // Recién guardada la entrada, una impresora caída no debe detener la recepción.
+            onSkip = if (state.workflowStage == EntradaWorkflowStage.PRINT_LABELS) {
+                viewModel::skipPrinting
+            } else {
+                null
+            }
         )
     }
     state.galleryOpenIndex?.let { startIndex ->
@@ -495,7 +516,8 @@ private fun PrinterPickerDialog(
     pickerState: EntradaPrinterPickerState,
     isBusy: Boolean,
     onDismiss: () -> Unit,
-    onPrint: (ZebraPrinterDto) -> Unit
+    onPrint: (ZebraPrinterDto) -> Unit,
+    onSkip: (() -> Unit)? = null
 ) {
     var selectedPrinter by remember(pickerState.printers) {
         mutableStateOf(pickerState.printers.first())
@@ -565,11 +587,57 @@ private fun PrinterPickerDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !isBusy) {
-                Text("Cancelar")
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (onSkip != null) {
+                    TextButton(onClick = onSkip, enabled = !isBusy) {
+                        Text("Continuar sin imprimir")
+                    }
+                }
+                TextButton(onClick = onDismiss, enabled = !isBusy) {
+                    Text("Cancelar")
+                }
             }
         }
     )
+}
+
+/** Círculo de espera con lo que está pasando con la impresora, para que nadie crea que la app se congeló. */
+@Composable
+private fun BusyOverlayContent(progress: ZebraSendProgress?) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.padding(24.dp)
+    ) {
+        CircularProgressIndicator(color = PmmBlueDeep)
+        val lines = when (progress) {
+            is ZebraSendProgress.Preparing ->
+                listOf(
+                    "Preparando etiquetas… ${progress.done} de ${progress.total}",
+                    "Se envían a la impresora en cuanto estén listas."
+                )
+            is ZebraSendProgress.WaitingForPrinter ->
+                listOf(
+                    "Esperando turno de la impresora…",
+                    "Otra tableta o un lote anterior la está usando (${progress.waitedSeconds} s)."
+                )
+            is ZebraSendProgress.Sending ->
+                listOf(
+                    "Enviando etiquetas a la impresora… ${progress.percent} %",
+                    "${progress.labelsSent} de ${progress.labelCount} entregadas. No cierres la pantalla."
+                )
+            null -> emptyList()
+        }
+        lines.forEachIndexed { index, line ->
+            Text(
+                text = line,
+                color = if (index == 0) PmmTextPrimary else PmmTextSecondary,
+                fontSize = if (index == 0) 14.sp else 12.sp,
+                fontWeight = if (index == 0) FontWeight.Black else FontWeight.SemiBold,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
 }
 
 @Composable
@@ -977,7 +1045,7 @@ private fun EntradaFormContent(
                         .background(Color.White.copy(alpha = 0.58f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    CircularProgressIndicator(color = PmmBlueDeep)
+                    BusyOverlayContent(state.printProgress)
                 }
             }
         }
@@ -2216,99 +2284,513 @@ private fun ZoomableImage(model: Any, modifier: Modifier = Modifier) {
 }
 
 @Composable
-@OptIn(ExperimentalLayoutApi::class)
 private fun EntradaBottomBar(
     state: EntradaUiState,
     onPrimary: () -> Unit,
     onPrint: () -> Unit
 ) {
     val form = state.form
+    val hasLocalPhotos = form.localPhotoPaths.isNotEmpty() || form.localDamagePhotoPaths.isNotEmpty()
     val label = when {
         state.isBusy -> "Procesando..."
         state.consecutiveGenerated && form.ref4.isBlank() -> "Entrada ya generada"
         state.isEditMode -> "Actualizar"
         form.ref4.isBlank() -> "Generar entrada"
-        form.isExisting && form.localPhotoPaths.isNotEmpty() -> "Guardar fotografías"
+        form.isExisting && hasLocalPhotos -> "Guardar fotografías"
         form.isExisting -> "Imprimir etiquetas"
         else -> "Guardar recepción"
     }
     val showPrintButton = form.isExisting && label != "Imprimir etiquetas"
     val canExecutePrimary = !state.isBusy && !(state.consecutiveGenerated && form.ref4.isBlank()) &&
         when {
-            state.isEditMode || form.isExisting -> state.puedeModificar
+            state.isEditMode -> state.puedeModificar
+            form.isExisting && hasLocalPhotos -> state.puedeAgregar
+            form.isExisting -> state.puedeModificar
             else -> state.puedeAgregar
         }
     Surface(
         color = PmmBgSurface,
-        shadowElevation = 12.dp,
+        shadowElevation = 8.dp,
         border = BorderStroke(1.dp, PmmNavyBorder)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    form.referenceDisplay(),
-                    color = PmmTextPrimary,
-                    fontWeight = FontWeight.Black,
-                    fontSize = 13.sp
-                )
-                Text(
-                    "${form.detalles.size} conceptos · ${form.localPhotoPaths.size + state.remotePhotos.size} fotos",
-                    color = PmmTextSecondary,
-                    fontSize = 10.sp
-                )
-            }
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                if (showPrintButton) {
-                    OutlinedButton(
-                        onClick = onPrint,
-                        enabled = !state.isBusy,
-                        shape = RoundedCornerShape(13.dp)
-                    ) {
-                        Icon(Icons.Default.Print, null)
-                        Spacer(Modifier.width(7.dp))
-                        Text("Imprimir", fontWeight = FontWeight.Black)
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val compactPhone = maxWidth < 380.dp
+            val wideLayout = maxWidth >= 600.dp
+            val summary = entradaFooterSummary(state)
+            if (wideLayout) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 20.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = summary,
+                        color = PmmTextSecondary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (showPrintButton) {
+                            OutlinedButton(
+                                onClick = onPrint,
+                                enabled = !state.isBusy,
+                                modifier = Modifier.heightIn(min = 48.dp),
+                                shape = RoundedCornerShape(13.dp)
+                            ) {
+                                Icon(Icons.Default.Print, contentDescription = null)
+                                Spacer(Modifier.width(7.dp))
+                                Text("Imprimir", fontWeight = FontWeight.Black)
+                            }
+                        }
+                        EntradaPrimaryActionButton(
+                            label = label,
+                            enabled = canExecutePrimary,
+                            isBusy = state.isBusy,
+                            onClick = onPrimary,
+                            modifier = Modifier.heightIn(min = 48.dp)
+                        )
                     }
                 }
-                Button(
-                    onClick = onPrimary,
-                    enabled = canExecutePrimary,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = PmmYellow,
-                        contentColor = PmmNavyDark
-                    ),
-                    shape = RoundedCornerShape(13.dp)
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = if (compactPhone) 12.dp else 16.dp, vertical = 7.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
-                    if (state.isBusy) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                            color = PmmNavyDark
-                        )
-                    } else {
-                        Icon(Icons.Default.CheckCircle, null)
-                    }
-                    Spacer(Modifier.width(7.dp))
                     Text(
-                        label,
-                        fontWeight = FontWeight.Black,
+                        text = summary,
+                        color = PmmTextSecondary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (showPrintButton && compactPhone) {
+                            IconButton(
+                                onClick = onPrint,
+                                enabled = !state.isBusy,
+                                modifier = Modifier.size(48.dp)
+                            ) {
+                                Icon(Icons.Default.Print, contentDescription = "Imprimir etiquetas")
+                            }
+                        } else if (showPrintButton) {
+                            OutlinedButton(
+                                onClick = onPrint,
+                                enabled = !state.isBusy,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 48.dp),
+                                shape = RoundedCornerShape(13.dp)
+                            ) {
+                                Icon(Icons.Default.Print, contentDescription = null)
+                                Spacer(Modifier.width(7.dp))
+                                Text("Imprimir", fontWeight = FontWeight.Black, maxLines = 1)
+                            }
+                        }
+                        EntradaPrimaryActionButton(
+                            label = label,
+                            enabled = canExecutePrimary,
+                            isBusy = state.isBusy,
+                            onClick = onPrimary,
+                            modifier = Modifier
+                                .weight(if (showPrintButton && compactPhone) 1.0f else 1.2f)
+                                .heightIn(min = 48.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EntradaPrimaryActionButton(
+    label: String,
+    enabled: Boolean,
+    isBusy: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = PmmYellow,
+            contentColor = PmmNavyDark
+        ),
+        shape = RoundedCornerShape(13.dp)
+    ) {
+        if (isBusy) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(18.dp),
+                strokeWidth = 2.dp,
+                color = PmmNavyDark
+            )
+        } else {
+            Icon(Icons.Default.CheckCircle, contentDescription = null)
+        }
+        Spacer(Modifier.width(7.dp))
+        Text(
+            label,
+            fontWeight = FontWeight.Black,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun EntradaWorkflowBottomBar(
+    state: EntradaUiState,
+    onPrint: () -> Unit,
+    onTakePhotos: () -> Unit,
+    onSavePhotos: () -> Unit,
+    onFinish: () -> Unit
+) {
+    val stage = state.workflowStage ?: return
+    val hasLocalPhotos = state.form.localPhotoPaths.isNotEmpty() || state.form.localDamagePhotoPaths.isNotEmpty()
+    val label = when (stage) {
+        EntradaWorkflowStage.PRINT_LABELS -> "Imprimir etiquetas"
+        EntradaWorkflowStage.TAKE_PHOTOS -> if (hasLocalPhotos) "Guardar fotografías" else "Tomar fotos"
+        EntradaWorkflowStage.COMPLETE -> "Finalizar y volver"
+    }
+    val enabled = !state.isBusy && when (stage) {
+        EntradaWorkflowStage.PRINT_LABELS -> state.puedeAgregar || state.puedeModificar
+        EntradaWorkflowStage.TAKE_PHOTOS -> state.puedeAgregar
+        EntradaWorkflowStage.COMPLETE -> true
+    }
+    val onPrimary = when (stage) {
+        EntradaWorkflowStage.PRINT_LABELS -> onPrint
+        EntradaWorkflowStage.TAKE_PHOTOS -> if (hasLocalPhotos) onSavePhotos else onTakePhotos
+        EntradaWorkflowStage.COMPLETE -> onFinish
+    }
+    val icon = when (stage) {
+        EntradaWorkflowStage.PRINT_LABELS -> Icons.Default.Print
+        EntradaWorkflowStage.TAKE_PHOTOS -> if (hasLocalPhotos) Icons.Default.Check else Icons.Default.CameraAlt
+        EntradaWorkflowStage.COMPLETE -> Icons.Default.CheckCircle
+    }
+    val photos = entradaEvidencePhotoCount(state)
+    val summary = when (stage) {
+        EntradaWorkflowStage.PRINT_LABELS -> "${entradaConceptCount(state.form.detalles.size)} · ${workflowPendingPhotoSummary(photos)}"
+        EntradaWorkflowStage.TAKE_PHOTOS -> "${entradaConceptCount(state.form.detalles.size)} · ${entradaPhotoCount(photos)} capturadas"
+        EntradaWorkflowStage.COMPLETE -> "${entradaConceptCount(state.form.detalles.size)} · evidencia guardada"
+    }
+
+    Surface(
+        color = PmmBgSurface,
+        shadowElevation = 8.dp,
+        border = BorderStroke(1.dp, PmmNavyBorder)
+    ) {
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            if (maxWidth >= 600.dp) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 20.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        summary,
+                        modifier = Modifier.weight(1f),
+                        color = PmmTextSecondary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    EntradaWorkflowButton(label, icon, enabled, state.isBusy, onPrimary, Modifier.widthIn(min = 220.dp))
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 7.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Text(
+                        summary,
+                        color = PmmTextSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    EntradaWorkflowButton(
+                        label = label,
+                        icon = icon,
+                        enabled = enabled,
+                        isBusy = state.isBusy,
+                        onClick = onPrimary,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }
         }
     }
 }
+
+@Composable
+private fun EntradaWorkflowButton(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    enabled: Boolean,
+    isBusy: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.heightIn(min = 48.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = PmmYellow,
+            contentColor = PmmNavyDark
+        ),
+        shape = RoundedCornerShape(13.dp)
+    ) {
+        if (isBusy) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(18.dp),
+                strokeWidth = 2.dp,
+                color = PmmNavyDark
+            )
+        } else {
+            Icon(icon, contentDescription = null)
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(label, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun EntradaWorkflowContent(
+    state: EntradaUiState,
+    viewModel: EntradaViewModel,
+    onTakePhoto: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val stage = state.workflowStage ?: return
+    val photoCount = entradaEvidencePhotoCount(state)
+    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 760.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            EntradaWorkflowProgress(stage)
+            EntradaWorkflowStatus(stage)
+            val cardTitle = when (stage) {
+                EntradaWorkflowStage.PRINT_LABELS -> "Imprime las etiquetas"
+                EntradaWorkflowStage.TAKE_PHOTOS -> "Toma las fotos"
+                EntradaWorkflowStage.COMPLETE -> "Recepción lista"
+            }
+            val cardIcon = when (stage) {
+                EntradaWorkflowStage.PRINT_LABELS -> Icons.Default.Print
+                EntradaWorkflowStage.TAKE_PHOTOS -> Icons.Default.CameraAlt
+                EntradaWorkflowStage.COMPLETE -> Icons.Default.CheckCircle
+            }
+            FormCard(title = cardTitle, icon = cardIcon) {
+                val detail = when (stage) {
+                    EntradaWorkflowStage.PRINT_LABELS ->
+                        "Coloca una etiqueta en cada bulto. Al terminar, vuelve aquí para fotografiar la mercancía."
+                    EntradaWorkflowStage.TAKE_PHOTOS ->
+                        "Pega primero las etiquetas en los bultos. Después fotografía la mercancía para dejar evidencia."
+                    EntradaWorkflowStage.COMPLETE ->
+                        "La recepción quedó registrada y las fotografías están listas para sincronizar."
+                }
+                Text(detail, color = PmmTextSecondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                HorizontalDivider(color = PmmNavyBorder)
+                EntradaWorkflowSummaryLine("Referencia", state.form.referenceDisplay())
+                EntradaWorkflowSummaryLine("Cliente", state.form.nomCliente.ifBlank { "Sin cliente" })
+                EntradaWorkflowSummaryLine("Mercancía", entradaConceptCount(state.form.detalles.size))
+                when (stage) {
+                    EntradaWorkflowStage.PRINT_LABELS ->
+                        EntradaWorkflowSummaryLine("Evidencia", workflowPendingPhotoSummary(photoCount))
+                    EntradaWorkflowStage.TAKE_PHOTOS ->
+                        EntradaWorkflowSummaryLine("Evidencia", "${entradaPhotoCount(photoCount)} capturadas")
+                    EntradaWorkflowStage.COMPLETE ->
+                        EntradaWorkflowSummaryLine("Evidencia", "Guardada en la cola de sincronización")
+                }
+                if (stage == EntradaWorkflowStage.PRINT_LABELS) {
+                    // Si la impresora falla o no está, la recepción sigue: las etiquetas se sacan después.
+                    OutlinedButton(
+                        onClick = viewModel::skipPrinting,
+                        enabled = !state.isBusy,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp),
+                        shape = RoundedCornerShape(13.dp)
+                    ) {
+                        Text("Continuar sin imprimir", fontWeight = FontWeight.Black)
+                    }
+                }
+                if (stage != EntradaWorkflowStage.PRINT_LABELS) {
+                    PhotoStrip(state, viewModel)
+                    if (stage == EntradaWorkflowStage.TAKE_PHOTOS && (state.form.localPhotoPaths.isNotEmpty() || state.form.localDamagePhotoPaths.isNotEmpty())) {
+                        OutlinedButton(
+                            onClick = onTakePhoto,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp),
+                            shape = RoundedCornerShape(13.dp)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Agregar más fotos", fontWeight = FontWeight.Black)
+                        }
+                    }
+                }
+            }
+        }
+        if (state.isBusy) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.White.copy(alpha = 0.58f)),
+                contentAlignment = Alignment.Center
+            ) {
+                BusyOverlayContent(state.printProgress)
+            }
+        }
+    }
+}
+
+@Composable
+private fun EntradaWorkflowProgress(stage: EntradaWorkflowStage) {
+    val activeIndex = when (stage) {
+        EntradaWorkflowStage.PRINT_LABELS -> 1
+        EntradaWorkflowStage.TAKE_PHOTOS -> 2
+        EntradaWorkflowStage.COMPLETE -> 2
+    }
+    val labels = listOf("Datos", "Etiquetas", "Fotos")
+    Surface(
+        color = PmmBgSurface,
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, PmmNavyBorder)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            labels.forEachIndexed { index, label ->
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    StepBadge(
+                        number = index + 1,
+                        complete = index < activeIndex || stage == EntradaWorkflowStage.COMPLETE,
+                        highlighted = index == activeIndex && stage != EntradaWorkflowStage.COMPLETE,
+                        size = 28.dp
+                    )
+                    Text(
+                        label,
+                        color = when {
+                            index < activeIndex || stage == EntradaWorkflowStage.COMPLETE -> PmmGreenDark
+                            index == activeIndex -> PmmBlueDeep
+                            else -> PmmTextSecondary
+                        },
+                        fontSize = 11.sp,
+                        fontWeight = if (index == activeIndex) FontWeight.Black else FontWeight.Bold,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EntradaWorkflowStatus(stage: EntradaWorkflowStage) {
+    val message = when (stage) {
+        EntradaWorkflowStage.PRINT_LABELS -> "Datos guardados correctamente"
+        EntradaWorkflowStage.TAKE_PHOTOS -> "Etiquetas enviadas a imprimir"
+        EntradaWorkflowStage.COMPLETE -> "Fotos guardadas y listas para sincronizar"
+    }
+    Surface(
+        color = PmmGreen.copy(alpha = 0.1f),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, PmmGreen.copy(alpha = 0.35f))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(9.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .background(PmmGreen),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
+            }
+            Text(message, color = PmmGreenDark, fontSize = 12.sp, fontWeight = FontWeight.Black)
+        }
+    }
+}
+
+@Composable
+private fun EntradaWorkflowSummaryLine(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, color = PmmTextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text(
+            value,
+            modifier = Modifier.weight(1f),
+            color = PmmTextPrimary,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Black,
+            textAlign = TextAlign.End,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+private fun entradaEvidencePhotoCount(state: EntradaUiState): Int =
+    state.form.localPhotoPaths.size + state.queuedPhotos.size + state.remotePhotos.size
+
+private fun entradaConceptCount(count: Int): String =
+    "$count ${if (count == 1) "concepto" else "conceptos"}"
+
+private fun entradaPhotoCount(count: Int): String =
+    "$count ${if (count == 1) "foto" else "fotos"}"
+
+private fun workflowPendingPhotoSummary(count: Int): String =
+    if (count == 0) "0 fotos por tomar" else "${entradaPhotoCount(count)} registradas"
+
+private fun entradaFooterSummary(state: EntradaUiState): String =
+    "${entradaConceptCount(state.form.detalles.size)} · ${entradaPhotoCount(entradaEvidencePhotoCount(state))}"
 
 @Composable
 private fun FormCard(

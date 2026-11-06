@@ -25,7 +25,9 @@ import com.example.pmmovil.data.preferences.EntradaDraftStore
 import com.example.pmmovil.data.printing.LabelQrUnavailableException
 import com.example.pmmovil.data.printing.LabelZplFactory
 import com.example.pmmovil.data.printing.ZebraPrinterPreferences
+import com.example.pmmovil.data.printing.ZebraPrintResult
 import com.example.pmmovil.data.printing.ZebraPrinterService
+import com.example.pmmovil.data.printing.ZebraSendProgress
 import com.example.pmmovil.data.printing.ZebraZplBuilder
 import com.example.pmmovil.data.repository.AuthRepository
 import com.example.pmmovil.data.repository.EntradaRepository
@@ -53,12 +55,14 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 enum class EntradaLookupType { CUSTOMER, TRANSPORT, BOX }
 enum class EntradaScanStatus { READY, SCANNING, SUCCESS, ERROR, DUPLICATE }
+enum class EntradaWorkflowStage { PRINT_LABELS, TAKE_PHOTOS, COMPLETE }
 
 /** Cómo arrancó la captura: con el QR de caseta ya leído, o a mano. La elección se hace en el modal del listado. */
 enum class EntradaEntryMode { SCAN, MANUAL }
@@ -68,17 +72,14 @@ data class EntradaPrinterPickerState(
     val printers: List<ZebraPrinterDto>,
     val defaultPrinterId: Int? = null,
     val messagePrefix: String? = null,
-    val catalogMessage: String? = null,
-    // true solo para el picker que se abre automáticamente justo después de guardar una
-    // entrada nueva: al imprimir o cancelar ahí, se regresa al listado de entradas.
-    // false para reimpresiones manuales posteriores (requestPrint), donde el usuario
-    // sigue revisando/editando la entrada y no debe salir de la pantalla.
-    val autoNavigateOnComplete: Boolean = false
+    val catalogMessage: String? = null
 )
 
 data class EntradaUiState(
     val isLoading: Boolean = true,
     val isBusy: Boolean = false,
+    /** Avance del envío a la Zebra (espera de turno o % enviado); null cuando no se está imprimiendo. */
+    val printProgress: ZebraSendProgress? = null,
     val puedeAgregar: Boolean = false,
     val puedeModificar: Boolean = false,
     val puedeBorrar: Boolean = false,
@@ -113,7 +114,7 @@ data class EntradaUiState(
     val lastDraftSavedAt: Long? = null,
     val isEditMode: Boolean = false,
     val consecutiveGenerated: Boolean = false,
-    val navigateToListEvent: Boolean = false,
+    val workflowStage: EntradaWorkflowStage? = null,
     val savingProgress: SavingProgressState = SavingProgressState(),
     val isSharingLink: Boolean = false,
     /** Evento de un solo uso: al llenarse, la pantalla abre el share sheet nativo y lo consume. */
@@ -343,7 +344,8 @@ class EntradaViewModel @Inject constructor(
             printerPicker = null,
             message = null,
             isEditMode = false,
-            consecutiveGenerated = false
+            consecutiveGenerated = false,
+            workflowStage = null
         )
     }
 
@@ -356,6 +358,7 @@ class EntradaViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(
             form = draft.form,
             showDraftRecovery = false,
+            workflowStage = null,
             section = firstIncompleteSection(draft.form),
             consecutiveGenerated = draft.form.ref4.isNotBlank() || draft.form.isExisting,
             entryStartMode = if (draft.form.casetaId != null) {
@@ -454,7 +457,11 @@ class EntradaViewModel @Inject constructor(
         val reference = _uiState.value.form.ref4.trim()
         if (reference.isBlank() || _uiState.value.isBusy) return
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isBusy = true, message = null)
+            _uiState.value = _uiState.value.copy(
+                isBusy = true,
+                message = null,
+                workflowStage = null
+            )
             repository.getReference(reference)
                 .onSuccess(::applyReference)
                 .onFailure { error ->
@@ -474,7 +481,11 @@ class EntradaViewModel @Inject constructor(
         val reference = cref.trim()
         if (reference.isBlank() || _uiState.value.isBusy) return
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isBusy = true, message = null)
+            _uiState.value = _uiState.value.copy(
+                isBusy = true,
+                message = null,
+                workflowStage = null
+            )
             repository.getReference(reference)
                 .onSuccess { response ->
                     applyReference(response)
@@ -543,6 +554,7 @@ class EntradaViewModel @Inject constructor(
             isBusy = false,
             form = form,
             isEditMode = true,
+            workflowStage = null,
             section = EntradaSection.ARRIVAL,
             entryStartMode = EntradaEntryMode.MANUAL,
             message = "Entrada cargada correctamente."
@@ -1014,6 +1026,7 @@ class EntradaViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(
                 isBusy = false,
                 form = savedForm,
+                workflowStage = EntradaWorkflowStage.PRINT_LABELS,
                 drafts = draftStore.loadAll(),
                 message = saveMessage,
                 savingProgress = _uiState.value.savingProgress.copy(
@@ -1030,7 +1043,7 @@ class EntradaViewModel @Inject constructor(
             observeQueuedPhotos(savedForm.reference())
             delay(1400)
             _uiState.value = _uiState.value.copy(savingProgress = SavingProgressState(isVisible = false))
-            openPrinterPicker(savedForm, saveMessage, autoNavigateOnComplete = true)
+            openPrinterPicker(savedForm, saveMessage)
         }
     }
 
@@ -1117,9 +1130,12 @@ class EntradaViewModel @Inject constructor(
     }
 
     fun requestPrint() {
-        val form = _uiState.value.form
-        if (form.ref4.isBlank() || _uiState.value.isBusy) return
-        if (!canEdit()) {
+        val currentState = _uiState.value
+        val form = currentState.form
+        if (form.ref4.isBlank() || currentState.isBusy) return
+        val canPrint = canEdit() ||
+            (currentState.workflowStage == EntradaWorkflowStage.PRINT_LABELS && canCreate())
+        if (!canPrint) {
             denyEdit()
             return
         }
@@ -1129,11 +1145,7 @@ class EntradaViewModel @Inject constructor(
     }
 
     fun dismissPrinterPicker() {
-        val picker = _uiState.value.printerPicker
-        _uiState.value = _uiState.value.copy(
-            printerPicker = null,
-            navigateToListEvent = picker?.autoNavigateOnComplete == true
-        )
+        _uiState.value = _uiState.value.copy(printerPicker = null)
     }
 
     fun printToSelectedPrinter(printer: ZebraPrinterDto) {
@@ -1143,29 +1155,72 @@ class EntradaViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(
                 isBusy = true,
                 printerPicker = null,
+                printProgress = null,
                 message = null
             )
-            val printMessage = sendZebraLabels(picker.form, printer)
-            _uiState.value = _uiState.value.copy(
-                isBusy = false,
-                message = listOfNotNull(
-                    picker.messagePrefix?.takeIf(String::isNotBlank),
-                    printMessage.takeIf(String::isNotBlank)
-                ).joinToString("\n"),
-                navigateToListEvent = picker.autoNavigateOnComplete
-            )
+            val printResult = sendZebraLabels(picker.form, printer) { progress ->
+                // Llega desde el hilo de red: update es atómico y no pisa lo que cambie la pantalla.
+                _uiState.update { it.copy(printProgress = progress) }
+            }
+            val currentState = _uiState.value
+            if (printResult.isSuccess) {
+                _uiState.value = currentState.copy(
+                    isBusy = false,
+                    printProgress = null,
+                    message = listOfNotNull(
+                        picker.messagePrefix?.takeIf(String::isNotBlank),
+                        printResult.userMessage().takeIf(String::isNotBlank)
+                    ).joinToString("\n"),
+                    workflowStage = if (currentState.workflowStage == EntradaWorkflowStage.PRINT_LABELS) {
+                        EntradaWorkflowStage.TAKE_PHOTOS
+                    } else {
+                        currentState.workflowStage
+                    }
+                )
+            } else {
+                // Una impresora caída no debe frenar la recepción: se vuelve a abrir el selector con el motivo para
+                // reintentar, elegir otra Zebra o seguir sin imprimir (las etiquetas se pueden sacar después).
+                val reason = printResult.userMessage()
+                _uiState.value = currentState.copy(
+                    isBusy = false,
+                    printProgress = null,
+                    message = null,
+                    printerPicker = picker.copy(
+                        messagePrefix = null,
+                        catalogMessage = if (reason.startsWith("No se imprimió")) {
+                            reason
+                        } else {
+                            "No se imprimió en ${printer.displayName}. $reason"
+                        }
+                    )
+                )
+            }
         }
     }
 
-    /** El composable consume el evento (navega) y lo apaga aquí para que no se dispare de nuevo. */
-    fun consumeNavigateToListEvent() {
-        _uiState.value = _uiState.value.copy(navigateToListEvent = false)
+    /**
+     * Deja pasar la recepción a las fotos sin haber impreso las etiquetas. La entrada ya está guardada, y las etiquetas
+     * se pueden sacar después con «Imprimir» al abrirla; lo que no puede pasar es que una impresora caída detenga el
+     * trabajo de la bodega.
+     */
+    fun skipPrinting() {
+        val current = _uiState.value
+        if (current.isBusy) return
+        _uiState.value = current.copy(
+            printerPicker = null,
+            printProgress = null,
+            workflowStage = if (current.workflowStage == EntradaWorkflowStage.PRINT_LABELS) {
+                EntradaWorkflowStage.TAKE_PHOTOS
+            } else {
+                current.workflowStage
+            },
+            message = "Las etiquetas quedaron pendientes: imprímelas después abriendo esta entrada."
+        )
     }
 
     private suspend fun openPrinterPicker(
         form: EntradaFormSnapshot,
-        messagePrefix: String?,
-        autoNavigateOnComplete: Boolean = false
+        messagePrefix: String?
     ) {
         _uiState.value = _uiState.value.copy(
             isBusy = true,
@@ -1208,8 +1263,7 @@ class EntradaViewModel @Inject constructor(
                 message = listOfNotNull(
                     messagePrefix?.takeIf(String::isNotBlank),
                     catalogMessage ?: "Configura al menos una impresora Zebra."
-                ).joinToString("\n"),
-                navigateToListEvent = autoNavigateOnComplete
+                ).joinToString("\n")
             )
             return
         }
@@ -1221,8 +1275,7 @@ class EntradaViewModel @Inject constructor(
                 printers = printers,
                 defaultPrinterId = localDefault?.id ?: localConfig.printerId,
                 messagePrefix = messagePrefix,
-                catalogMessage = catalogMessage,
-                autoNavigateOnComplete = autoNavigateOnComplete
+                catalogMessage = catalogMessage
             )
         )
     }
@@ -1233,27 +1286,37 @@ class EntradaViewModel @Inject constructor(
 
     private suspend fun sendZebraLabels(
         form: EntradaFormSnapshot,
-        printer: ZebraPrinterDto
-    ): String {
+        printer: ZebraPrinterDto,
+        onProgress: ((ZebraSendProgress) -> Unit)? = null
+    ): ZebraPrintResult {
         val config = printer.toConfig()
         val labels = ZebraZplBuilder.fromEntradaForm(form)
         val result = if (BuildConfig.USE_IMAGE_LABELS) {
             // Etiqueta renderizada como imagen (^GF): mismo socket, mismo modo que el ZPL de texto.
-            val resolution = zebraPrinterService.readPrintheadResolutionDpi(config)
-            val targetDpi = resolution.getOrNull()
-                ?: return "No se imprimió: ${resolution.exceptionOrNull()?.message ?: "no se pudo leer la resolución de la Zebra."}"
+            val resolution = zebraPrinterService.readPrintheadResolutionDpi(config, onProgress)
+            val targetDpi = resolution.getOrNull() ?: return ZebraPrintResult.UnknownError(
+                "No se imprimió: ${resolution.exceptionOrNull()?.message ?: "no se pudo leer la resolución de la Zebra."}"
+            )
             val zpl = try {
-                labelZplFactory.buildLabels(labels, targetDpi = targetDpi)
+                labelZplFactory.buildLabels(
+                    labels,
+                    targetDpi = targetDpi,
+                    onLabelRendered = { done, total ->
+                        onProgress?.invoke(ZebraSendProgress.Preparing(done, total))
+                    }
+                )
             } catch (error: LabelQrUnavailableException) {
                 // Antes la etiqueta salía sin QR en silencio. Ahora el lote se detiene antes de tocar la impresora.
-                return "No se imprimió ninguna etiqueta: no se pudo generar un QR legible para \"${error.qrValue}\"."
+                return ZebraPrintResult.UnknownError(
+                    "No se imprimió ninguna etiqueta: no se pudo generar un QR legible para \"${error.qrValue}\"."
+                )
             }
             val labelCount = labels.sumOf { it.copies.coerceAtLeast(1) }
-            zebraPrinterService.printZpl(config, zpl, labelCount)
+            zebraPrinterService.printZpl(config, zpl, labelCount, onProgress)
         } else {
-            zebraPrinterService.printLabels(config, labels)
+            zebraPrinterService.printLabels(config, labels, onProgress)
         }
-        return result.userMessage()
+        return result
     }
 
     private fun uploadPhotos() {
@@ -1295,6 +1358,11 @@ class EntradaViewModel @Inject constructor(
             observeQueuedPhotos(reference)
             _uiState.value = _uiState.value.copy(
                 isBusy = false,
+                workflowStage = if (_uiState.value.workflowStage == EntradaWorkflowStage.TAKE_PHOTOS) {
+                    EntradaWorkflowStage.COMPLETE
+                } else {
+                    _uiState.value.workflowStage
+                },
                 message = "${evidenceCount + damageCount} fotos quedaron en cola para sincronizar."
             )
         }
