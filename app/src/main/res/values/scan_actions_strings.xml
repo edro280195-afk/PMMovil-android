@@ -4,7 +4,6 @@
     <string name="scan_actions_title">Lo que leí</string>
     <string name="scan_actions_subtitle">Elige qué quieres hacer</string>
     <string name="scan_actions_back">Volver</string>
-    <string name="scan_actions_read_only">Leer no registra nada: solo se abre la pantalla que elijas.</string>
     <string name="scan_actions_none">Tu puesto no tiene acciones para este código.</string>
     <string name="scan_actions_section">Acciones</string>
 

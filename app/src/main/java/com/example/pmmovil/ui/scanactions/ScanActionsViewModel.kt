@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.pmmovil.data.model.TraceResultDto
+import com.example.pmmovil.data.preferences.ModePreferences
 import com.example.pmmovil.data.preferences.LastScanStore
 import com.example.pmmovil.data.repository.AuthRepository
 import com.example.pmmovil.data.repository.TraceOutcome
@@ -102,7 +103,8 @@ class ScanActionsViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val authRepository: AuthRepository,
     private val traceRepository: TraceRepository,
-    private val lastScanStore: LastScanStore
+    private val lastScanStore: LastScanStore,
+    private val modePreferences: ModePreferences
 ) : ViewModel() {
 
     // Sin código en la ruta es un gafete: ScanActionsRoute.forScan lo omite a propósito para que la credencial no
@@ -127,6 +129,14 @@ class ScanActionsViewModel @Inject constructor(
     /** Vuelve a pedir la ficha cuando la anterior no se pudo consultar. */
     fun retry() {
         if (_state.value.trace == TraceUiState.Unavailable) load()
+    }
+
+    /** El modo elegido antes para esta entrada, o el modo normal si todavía no eligió uno. */
+    fun lastModeFor(reference: String): ModePreferences.Mode = modePreferences.get(reference)
+
+    /** Guarda la elección que hizo el usuario para sugerirla la próxima vez que abra esta entrada. */
+    fun rememberMode(reference: String, mode: ModePreferences.Mode) {
+        modePreferences.set(reference, mode)
     }
 
     private fun initialState(): ScanActionsUiState =

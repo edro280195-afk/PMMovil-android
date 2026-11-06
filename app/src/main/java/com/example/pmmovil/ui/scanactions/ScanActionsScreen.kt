@@ -22,15 +22,21 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -42,6 +48,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.pmmovil.R
+import com.example.pmmovil.data.model.TraceResultDto
+import com.example.pmmovil.data.preferences.ModePreferences
 import com.example.pmmovil.data.scanner.ScanAction
 import com.example.pmmovil.data.scanner.ScanActionId
 import com.example.pmmovil.data.scanner.ScanActionResolver
@@ -49,6 +57,9 @@ import com.example.pmmovil.data.scanner.ScannedCode
 import com.example.pmmovil.ui.components.LabelCard
 import com.example.pmmovil.ui.components.SignalChip
 import com.example.pmmovil.ui.components.SignalKind
+import com.example.pmmovil.ui.revision.EtiquetaPerfilViewModel
+import com.example.pmmovil.ui.revision.RevisionModeSelectorContent
+import com.example.pmmovil.ui.theme.PmmBgSurface
 import com.example.pmmovil.ui.theme.PmmBgPrimary
 import com.example.pmmovil.ui.theme.PmmBlueDeep
 import com.example.pmmovil.ui.theme.PmmNavyBorder
@@ -73,12 +84,21 @@ import com.example.pmmovil.ui.theme.SignageType
 fun ScanActionsScreen(
     onNavigateBack: () -> Unit,
     onAction: (route: String) -> Unit,
+    onReviewModeSelected: (reference: String, mode: ModePreferences.Mode) -> Unit,
     onOpenCode: (code: String) -> Unit,
     viewModel: ScanActionsViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsState()
     val code = state.code
     val trace = state.trace
+    val result = (trace as? TraceUiState.Ready)?.result
+    var selectedReviewReference by rememberSaveable { mutableStateOf<String?>(null) }
+    val etiquetaPerfilViewModel: EtiquetaPerfilViewModel = hiltViewModel()
+    val grupoDeEtiquetas by etiquetaPerfilViewModel.grupo.collectAsState()
+
+    LaunchedEffect(selectedReviewReference) {
+        etiquetaPerfilViewModel.resolver(selectedReviewReference)
+    }
 
     Scaffold(
         containerColor = PmmBgPrimary,
@@ -125,7 +145,6 @@ fun ScanActionsScreen(
             ) {
                 CodeLabel(code = code, trace = trace)
 
-                val result = (trace as? TraceUiState.Ready)?.result
                 if (result != null) TraceFlags(flags = knownFlags(result))
 
                 when (trace) {
@@ -150,7 +169,14 @@ fun ScanActionsScreen(
                                 result != null || ScanActionResolver.actionsFor(code).isNotEmpty() -> R.string.scan_actions_none
                                 else -> null
                             },
-                            onAction = onAction
+                            onAction = { action ->
+                                if (action.id == ScanActionId.ReviewEntry) {
+                                    selectedReviewReference = reviewReferenceOf(code, result)
+                                        ?: run { onAction(action.route); null }
+                                } else {
+                                    onAction(action.route)
+                                }
+                            }
                         )
                     }
                 }
@@ -165,16 +191,42 @@ fun ScanActionsScreen(
                         RelatedList(rows = related, onOpenCode = onOpenCode)
                     }
                 }
-
-                Text(
-                    text = stringResource(R.string.scan_actions_read_only),
-                    color = PmmTextSecondary,
-                    fontSize = 12.sp
-                )
             }
         }
     }
+
+    selectedReviewReference?.let { reference ->
+        val entry = result?.entradas?.firstOrNull { it.reference.equals(reference, ignoreCase = true) }
+        val hasProgress = entry != null && (entry.totalInvoices > 0 || entry.totalLines > 0)
+        ModalBottomSheet(
+            onDismissRequest = { selectedReviewReference = null },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = PmmBgSurface
+        ) {
+            RevisionModeSelectorContent(
+                crefAgrupada = reference,
+                contextLabel = entry?.cliente.orEmpty(),
+                facturas = entry?.takeIf { hasProgress }?.let { "${it.completedInvoices}/${it.totalInvoices}" },
+                partidas = entry?.takeIf { hasProgress }?.let { "${it.reviewedLines}/${it.totalLines}" },
+                preferredMode = viewModel.lastModeFor(reference),
+                isOpening = false,
+                onModeSelected = { mode ->
+                    viewModel.rememberMode(reference, mode)
+                    onReviewModeSelected(reference, mode)
+                },
+                grupoDeEtiquetas = grupoDeEtiquetas
+            )
+        }
+    }
 }
+
+private fun reviewReferenceOf(code: ScannedCode, result: TraceResultDto?): String? =
+    result?.entradas?.singleOrNull()?.reference?.takeIf { it.isNotBlank() }
+        ?: when (code) {
+            is ScannedCode.Carpeta -> code.reference
+            is ScannedCode.Bulto -> code.reference
+            else -> null
+        }
 
 @Composable
 private fun CodeLabel(code: ScannedCode, trace: TraceUiState) {
@@ -243,13 +295,13 @@ private fun SectionTitle(@StringRes text: Int) {
 private fun ActionsSection(
     actions: List<ScanAction>,
     @StringRes emptyText: Int?,
-    onAction: (route: String) -> Unit
+    onAction: (action: ScanAction) -> Unit
 ) {
     if (actions.isNotEmpty()) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SectionTitle(R.string.scan_actions_section)
             actions.forEach { action ->
-                ActionButton(action = action, onClick = { onAction(action.route) })
+                ActionButton(action = action, onClick = { onAction(action) })
             }
         }
     } else if (emptyText != null) {

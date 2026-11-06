@@ -4,7 +4,6 @@
     <string name="scan_actions_title">What I read</string>
     <string name="scan_actions_subtitle">Choose what you want to do</string>
     <string name="scan_actions_back">Back</string>
-    <string name="scan_actions_read_only">Reading does not record anything: it only opens the screen you choose.</string>
     <string name="scan_actions_none">Your role has no actions for this code.</string>
     <string name="scan_actions_section">Actions</string>
 

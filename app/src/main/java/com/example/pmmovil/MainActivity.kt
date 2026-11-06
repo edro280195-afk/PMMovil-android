@@ -386,6 +386,17 @@ class MainActivity : AppCompatActivity() {
                                         popUpTo(ScanActionsRoute.PATTERN) { inclusive = true }
                                     }
                                 },
+                                onReviewModeSelected = { reference, mode ->
+                                    val encodedReference = Uri.encode(reference)
+                                    val destination = when (mode) {
+                                        ModePreferences.Mode.NORMAL -> "detalle/$encodedReference"
+                                        ModePreferences.Mode.LABELS -> "detalle/$encodedReference?modo=$MODO_ETIQUETAS"
+                                        ModePreferences.Mode.BARCODE -> "barcode/$encodedReference"
+                                    }
+                                    navController.navigate(destination) {
+                                        popUpTo(ScanActionsRoute.PATTERN) { inclusive = true }
+                                    }
+                                },
                                 // Una pieza relacionada abre su propia ficha encima de esta: «atrás» vuelve a la anterior.
                                 onOpenCode = { related -> navController.navigate(ScanActionsRoute.forScan(related)) }
                             )
