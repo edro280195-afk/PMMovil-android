@@ -119,6 +119,15 @@ data class ZebraLabelData(
     val copies: Int = 1
 )
 
+/** Avance de un envío largo, para que la pantalla diga qué está pasando en vez de un círculo sin explicación. */
+sealed interface ZebraSendProgress {
+    /** La Zebra no contesta todavía (atiende otro envío): se espera su turno sin mandarle nada. */
+    data class WaitingForPrinter(val waitedSeconds: Int) : ZebraSendProgress
+
+    /** Datos aceptados por la red; la Zebra los va imprimiendo a su ritmo. */
+    data class Sending(val percent: Int, val labelsSent: Int, val labelCount: Int) : ZebraSendProgress
+}
+
 data class ZebraPrintStats(
     val host: String,
     val port: Int,

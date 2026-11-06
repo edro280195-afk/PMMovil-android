@@ -18,6 +18,7 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -34,10 +35,31 @@ class ZebraPrinterService @Inject constructor(
      */
     private val printerLocks = ConcurrentHashMap<String, Mutex>()
 
-    private fun lockFor(config: ZebraPrinterConfig): Mutex =
-        printerLocks.getOrPut("${config.host.trim().lowercase(Locale.ROOT)}:${config.port}") { Mutex() }
+    private fun printerKey(config: ZebraPrinterConfig): String =
+        "${config.host.trim().lowercase(Locale.ROOT)}:${config.port}"
 
-    /** Lee únicamente los dpi de la cabeza para crear el raster del tamaño físico correcto. */
+    private fun lockFor(config: ZebraPrinterConfig): Mutex =
+        printerLocks.getOrPut(printerKey(config)) { Mutex() }
+
+    /** Los dpi de la cabeza no cambian entre un envío y otro: se recuerdan para no abrir una conexión de más. */
+    private class CachedDpi(val dpi: Int, val readAtMillis: Long)
+
+    private val dpiCache = ConcurrentHashMap<String, CachedDpi>()
+
+    /**
+     * Impresoras que ya contestaron alguna vez a `~HS`. Si una de ellas deja de contestar, es que está ocupada o
+     * atorada. Si nunca contestó, no se puede saber si es que no sabe responderlo: ahí no se bloquea el envío.
+     */
+    private val printersThatAnsweredStatus = ConcurrentHashMap.newKeySet<String>()
+
+    private fun nowMillis(): Long = SystemClock.elapsedRealtime()
+
+    /**
+     * Lee los dpi de la cabeza para crear el raster del tamaño físico correcto. Es el primer contacto con la
+     * impresora en todos los flujos de impresión, así que también espera su turno si está ocupada y avisa si no
+     * puede imprimir. Un valor leído hace menos de 30 minutos se reutiliza sin tocar la impresora, y si la Zebra
+     * no contesta se usa el último conocido en vez de detener el trabajo.
+     */
     suspend fun readPrintheadResolutionDpi(config: ZebraPrinterConfig): Result<Int> =
         withContext(Dispatchers.IO) {
             val validation = validateConfig(config)
@@ -46,10 +68,15 @@ class ZebraPrinterService @Inject constructor(
             }
 
             val host = config.host.trim()
+            val key = printerKey(config)
+            dpiCache[key]
+                ?.takeIf { nowMillis() - it.readAtMillis < DPI_CACHE_TTL_MILLIS }
+                ?.let { return@withContext Result.success(it.dpi) }
+
             lockFor(config).withLock {
-                // Antes de pedir nada: si la Zebra no puede imprimir (pausa, sin etiquetas, cabezal abierto...)
-                // se dice tal cual, en vez de esperar un "timeout" sin explicación.
-                val outcome = readStatus(config)
+                // Si la Zebra no puede imprimir (pausa, sin etiquetas, cabezal abierto...) se dice tal cual, en
+                // vez de esperar un "timeout" sin explicación. Si está atendiendo otro envío, se espera su turno.
+                val outcome = awaitPrinterResponse(config, onWaiting = null)
                 if (outcome is StatusOutcome.Read) {
                     outcome.status.blockingProblem()?.let { problem ->
                         Log.w(TAG, "Zebra no lista host=$host port=${config.port}: $problem")
@@ -57,33 +84,46 @@ class ZebraPrinterService @Inject constructor(
                     }
                 }
 
-                try {
-                    val dpi = requestSgdValue(
+                val reading: Int? = try {
+                    requestSgdValue(
                         host = host,
                         port = config.port,
                         key = SGD_PRINTHEAD_DPI,
                         connectTimeoutMillis = config.connectTimeoutMillis,
                         readTimeoutMillis = config.writeTimeoutMillis
-                    ).toZebraInt() ?: throw IOException(
-                        "La Zebra no reportó los dpi de su cabeza de impresión."
-                    )
-
-                    if (dpi !in ZebraLabelLayout.SUPPORTED_PRINTHEAD_DPI) {
-                        throw IOException(
-                            "La Zebra reportó $dpi dpi; PMMovil admite cabezales de 203 o 300 dpi. No se imprimió."
-                        )
-                    }
-
-                    Result.success(dpi)
+                    ).toZebraInt()
                 } catch (error: CancellationException) {
                     throw error
-                } catch (error: SocketTimeoutException) {
-                    Log.e(TAG, "La Zebra aceptó la conexión pero no respondió host=$host port=${config.port}", error)
-                    Result.failure(IOException(UNRESPONSIVE_PRINTER_MESSAGE, error))
                 } catch (error: Exception) {
-                    Log.e(TAG, "No se pudo leer la resolución Zebra host=$host port=${config.port}", error)
-                    Result.failure(error)
+                    // Falla de comunicación: un dato viejo y confirmado vale más que detener el trabajo de la planta.
+                    val lastKnown = dpiCache[key]
+                    if (lastKnown != null) {
+                        Log.w(TAG, "No se pudo releer la resolución; se usa la última conocida (${lastKnown.dpi} dpi)", error)
+                        return@withContext Result.success(lastKnown.dpi)
+                    }
+                    return@withContext if (error is SocketTimeoutException) {
+                        Log.e(TAG, "La Zebra aceptó la conexión pero no respondió host=$host port=${config.port}", error)
+                        Result.failure(IOException(UNRESPONSIVE_PRINTER_MESSAGE, error))
+                    } else {
+                        Log.e(TAG, "No se pudo leer la resolución Zebra host=$host port=${config.port}", error)
+                        Result.failure(error)
+                    }
                 }
+
+                // La Zebra SÍ contestó: lo que diga es la respuesta, no se sustituye por un valor guardado.
+                val dpi = reading ?: return@withContext Result.failure(
+                    IOException("La Zebra no reportó los dpi de su cabeza de impresión.")
+                )
+                if (dpi !in ZebraLabelLayout.SUPPORTED_PRINTHEAD_DPI) {
+                    return@withContext Result.failure(
+                        IOException(
+                            "La Zebra reportó $dpi dpi; PMMovil admite cabezales de 203 o 300 dpi. No se imprimió."
+                        )
+                    )
+                }
+
+                dpiCache[key] = CachedDpi(dpi, nowMillis())
+                Result.success(dpi)
             }
         }
 
@@ -318,7 +358,8 @@ class ZebraPrinterService @Inject constructor(
 
     suspend fun printLabels(
         config: ZebraPrinterConfig,
-        labels: List<ZebraLabelData>
+        labels: List<ZebraLabelData>,
+        onProgress: ((ZebraSendProgress) -> Unit)? = null
     ): ZebraPrintResult {
         if (labels.isEmpty()) {
             return ZebraPrintResult.EmptyPayload("No hay etiquetas para imprimir.")
@@ -328,13 +369,19 @@ class ZebraPrinterService @Inject constructor(
             layout = labelLayoutPreferences.getLayout()
         )
         val labelCount = labels.sumOf { it.copies.coerceAtLeast(1) }
-        return printZpl(config = config, zpl = zpl, labelCount = labelCount)
+        return printZpl(config = config, zpl = zpl, labelCount = labelCount, onProgress = onProgress)
     }
 
+    /**
+     * Envía un trabajo ZPL. Antes de mandar un solo byte espera a que la Zebra conteste (si otra tableta le está
+     * mandando un lote, su turno llega cuando termine) y comprueba que pueda imprimir. [onProgress] se llama desde
+     * un hilo de fondo para informar la espera y el avance.
+     */
     suspend fun printZpl(
         config: ZebraPrinterConfig,
         zpl: String,
-        labelCount: Int
+        labelCount: Int,
+        onProgress: ((ZebraSendProgress) -> Unit)? = null
     ): ZebraPrintResult = withContext(Dispatchers.IO) {
         val validation = validateConfig(config)
         if (validation != null) return@withContext validation
@@ -344,6 +391,8 @@ class ZebraPrinterService @Inject constructor(
 
         val host = config.host.trim()
         val bytes = zpl.toByteArray(Charsets.UTF_8)
+        val blocks = ZplJobAnalyzer.blocks(bytes)
+        val jobLabels = ZplJobAnalyzer.totalLabels(blocks).takeIf { it > 0 } ?: labelCount
 
         // Un trabajo a la vez por impresora: si otro envío sigue en curso este espera su turno.
         lockFor(config).withLock {
@@ -351,8 +400,11 @@ class ZebraPrinterService @Inject constructor(
             var previousStatus: ZebraPrinterStatus? = null
 
             // Un envío a una Zebra detenida no imprime: se queda en su memoria y sale todo junto (y repetido)
-            // cuando alguien la reanuda. Si el propio equipo dice que no puede imprimir, se avisa y no se manda.
-            when (val outcome = readStatus(config)) {
+            // cuando alguien la reanuda. Y mandarle datos a una Zebra que atiende otra conexión los deja a medias
+            // en su memoria. Por eso primero se espera a que conteste y se comprueba que pueda imprimir.
+            when (val outcome = awaitPrinterResponse(config, onWaiting = { seconds ->
+                onProgress?.invoke(ZebraSendProgress.WaitingForPrinter(seconds))
+            })) {
                 is StatusOutcome.Read -> {
                     previousStatus = outcome.status
                     outcome.status.blockingProblem()?.let { problem ->
@@ -361,19 +413,34 @@ class ZebraPrinterService @Inject constructor(
                     }
                 }
                 StatusOutcome.Unreadable -> Log.w(TAG, "Estado Zebra ilegible host=$host; se intenta imprimir")
-                is StatusOutcome.Failed -> Log.w(
-                    TAG,
-                    "Estado Zebra sin respuesta host=$host (${outcome.error.javaClass.simpleName}); se intenta imprimir"
-                )
+                is StatusOutcome.Failed -> {
+                    if (outcome.error !is ZebraSilentPrinterException) {
+                        // No hay red, está apagada o rechaza la conexión: no tiene caso intentar el envío.
+                        Log.e(TAG, "Zebra inalcanzable host=$host port=${config.port}", outcome.error)
+                        return@withContext mapError(outcome.error, host, config.port, connected = false)
+                    }
+                    if (printerKey(config) in printersThatAnsweredStatus) {
+                        // Ya contestó antes y ahora calla tras esperar su turno: ocupada o atorada. Mandarle datos
+                        // solo le dejaría una etiqueta a medias.
+                        Log.w(TAG, "Zebra sin atender tras esperar host=$host port=${config.port}")
+                        return@withContext ZebraPrintResult.PrinterNotReady(
+                            message = BUSY_PRINTER_MESSAGE,
+                            cause = outcome.error
+                        )
+                    }
+                    // Nunca contestó a ~HS: puede que simplemente no lo soporte. Se intenta imprimir como antes.
+                    Log.w(TAG, "Zebra sin respuesta a ~HS host=$host (nunca ha contestado); se intenta imprimir")
+                }
             }
 
             Log.i(
                 TAG,
-                "Enviando ZPL host=$host port=${config.port} labels=$labelCount bytes=${bytes.size} " +
+                "Enviando ZPL host=$host port=${config.port} labels=$jobLabels bytes=${bytes.size} " +
                     "estadoPrevio=[${previousStatus?.describe() ?: "desconocido"}]"
             )
 
             var sentBytes = 0
+            var lastPercent = -1
             try {
                 ZebraSocketTransport.send(
                     host = host,
@@ -381,7 +448,21 @@ class ZebraPrinterService @Inject constructor(
                     bytes = bytes,
                     connectTimeoutMillis = config.connectTimeoutMillis,
                     idleTimeoutMillis = maxOf(config.writeTimeoutMillis, MIN_SEND_IDLE_TIMEOUT_MILLIS),
-                    onProgress = { sentBytes = it }
+                    onProgress = { accepted ->
+                        sentBytes = accepted
+                        val percent = (accepted.toLong() * 100 / bytes.size).toInt().coerceIn(0, 100)
+                        // La red avisa por cada trozo aceptado; a la pantalla solo se le avisa cuando cambia el %.
+                        if (percent != lastPercent) {
+                            lastPercent = percent
+                            onProgress?.invoke(
+                                ZebraSendProgress.Sending(
+                                    percent = percent,
+                                    labelsSent = ZplJobAnalyzer.labelsSent(blocks, accepted),
+                                    labelCount = jobLabels
+                                )
+                            )
+                        }
+                    }
                 )
 
                 val elapsed = SystemClock.elapsedRealtime() - start
@@ -408,7 +489,13 @@ class ZebraPrinterService @Inject constructor(
                     error
                 )
                 ZebraPrintResult.Timeout(
-                    stalledMessage(config, sentBytes, bytes.size),
+                    stalledMessage(
+                        config = config,
+                        sentBytes = sentBytes,
+                        totalBytes = bytes.size,
+                        labelsSent = ZplJobAnalyzer.labelsSent(blocks, sentBytes),
+                        labelCount = jobLabels
+                    ),
                     error
                 )
             } catch (error: TimeoutCancellationException) {
@@ -437,11 +524,18 @@ class ZebraPrinterService @Inject constructor(
      * Mensaje cuando la Zebra dejó de aceptar datos a mitad del envío. Consulta su estado en una conexión nueva
      * para que la persona sepa si es pausa, falta de etiquetas, memoria llena o un envío anterior atorado.
      */
-    private fun stalledMessage(config: ZebraPrinterConfig, sentBytes: Int, totalBytes: Int): String {
+    private fun stalledMessage(
+        config: ZebraPrinterConfig,
+        sentBytes: Int,
+        totalBytes: Int,
+        labelsSent: Int,
+        labelCount: Int
+    ): String {
         val progress = if (sentBytes <= 0) {
             "La Zebra no aceptó ningún dato del envío."
         } else {
-            "La Zebra dejó de recibir datos después de ${sentBytes / 1024} de ${totalBytes / 1024} KB."
+            "La Zebra dejó de recibir datos después de ${sentBytes / 1024} de ${totalBytes / 1024} KB " +
+                "(se alcanzaron a entregar $labelsSent de $labelCount etiquetas)."
         }
         val diagnosis = when (val outcome = readStatus(config)) {
             is StatusOutcome.Read -> outcome.status.describe()
@@ -506,6 +600,31 @@ class ZebraPrinterService @Inject constructor(
         class Failed(val error: Throwable) : StatusOutcome()
     }
 
+    /**
+     * Consulta el estado y, si la Zebra acepta la conexión pero no contesta (atiende otra conexión, por ejemplo la
+     * de otra tableta), vuelve a preguntar cada pocos segundos hasta [BUSY_PATIENCE_MILLIS]. Mientras no conteste
+     * no se le manda nada. Solo espera si esa impresora ya había contestado antes: si nunca lo hizo, es más probable
+     * que no sepa responder `~HS` que esté ocupada.
+     */
+    private suspend fun awaitPrinterResponse(
+        config: ZebraPrinterConfig,
+        onWaiting: ((Int) -> Unit)?
+    ): StatusOutcome {
+        val startedAt = nowMillis()
+        while (true) {
+            val outcome = readStatus(config)
+            val silent = outcome is StatusOutcome.Failed && outcome.error is ZebraSilentPrinterException
+            val waited = nowMillis() - startedAt
+            if (!silent || printerKey(config) !in printersThatAnsweredStatus || waited >= BUSY_PATIENCE_MILLIS) {
+                return outcome
+            }
+            val seconds = (waited / 1000).toInt()
+            Log.i(TAG, "Zebra ocupada o sin atender host=${config.host.trim()}; esperando su turno (${seconds}s)")
+            onWaiting?.invoke(seconds)
+            delay(BUSY_POLL_MILLIS)
+        }
+    }
+
     private fun readStatus(config: ZebraPrinterConfig): StatusOutcome {
         val host = config.host.trim()
         return try {
@@ -515,6 +634,8 @@ class ZebraPrinterService @Inject constructor(
                 connectTimeoutMillis = config.connectTimeoutMillis,
                 readTimeoutMillis = STATUS_READ_TIMEOUT_MILLIS
             )
+            // Contestó (aunque sea algo ilegible): esta impresora sí atiende consultas de estado.
+            printersThatAnsweredStatus += printerKey(config)
             val status = ZebraHostStatusParser.parse(raw)
             if (status == null) {
                 Log.w(TAG, "~HS no interpretable host=$host respuesta=${raw.replace(NON_PRINTABLE, "·")}")
@@ -622,6 +743,18 @@ class ZebraPrinterService @Inject constructor(
          * tiempo sin que acepte un byte, que es una impresora detenida y no una ocupada.
          */
         const val MIN_SEND_IDLE_TIMEOUT_MILLIS = 30_000
+
+        /** Cuánto se espera a que una Zebra ocupada con otra conexión conteste, y cada cuánto se le pregunta. */
+        const val BUSY_PATIENCE_MILLIS = 60_000L
+        const val BUSY_POLL_MILLIS = 2_000L
+
+        /** Vigencia de los dpi recordados: de sobra para un turno, y acota el riesgo si cambian la impresora. */
+        const val DPI_CACHE_TTL_MILLIS = 30 * 60 * 1000L
+
+        const val BUSY_PRINTER_MESSAGE =
+            "La Zebra no contesta desde hace más de un minuto: sigue atendiendo otro envío (otra tableta) o está " +
+                "atorada. No se mandó nada para no dejarle una etiqueta a medias. Espera a que termine y reintenta; " +
+                "si no avanza, apágala 10 segundos y vuelve a encenderla."
 
         val NON_PRINTABLE = Regex("[^\\x20-\\x7E]")
         val CRLF: ByteArray = byteArrayOf('\r'.code.toByte(), '\n'.code.toByte())

@@ -19,6 +19,13 @@ import java.nio.channels.SocketChannel
 internal class ZebraSendStalledException(message: String) : SocketTimeoutException(message)
 
 /**
+ * La conexión se abrió pero la impresora no contestó nada. Es la firma de una Zebra ocupada atendiendo OTRA
+ * conexión (por ejemplo, otra tableta con un lote en curso) o atorada: el sistema operativo de la impresora
+ * acepta la conexión TCP, pero su aplicación no la atiende. Se distingue de no poder conectar (apagada, sin red).
+ */
+internal class ZebraSilentPrinterException(message: String) : SocketTimeoutException(message)
+
+/**
  * Entrada/salida cruda hacia el puerto 9100 de una Zebra. Kotlin/JVM puro (sin Android) para poder probarlo
  * contra una impresora simulada en un ServerSocket local.
  *
@@ -96,7 +103,9 @@ internal object ZebraSocketTransport {
                     received.write(chunk, 0, read)
                 }
             } catch (timeout: SocketTimeoutException) {
-                if (received.size() == 0) throw timeout
+                if (received.size() == 0) {
+                    throw ZebraSilentPrinterException("La impresora aceptó la conexión pero no contestó el estado.")
+                }
             }
             if (received.size() == 0) throw IOException("La impresora cerró la conexión sin responder al estado.")
             return received.toString(Charsets.US_ASCII.name())

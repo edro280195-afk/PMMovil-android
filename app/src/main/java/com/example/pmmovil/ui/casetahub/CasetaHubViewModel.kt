@@ -422,8 +422,18 @@ class CasetaHubViewModel @Inject constructor(
                     layoutOverride = layout,
                     targetDpi = targetDpi
                 )
-                zebraPrinterService.printZpl(config, zpl, copies)
-                _uiState.update { it.copy(infoMessage = "Etiqueta enviada a impresión") }
+                val result = zebraPrinterService.printZpl(config, zpl, copies)
+                if (result.isSuccess) {
+                    _uiState.update { it.copy(infoMessage = "Etiqueta enviada a impresión") }
+                } else {
+                    // Antes se ignoraba el resultado y siempre decía «enviada», aunque la Zebra no hubiera recibido nada.
+                    _uiState.update {
+                        it.copy(
+                            errorMessage = "No se imprimió la etiqueta. " + result.userMessage(),
+                            feedbackSeq = it.feedbackSeq + 1
+                        )
+                    }
+                }
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(

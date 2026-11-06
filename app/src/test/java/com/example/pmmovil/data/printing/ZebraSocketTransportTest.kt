@@ -146,7 +146,10 @@ class ZebraSocketTransportTest {
             ZebraSocketTransport.queryHostStatus("127.0.0.1", port, 2_000, 500)
             fail("Sin respuesta debia lanzar SocketTimeoutException")
         } catch (expected: SocketTimeoutException) {
-            // esperado
+            assertTrue(
+                "Debe distinguirse de no poder conectar: es una impresora ocupada o atorada",
+                expected is ZebraSilentPrinterException
+            )
         }
         val elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000
         assertTrue("No debe esperar de mas ($elapsedMillis ms)", elapsedMillis < 3_000)
