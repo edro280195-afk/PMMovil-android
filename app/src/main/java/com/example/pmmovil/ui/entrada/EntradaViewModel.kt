@@ -49,6 +49,7 @@ import javax.inject.Inject
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
@@ -183,8 +184,39 @@ class EntradaViewModel @Inject constructor(
 
     init {
         loadInitialData()
+        resumePendingPhotoSync()
         viewModelScope.launch {
             zebraLabelLayoutPreferences.syncWithServer()
+        }
+    }
+
+    /**
+     * Si quedaron fotos sin subir (la app se cerró, o el aviso a WorkManager se perdió entre registrar la foto y
+     * encolar), las manda ya al abrir la pantalla en lugar de esperar a que alguien tome otra. Solo usa dependencias del
+     * constructor: es seguro llamarla desde el init.
+     */
+    private fun resumePendingPhotoSync() {
+        viewModelScope.launch {
+            if (entradaPhotoSyncDao.getPendingOnce().isNotEmpty()) syncScheduler.scheduleEntradaPhotos()
+        }
+    }
+
+    /** Subir fotos lo puede hacer quien agrega entradas o, al editar una existente, quien tiene permiso de Modificar. */
+    private fun canAddPhotos(): Boolean = canCreate() || (_uiState.value.isEditMode && canEdit())
+
+    /**
+     * La entrada ya está en el servidor: la foto entra DE INMEDIATO a la cola persistente y el worker la sube sola. Nadie
+     * pulsa «Guardar». El registro en Room y el aviso al worker van en NonCancellable para que salir de la pantalla justo
+     * después de disparar no deje la foto a medias.
+     */
+    private fun queuePhotoNow(path: String, kind: String, message: String) {
+        val reference = _uiState.value.form.reference()
+        viewModelScope.launch {
+            withContext(NonCancellable) {
+                enqueueEntradaPhotoFiles(reference = reference, paths = listOf(path), kind = kind)
+                syncScheduler.scheduleEntradaPhotos()
+            }
+            _uiState.value = _uiState.value.copy(invalidFields = emptySet(), message = message)
         }
     }
 
@@ -814,12 +846,22 @@ class EntradaViewModel @Inject constructor(
     }
 
     fun addLocalPhoto(path: String) {
-        if (!canCreate()) {
+        if (!canAddPhotos()) {
             runCatching { File(path).delete() }
             denyEdit()
             return
         }
         val form = _uiState.value.form
+        if (EntradaPhotoPolicy.shouldQueueImmediately(
+                kind = EntradaPhotoKind.EVIDENCE,
+                isExisting = form.isExisting,
+                reference = form.reference(),
+                savedAsDamaged = baselineForm.danada
+            )
+        ) {
+            queuePhotoNow(path, EntradaPhotoKind.EVIDENCE, "Foto guardada.")
+            return
+        }
         _uiState.value = _uiState.value.copy(
             form = if (path in form.localPhotoPaths) form
             else form.copy(localPhotoPaths = form.localPhotoPaths + path),
@@ -845,12 +887,22 @@ class EntradaViewModel @Inject constructor(
     }
 
     fun addLocalDamagePhoto(path: String) {
-        if (!canCreate()) {
+        if (!canAddPhotos()) {
             runCatching { File(path).delete() }
             denyEdit()
             return
         }
         val form = _uiState.value.form
+        if (EntradaPhotoPolicy.shouldQueueImmediately(
+                kind = EntradaPhotoKind.DAMAGE,
+                isExisting = form.isExisting,
+                reference = form.reference(),
+                savedAsDamaged = baselineForm.danada
+            )
+        ) {
+            queuePhotoNow(path, EntradaPhotoKind.DAMAGE, "Foto de daño guardada.")
+            return
+        }
         _uiState.value = _uiState.value.copy(
             form = if (path in form.localDamagePhotoPaths) form
             else form.copy(localDamagePhotoPaths = form.localDamagePhotoPaths + path),
@@ -884,6 +936,9 @@ class EntradaViewModel @Inject constructor(
                 )
             }
             form.ref4.isBlank() -> generateConsecutive()
+            // Ya actualizada la entrada, el paso «Fotos» solo sube las fotos nuevas; no vuelve a mandar el PUT.
+            _uiState.value.isEditMode && _uiState.value.workflowStage == EntradaWorkflowStage.TAKE_PHOTOS ->
+                if (canCreate() || canEdit()) uploadPhotos() else denyEdit()
             _uiState.value.isEditMode -> if (canEdit()) update() else denyEdit()
             form.isExisting && (
                 form.localPhotoPaths.isNotEmpty() ||
@@ -896,6 +951,18 @@ class EntradaViewModel @Inject constructor(
 
     fun closeSavingOverlay() {
         _uiState.value = _uiState.value.copy(savingProgress = SavingProgressState(isVisible = false))
+    }
+
+    /**
+     * El usuario terminó la captura («Finalizar y volver»): se avisa al servidor, que manda el aviso de PRUEBA a
+     * desarrollo3 (PMMovil no manda la notificación de entrada al cliente; la manda el sistema PMM). Va a un trabajo en
+     * segundo plano que espera a que terminen de subir las fotos, así que el usuario no espera nada ni lo pierde si sale.
+     */
+    fun finishCapture() {
+        val state = _uiState.value
+        val reference = state.form.reference()
+        if (!state.form.isExisting || reference.isBlank()) return
+        syncScheduler.scheduleEntradaCaptureNotice(reference, state.isEditMode)
     }
 
     private fun save() {
@@ -1000,11 +1067,7 @@ class EntradaViewModel @Inject constructor(
                 paths = form.localPhotoPaths,
                 kind = EntradaPhotoKind.EVIDENCE
             )
-            val queuedDamage = enqueueEntradaPhotoFiles(
-                reference = form.reference(),
-                paths = form.localDamagePhotoPaths,
-                kind = EntradaPhotoKind.DAMAGE
-            )
+            val queuedDamage = enqueueDamagePhotosOf(form, form.reference())
             if (queuedEvidence > 0 || queuedDamage > 0) {
                 syncScheduler.scheduleEntradaPhotos()
             }
@@ -1090,11 +1153,7 @@ class EntradaViewModel @Inject constructor(
                         paths = form.localPhotoPaths,
                         kind = EntradaPhotoKind.EVIDENCE
                     )
-                    val queuedDamage = enqueueEntradaPhotoFiles(
-                        reference = cref,
-                        paths = form.localDamagePhotoPaths,
-                        kind = EntradaPhotoKind.DAMAGE
-                    )
+                    val queuedDamage = enqueueDamagePhotosOf(form, cref)
                     if (queuedEvidence + queuedDamage > 0) {
                         syncScheduler.scheduleEntradaPhotos()
                     }
@@ -1109,6 +1168,9 @@ class EntradaViewModel @Inject constructor(
                     _uiState.value = _uiState.value.copy(
                         isBusy = false,
                         form = updatedSavedForm,
+                        // Igual que al crear (mockup «Registro Entrada Bodega v3»): tras guardar sigue el paso «Fotos».
+                        // Las etiquetas no se repiten al editar: para reimprimirlas está «Imprimir» del formulario.
+                        workflowStage = EntradaWorkflowStage.TAKE_PHOTOS,
                         message = response.message.ifBlank { "Entrada actualizada correctamente." } +
                             if (queuedEvidence + queuedDamage > 0) {
                                 " Las fotos quedaron en cola para sincronizar."
@@ -1320,7 +1382,8 @@ class EntradaViewModel @Inject constructor(
     }
 
     private fun uploadPhotos() {
-        if (!canCreate()) {
+        // Al editar, quien puede Modificar también sube las fotos de esa entrada (paso «Fotos» tras Actualizar).
+        if (!canCreate() && !(_uiState.value.isEditMode && canEdit())) {
             denyEdit()
             return
         }
@@ -1333,11 +1396,7 @@ class EntradaViewModel @Inject constructor(
                 paths = form.localPhotoPaths,
                 kind = EntradaPhotoKind.EVIDENCE
             )
-            val damageCount = enqueueEntradaPhotoFiles(
-                reference = reference,
-                paths = form.localDamagePhotoPaths,
-                kind = EntradaPhotoKind.DAMAGE
-            )
+            val damageCount = enqueueDamagePhotosOf(form, reference)
             if (evidenceCount + damageCount == 0) {
                 _uiState.value = _uiState.value.copy(isBusy = false)
                 return@launch
@@ -1366,6 +1425,23 @@ class EntradaViewModel @Inject constructor(
                 message = "${evidenceCount + damageCount} fotos quedaron en cola para sincronizar."
             )
         }
+    }
+
+    /**
+     * Encola las fotos de daño locales de [form]. Si la entrada NO está declarada como dañada (el usuario activó el
+     * interruptor, tomó fotos y lo volvió a apagar) esas fotos no se suben: dejarlas colgaría fotos de daño de una
+     * entrada que el servidor no marca como dañada. Se borran los archivos para no dejar basura en el teléfono.
+     */
+    private suspend fun enqueueDamagePhotosOf(form: EntradaFormSnapshot, reference: String): Int {
+        if (!form.danada) {
+            form.localDamagePhotoPaths.forEach { path -> runCatching { File(path).delete() } }
+            return 0
+        }
+        return enqueueEntradaPhotoFiles(
+            reference = reference,
+            paths = form.localDamagePhotoPaths,
+            kind = EntradaPhotoKind.DAMAGE
+        )
     }
 
     private suspend fun enqueueEntradaPhotoFiles(
@@ -1645,7 +1721,7 @@ fun EntradaFormSnapshot.referenceDisplay(): String =
 
 fun EntradaFormSnapshot.totalReceived(): Double = detalles.sumOf { it.cantidad }
 
-private fun EntradaFormSnapshot.toRequest(photos: List<String>, photosDanio: List<String> = emptyList()) = EntradaSaveRequest(
+internal fun EntradaFormSnapshot.toRequest(photos: List<String>, photosDanio: List<String> = emptyList()) = EntradaSaveRequest(
     ref1 = ref1,
     ref2 = ref2,
     ref3 = ref3,
@@ -1684,7 +1760,10 @@ private fun EntradaFormSnapshot.toRequest(photos: List<String>, photosDanio: Lis
     noSelloCant = noSelloCant,
     detalles = detalles,
     fotos = photos,
-    fotosDanio = photosDanio
+    fotosDanio = photosDanio,
+    // Las fotos del daño suben después, por la cola: se avisa cuántas, para que el servidor pueda exigir que haya al
+    // menos una cuando se declara daño y mostrar «faltan N» en el enlace. Sin daño declarado no se avisa ninguna.
+    fotosDanioPendientes = if (danada) localDamagePhotoPaths.size else 0
 )
 
 private fun lookupIndex(items: List<EntradaLookupItem>) =

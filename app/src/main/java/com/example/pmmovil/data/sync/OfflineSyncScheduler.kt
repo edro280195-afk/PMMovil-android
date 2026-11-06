@@ -8,6 +8,8 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import androidx.work.workDataOf
+import com.example.pmmovil.worker.EntradaCaptureNoticeWorker
 import com.example.pmmovil.worker.EntradaPhotoSyncWorker
 import com.example.pmmovil.worker.CasetaEntradaPhotoSyncWorker
 import com.example.pmmovil.worker.FotoSyncWorker
@@ -39,14 +41,53 @@ class OfflineSyncScheduler @Inject constructor(
         )
     }
 
-    fun scheduleEntradaPhotos() {
+    /**
+     * Pone a subir las fotos de entrada (evidencia y daño) que estan en cola. Con una ejecucion en curso no la toca (el
+     * worker vuelve a leer la cola en bucle y recoge las nuevas); pero si la anterior fallo y esta ESPERANDO su reintento
+     * (10 s, 20 s, 40 s... hasta horas), la foto recien tomada esperaria detras de ese tiempo: ahi se reemplaza por una
+     * ejecucion inmediata. Las fotos se guardan solas al tomarlas, asi que no debe haber nada que el usuario tenga que
+     * volver a pulsar para que suban.
+     */
+    suspend fun scheduleEntradaPhotos() {
+        val manager = WorkManager.getInstance(context)
+        val esperandoReintento = withContext(Dispatchers.IO) {
+            runCatching {
+                manager.getWorkInfosForUniqueWork(ENTRADA_PHOTOS_WORK).get()
+                    .any { it.state == WorkInfo.State.ENQUEUED && it.runAttemptCount > 0 }
+            }.getOrDefault(false)
+        }
+
         val request = OneTimeWorkRequestBuilder<EntradaPhotoSyncWorker>()
             .setConstraints(networkConstraints)
-            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.SECONDS)
+            .build()
+
+        manager.enqueueUniqueWork(
+            ENTRADA_PHOTOS_WORK,
+            if (esperandoReintento) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP,
+            request
+        )
+    }
+
+    /**
+     * Avisa al servidor que terminó la captura de [reference] (aviso de PRUEBA a desarrollo3). Un trabajo por entrada: un
+     * doble toque en «Finalizar y volver» no lo duplica. El trabajo espera a que suban las fotos de esa entrada.
+     */
+    fun scheduleEntradaCaptureNotice(reference: String, isEdit: Boolean) {
+        val request = OneTimeWorkRequestBuilder<EntradaCaptureNoticeWorker>()
+            .setConstraints(networkConstraints)
+            .setBackoffCriteria(BackoffPolicy.LINEAR, 20, TimeUnit.SECONDS)
+            .setInputData(
+                workDataOf(
+                    EntradaCaptureNoticeWorker.KEY_REFERENCE to reference,
+                    EntradaCaptureNoticeWorker.KEY_EDIT to isEdit,
+                    EntradaCaptureNoticeWorker.KEY_ENQUEUED_AT to System.currentTimeMillis()
+                )
+            )
             .build()
 
         WorkManager.getInstance(context).enqueueUniqueWork(
-            "sync_entrada_photos",
+            "entrada_aviso_captura_$reference",
             ExistingWorkPolicy.KEEP,
             request
         )
@@ -81,5 +122,6 @@ class OfflineSyncScheduler @Inject constructor(
 
     private companion object {
         const val CASETA_PHOTOS_WORK = "sync_caseta_entrada_photos"
+        const val ENTRADA_PHOTOS_WORK = "sync_entrada_photos"
     }
 }

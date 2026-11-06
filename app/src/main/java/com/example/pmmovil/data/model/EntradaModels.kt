@@ -162,7 +162,13 @@ data class EntradaSaveRequest(
     val noSelloCant: Int,
     val detalles: List<EntradaDetail>,
     val fotos: List<String>,
-    val fotosDanio: List<String>
+    val fotosDanio: List<String>,
+    /**
+     * Cuántas fotos del daño va a subir la app DESPUÉS de este guardado, por su cola (el registro viaja liviano, sin
+     * fotos). El servidor rechaza una recepción que declara daño y avisa cero, y con este número puede decir en el
+     * enlace público «faltan N fotos del daño por llegar». Null = no avisar (no se usa; queda para pruebas).
+     */
+    val fotosDanioPendientes: Int? = null
 )
 
 data class EntradaOperationResponse(

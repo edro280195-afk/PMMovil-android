@@ -68,6 +68,14 @@ interface PMMovilApi {
         @Body request: EntradaPhotosRequest
     ): Response<EntradaOperationResponse>
 
+    // Aviso de PRUEBA al terminar la captura: el API manda un correo que llega SOLO a desarrollo3 (PMMovil no manda la
+    // notificación de entrada al cliente; la manda el sistema PMM). Ver EntradaCaptureNoticeWorker.
+    @POST("Entrada/{cref}/aviso-captura")
+    suspend fun sendEntradaCaptureNotice(
+        @Path("cref") reference: String,
+        @Query("edicion") edit: Boolean
+    ): Response<EntradaOperationResponse>
+
     // Genera el link público de "Seguimiento de entrada" (72h, sin sesión).
     @POST("Entrada/{cref}/compartir")
     suspend fun compartirEntrada(@Path("cref") cref: String): Response<EntradaShareLinkResponse>

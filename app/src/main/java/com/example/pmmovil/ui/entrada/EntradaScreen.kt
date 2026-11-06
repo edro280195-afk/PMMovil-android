@@ -63,6 +63,7 @@ import com.example.pmmovil.ui.common.SavingProgressState
 import com.example.pmmovil.ui.common.SavingProgressStep
 import com.example.pmmovil.ui.common.SavingStepStatus
 import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -259,6 +260,10 @@ fun EntradaScreen(
         }
     }
 
+    // Con la entrada ya guardada, cada foto entra sola a la cola de subida (sin botón «Guardar»); la cámara muestra
+    // también esas fotos para que el contador y las miniaturas sigan reflejando lo que se lleva tomado.
+    val canTakePhotos = state.puedeAgregar || (state.isEditMode && state.puedeModificar)
+
     if (showCamera) {
         LocalEvidenceCameraScreen(
             title = "Evidencia de entrada",
@@ -267,11 +272,14 @@ fun EntradaScreen(
             maxPhotos = 15,
             directoryName = "entrada_photos",
             filePrefix = "entrada",
-            canCapture = state.puedeAgregar,
+            canCapture = canTakePhotos,
             onPhotoCaptured = viewModel::addLocalPhoto,
             onDeletePhoto = { photo ->
-                if (photo.id.startsWith("local-")) {
-                    viewModel.deleteLocalPhoto(photo.id.removePrefix("local-"))
+                when {
+                    photo.id.startsWith("local-") -> viewModel.deleteLocalPhoto(photo.id.removePrefix("local-"))
+                    photo.id.startsWith("queued-") ->
+                        state.queuedPhotos.firstOrNull { "queued-${it.id}" == photo.id }
+                            ?.let(viewModel::deleteQueuedPhoto)
                 }
             },
             onClose = { showCamera = false }
@@ -287,11 +295,14 @@ fun EntradaScreen(
             maxPhotos = 15,
             directoryName = "entrada_damage_photos",
             filePrefix = "entrada_danio",
-            canCapture = state.puedeAgregar,
+            canCapture = canTakePhotos,
             onPhotoCaptured = viewModel::addLocalDamagePhoto,
             onDeletePhoto = { photo ->
-                if (photo.id.startsWith("local-")) {
-                    viewModel.deleteLocalDamagePhoto(photo.id.removePrefix("local-"))
+                when {
+                    photo.id.startsWith("local-") -> viewModel.deleteLocalDamagePhoto(photo.id.removePrefix("local-"))
+                    photo.id.startsWith("queued-") ->
+                        state.queuedDamagePhotos.firstOrNull { "queued-${it.id}" == photo.id }
+                            ?.let(viewModel::deleteQueuedPhoto)
                 }
             },
             onClose = { showDamageCamera = false }
@@ -319,7 +330,8 @@ fun EntradaScreen(
                             Text(
                                 when (state.workflowStage) {
                                     EntradaWorkflowStage.PRINT_LABELS -> "Entrada guardada"
-                                    EntradaWorkflowStage.TAKE_PHOTOS -> "Finalizar recepción"
+                                    EntradaWorkflowStage.TAKE_PHOTOS ->
+                                        if (state.isEditMode) "Entrada actualizada" else "Finalizar recepción"
                                     EntradaWorkflowStage.COMPLETE -> "Recepción lista"
                                     null -> if (state.isEditMode) "Editar Entrada" else "Nueva Entrada"
                                 },
@@ -381,7 +393,11 @@ fun EntradaScreen(
                     onPrint = viewModel::requestPrint,
                     onTakePhotos = { showCamera = true },
                     onSavePhotos = viewModel::executePrimaryAction,
-                    onFinish = onNavigateToList
+                    onFinish = {
+                        // Terminó la captura: se avisa al servidor (en segundo plano) y se vuelve al listado.
+                        viewModel.finishCapture()
+                        onNavigateToList()
+                    }
                 )
             }
         },
@@ -400,6 +416,7 @@ fun EntradaScreen(
                     state = state,
                     viewModel = viewModel,
                     onTakePhoto = { showCamera = true },
+                    onTakeDamagePhoto = { showDamageCamera = true },
                     modifier = Modifier.fillMaxSize()
                 )
             } else if (maxWidth >= 840.dp) {
@@ -420,7 +437,6 @@ fun EntradaScreen(
                         showStepBar = false,
                         isNewEntryFlow = isNewEntryFlow,
                         onScanCamera = onNavigateToScanner,
-                        onTakePhoto = { showCamera = true },
                         onTakeDamagePhoto = { showDamageCamera = true },
                         modifier = Modifier.weight(1f)
                     )
@@ -432,7 +448,6 @@ fun EntradaScreen(
                     showScanHeader = true,
                     isNewEntryFlow = isNewEntryFlow,
                     onScanCamera = onNavigateToScanner,
-                    onTakePhoto = { showCamera = true },
                     onTakeDamagePhoto = { showDamageCamera = true },
                     modifier = Modifier.fillMaxSize()
                 )
@@ -956,7 +971,6 @@ private fun EntradaFormContent(
     showScanHeader: Boolean,
     isNewEntryFlow: Boolean,
     onScanCamera: () -> Unit,
-    onTakePhoto: () -> Unit,
     onTakeDamagePhoto: () -> Unit,
     modifier: Modifier = Modifier,
     showStepBar: Boolean = true
@@ -1032,7 +1046,7 @@ private fun EntradaFormContent(
                             EntradaSection.REFERENCE -> ReferenceSection(state, viewModel, formEditable)
                             EntradaSection.ARRIVAL -> ArrivalSection(state, viewModel, onTakeDamagePhoto, formEditable)
                             EntradaSection.MERCHANDISE -> MerchandiseSection(state, viewModel, formEditable)
-                            EntradaSection.CLOSE -> CloseSection(state, viewModel, onTakePhoto, formEditable)
+                            EntradaSection.CLOSE -> CloseSection(state, viewModel, formEditable)
                         }
                     }
                 }
@@ -1593,9 +1607,15 @@ private fun DamagePhotoSection(
     enabled: Boolean
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        // Solo se cuentan los grupos que tienen algo: con la entrada guardada las fotos entran solas a la subida, así
+        // que «0 por guardar» sería ruido.
+        val summaryParts = listOfNotNull(
+            state.form.localDamagePhotoPaths.size.takeIf { it > 0 }?.let { "$it por guardar" },
+            state.queuedDamagePhotos.size.takeIf { it > 0 }?.let { "$it subiéndose" },
+            state.remoteDamagePhotos.size.takeIf { it > 0 }?.let { "$it guardadas" }
+        )
         Text(
-            "${state.form.localDamagePhotoPaths.size} por guardar · " +
-                "${state.queuedDamagePhotos.size} en cola · ${state.remoteDamagePhotos.size} guardadas",
+            if (summaryParts.isEmpty()) "Aún sin fotos del daño" else summaryParts.joinToString(" · "),
             fontSize = 12.sp,
             color = PmmTextSecondary
         )
@@ -1631,7 +1651,7 @@ private fun DamagePhotoStrip(state: EntradaUiState, viewModel: EntradaViewModel)
 }
 
 private fun entradaLocalDamagePhotos(state: EntradaUiState): List<LocalEvidencePhoto> {
-    return state.form.localDamagePhotoPaths.map { path ->
+    val local = state.form.localDamagePhotoPaths.map { path ->
         LocalEvidencePhoto(
             id = "local-$path",
             model = File(path),
@@ -1640,6 +1660,17 @@ private fun entradaLocalDamagePhotos(state: EntradaUiState): List<LocalEvidenceP
             canDelete = state.puedeBorrar
         )
     }
+    // Las que ya entraron a la cola de subida (la entrada ya estaba guardada) siguen a la vista en la cámara.
+    val queued = state.queuedDamagePhotos.map { photo ->
+        LocalEvidencePhoto(
+            id = "queued-${photo.id}",
+            model = File(photo.localFilePath),
+            label = "Subiendo",
+            status = "Subiendo",
+            canDelete = state.puedeBorrar
+        )
+    }
+    return local + queued
 }
 
 /** Construye la lista unificada de fotos de daño (locales + en cola + guardadas) en orden visual. */
@@ -1659,7 +1690,7 @@ private fun entradaDamageGalleryItems(state: EntradaUiState, viewModel: EntradaV
             add(EntradaGalleryItem(
                 key = "queued-danio-${photo.id}",
                 model = File(photo.localFilePath),
-                label = "En cola",
+                label = "Subiendo",
                 pending = true,
                 onDelete = if (state.puedeBorrar) ({ viewModel.deleteQueuedPhoto(photo) }) else null
             ))
@@ -1931,7 +1962,6 @@ private fun MerchandiseSection(state: EntradaUiState, viewModel: EntradaViewMode
 private fun CloseSection(
     state: EntradaUiState,
     viewModel: EntradaViewModel,
-    onTakePhoto: () -> Unit,
     enabled: Boolean
 ) {
     FormCard(title = "Cierre de recepción", icon = Icons.Default.CheckCircle) {
@@ -1967,42 +1997,9 @@ private fun CloseSection(
             viewModel.updateForm { it.copy(noSello = enabled, noSelloCant = count) }
         }
     }
-    FormCard(title = "Evidencia fotográfica", icon = Icons.Default.CameraAlt) {
-        // El resumen arriba y el botón debajo, a todo el ancho. Antes iban en una fila: el texto no cedía ancho y
-        // el botón quedaba apretado en una píldora amarilla altísima en pantallas angostas.
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                "${state.form.localPhotoPaths.size} por guardar · " +
-                    "${state.queuedPhotos.size} en cola · ${state.remotePhotos.size} guardadas",
-                fontSize = 13.sp,
-                color = PmmTextSecondary
-            )
-            if (state.gatePhotos.isNotEmpty()) {
-                Text(
-                    "${state.gatePhotos.size} fotos provenientes de caseta",
-                    fontSize = 12.sp,
-                    color = PmmBlueDeep
-                )
-            }
-        }
-        Button(
-            onClick = onTakePhoto,
-            enabled = enabled,
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = PmmYellow,
-                contentColor = PmmNavyDark
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 52.dp)
-        ) {
-            Icon(Icons.Default.CameraAlt, null)
-            Spacer(Modifier.width(8.dp))
-            Text("Tomar foto", fontWeight = FontWeight.Black, fontSize = 16.sp)
-        }
-        PhotoStrip(state, viewModel)
-    }
+    // La evidencia fotográfica ya no se captura aquí, al fondo del formulario: se toma en el paso «Fotos» que sigue a
+    // guardar (o a actualizar), como en el mockup «Registro Entrada Bodega v3». Las fotos del daño sí se toman en
+    // «Condiciones especiales», porque son obligatorias antes de poder guardar.
 }
 
 @Composable
@@ -2034,7 +2031,7 @@ private data class EntradaGalleryItem(
 private val PMM_API_BASE: String = NetworkModule.BASE_URL
 
 private fun entradaLocalEvidencePhotos(state: EntradaUiState): List<LocalEvidencePhoto> {
-    return state.form.localPhotoPaths.map { path ->
+    val local = state.form.localPhotoPaths.map { path ->
         LocalEvidencePhoto(
             id = "local-$path",
             model = File(path),
@@ -2043,6 +2040,17 @@ private fun entradaLocalEvidencePhotos(state: EntradaUiState): List<LocalEvidenc
             canDelete = state.puedeBorrar
         )
     }
+    // Las que ya entraron a la cola de subida (la entrada ya estaba guardada) siguen a la vista en la cámara.
+    val queued = state.queuedPhotos.map { photo ->
+        LocalEvidencePhoto(
+            id = "queued-${photo.id}",
+            model = File(photo.localFilePath),
+            label = "Subiendo",
+            status = "Subiendo",
+            canDelete = state.puedeBorrar
+        )
+    }
+    return local + queued
 }
 
 /** Construye la lista unificada de fotos (locales + guardadas + caseta) en orden visual. */
@@ -2063,7 +2071,7 @@ private fun entradaGalleryItems(state: EntradaUiState, viewModel: EntradaViewMod
             add(EntradaGalleryItem(
                 key = "queued-${photo.id}",
                 model = File(photo.localFilePath),
-                label = "En cola",
+                label = "Subiendo",
                 pending = true,
                 onDelete = if (state.puedeBorrar) ({ viewModel.deleteQueuedPhoto(photo) }) else null
             ))
@@ -2463,27 +2471,36 @@ private fun EntradaWorkflowBottomBar(
 ) {
     val stage = state.workflowStage ?: return
     val hasLocalPhotos = state.form.localPhotoPaths.isNotEmpty() || state.form.localDamagePhotoPaths.isNotEmpty()
-    val label = when (stage) {
-        EntradaWorkflowStage.PRINT_LABELS -> "Imprimir etiquetas"
-        EntradaWorkflowStage.TAKE_PHOTOS -> if (hasLocalPhotos) "Guardar fotografías" else "Tomar fotos"
-        EntradaWorkflowStage.COMPLETE -> "Finalizar y volver"
-    }
-    val enabled = !state.isBusy && when (stage) {
-        EntradaWorkflowStage.PRINT_LABELS -> state.puedeAgregar || state.puedeModificar
-        EntradaWorkflowStage.TAKE_PHOTOS -> state.puedeAgregar
-        EntradaWorkflowStage.COMPLETE -> true
-    }
-    val onPrimary = when (stage) {
-        EntradaWorkflowStage.PRINT_LABELS -> onPrint
-        EntradaWorkflowStage.TAKE_PHOTOS -> if (hasLocalPhotos) onSavePhotos else onTakePhotos
-        EntradaWorkflowStage.COMPLETE -> onFinish
-    }
-    val icon = when (stage) {
-        EntradaWorkflowStage.PRINT_LABELS -> Icons.Default.Print
-        EntradaWorkflowStage.TAKE_PHOTOS -> if (hasLocalPhotos) Icons.Default.Check else Icons.Default.CameraAlt
-        EntradaWorkflowStage.COMPLETE -> Icons.Default.CheckCircle
-    }
     val photos = entradaEvidencePhotoCount(state)
+    // Las fotos se guardan solas al tomarlas: sin fotos el pie ofrece «Tomar fotos»; con al menos una, «Finalizar y
+    // volver». «Guardar fotografías» queda solo como red de seguridad para fotos que siguieran locales.
+    val action = EntradaPhotoPolicy.primaryAction(stage, hasLocalPhotos, photos)
+    val label = when (action) {
+        EntradaPhotoPolicy.WorkflowAction.PRINT_LABELS -> "Imprimir etiquetas"
+        EntradaPhotoPolicy.WorkflowAction.TAKE_PHOTOS -> "Tomar fotos"
+        EntradaPhotoPolicy.WorkflowAction.SAVE_LOCAL_PHOTOS -> "Guardar fotografías"
+        EntradaPhotoPolicy.WorkflowAction.FINISH -> "Finalizar y volver"
+    }
+    val enabled = !state.isBusy && when (action) {
+        EntradaPhotoPolicy.WorkflowAction.PRINT_LABELS -> state.puedeAgregar || state.puedeModificar
+        // Al editar, quien tiene permiso de Modificar también puede agregar fotos a la entrada que está corrigiendo.
+        EntradaPhotoPolicy.WorkflowAction.TAKE_PHOTOS,
+        EntradaPhotoPolicy.WorkflowAction.SAVE_LOCAL_PHOTOS ->
+            state.puedeAgregar || (state.isEditMode && state.puedeModificar)
+        EntradaPhotoPolicy.WorkflowAction.FINISH -> true
+    }
+    val onPrimary = when (action) {
+        EntradaPhotoPolicy.WorkflowAction.PRINT_LABELS -> onPrint
+        EntradaPhotoPolicy.WorkflowAction.TAKE_PHOTOS -> onTakePhotos
+        EntradaPhotoPolicy.WorkflowAction.SAVE_LOCAL_PHOTOS -> onSavePhotos
+        EntradaPhotoPolicy.WorkflowAction.FINISH -> onFinish
+    }
+    val icon = when (action) {
+        EntradaPhotoPolicy.WorkflowAction.PRINT_LABELS -> Icons.Default.Print
+        EntradaPhotoPolicy.WorkflowAction.TAKE_PHOTOS -> Icons.Default.CameraAlt
+        EntradaPhotoPolicy.WorkflowAction.SAVE_LOCAL_PHOTOS -> Icons.Default.Check
+        EntradaPhotoPolicy.WorkflowAction.FINISH -> Icons.Default.CheckCircle
+    }
     val summary = when (stage) {
         EntradaWorkflowStage.PRINT_LABELS -> "${entradaConceptCount(state.form.detalles.size)} · ${workflowPendingPhotoSummary(photos)}"
         EntradaWorkflowStage.TAKE_PHOTOS -> "${entradaConceptCount(state.form.detalles.size)} · ${entradaPhotoCount(photos)} capturadas"
@@ -2584,6 +2601,7 @@ private fun EntradaWorkflowContent(
     state: EntradaUiState,
     viewModel: EntradaViewModel,
     onTakePhoto: () -> Unit,
+    onTakeDamagePhoto: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val stage = state.workflowStage ?: return
@@ -2597,8 +2615,8 @@ private fun EntradaWorkflowContent(
                 .padding(horizontal = 16.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            EntradaWorkflowProgress(stage)
-            EntradaWorkflowStatus(stage)
+            EntradaWorkflowProgress(stage, isEdit = state.isEditMode)
+            EntradaWorkflowStatus(stage, isEdit = state.isEditMode)
             val cardTitle = when (stage) {
                 EntradaWorkflowStage.PRINT_LABELS -> "Imprime las etiquetas"
                 EntradaWorkflowStage.TAKE_PHOTOS -> "Toma las fotos"
@@ -2613,8 +2631,11 @@ private fun EntradaWorkflowContent(
                 val detail = when (stage) {
                     EntradaWorkflowStage.PRINT_LABELS ->
                         "Coloca una etiqueta en cada bulto. Al terminar, vuelve aquí para fotografiar la mercancía."
-                    EntradaWorkflowStage.TAKE_PHOTOS ->
+                    EntradaWorkflowStage.TAKE_PHOTOS -> if (state.isEditMode) {
+                        "Los datos ya quedaron actualizados. Si hace falta, agrega fotos de la mercancía a esta entrada."
+                    } else {
                         "Pega primero las etiquetas en los bultos. Después fotografía la mercancía para dejar evidencia."
+                    }
                     EntradaWorkflowStage.COMPLETE ->
                         "La recepción quedó registrada y las fotografías están listas para sincronizar."
                 }
@@ -2646,7 +2667,8 @@ private fun EntradaWorkflowContent(
                 }
                 if (stage != EntradaWorkflowStage.PRINT_LABELS) {
                     PhotoStrip(state, viewModel)
-                    if (stage == EntradaWorkflowStage.TAKE_PHOTOS && (state.form.localPhotoPaths.isNotEmpty() || state.form.localDamagePhotoPaths.isNotEmpty())) {
+                    // Con al menos una foto el pie pasa a «Finalizar y volver»; para seguir tomando está este botón.
+                    if (stage == EntradaWorkflowStage.TAKE_PHOTOS && photoCount > 0) {
                         OutlinedButton(
                             onClick = onTakePhoto,
                             modifier = Modifier
@@ -2659,6 +2681,27 @@ private fun EntradaWorkflowContent(
                             Text("Agregar más fotos", fontWeight = FontWeight.Black)
                         }
                     }
+                    EntradaPhotoSyncNote(state)
+                }
+            }
+            // Mercancía dañada: sus fotos van aparte de la evidencia, en su propio grupo, para identificarlas (también
+            // así aparecen en el enlace de seguimiento).
+            if (stage != EntradaWorkflowStage.PRINT_LABELS && state.form.danada) {
+                FormCard(title = "Mercancía dañada", icon = Icons.Default.Warning) {
+                    if (state.form.danadaDescripcion.isNotBlank()) {
+                        Text(
+                            state.form.danadaDescripcion,
+                            color = PmmTextSecondary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    DamagePhotoSection(
+                        state = state,
+                        viewModel = viewModel,
+                        onTakePhoto = onTakeDamagePhoto,
+                        enabled = state.puedeAgregar || (state.isEditMode && state.puedeModificar)
+                    )
                 }
             }
         }
@@ -2675,14 +2718,36 @@ private fun EntradaWorkflowContent(
     }
 }
 
+/**
+ * Aviso pasivo (no pide nada): las fotos ya tomadas se están subiendo solas. Solo aparece mientras haya alguna en la cola.
+ */
 @Composable
-private fun EntradaWorkflowProgress(stage: EntradaWorkflowStage) {
+private fun EntradaPhotoSyncNote(state: EntradaUiState) {
+    val uploading = state.queuedPhotos.size + state.queuedDamagePhotos.size
+    if (uploading == 0) return
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Icon(Icons.Default.CloudUpload, contentDescription = null, tint = PmmBlueDeep, modifier = Modifier.size(18.dp))
+        Text(
+            "${entradaPhotoCount(uploading)} subiéndose. Se guardan solas; puedes salir.",
+            color = PmmBlueDeep,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@Composable
+private fun EntradaWorkflowProgress(stage: EntradaWorkflowStage, isEdit: Boolean = false) {
+    // Al editar no hay paso de etiquetas (se reimprimen con «Imprimir» del formulario): solo Datos → Fotos.
+    val labels = if (isEdit) listOf("Datos", "Fotos") else listOf("Datos", "Etiquetas", "Fotos")
     val activeIndex = when (stage) {
         EntradaWorkflowStage.PRINT_LABELS -> 1
-        EntradaWorkflowStage.TAKE_PHOTOS -> 2
-        EntradaWorkflowStage.COMPLETE -> 2
+        EntradaWorkflowStage.TAKE_PHOTOS -> labels.lastIndex
+        EntradaWorkflowStage.COMPLETE -> labels.lastIndex
     }
-    val labels = listOf("Datos", "Etiquetas", "Fotos")
     Surface(
         color = PmmBgSurface,
         shape = RoundedCornerShape(14.dp),
@@ -2724,10 +2789,11 @@ private fun EntradaWorkflowProgress(stage: EntradaWorkflowStage) {
 }
 
 @Composable
-private fun EntradaWorkflowStatus(stage: EntradaWorkflowStage) {
+private fun EntradaWorkflowStatus(stage: EntradaWorkflowStage, isEdit: Boolean = false) {
     val message = when (stage) {
         EntradaWorkflowStage.PRINT_LABELS -> "Datos guardados correctamente"
-        EntradaWorkflowStage.TAKE_PHOTOS -> "Etiquetas enviadas a imprimir"
+        EntradaWorkflowStage.TAKE_PHOTOS ->
+            if (isEdit) "Datos actualizados correctamente" else "Etiquetas enviadas a imprimir"
         EntradaWorkflowStage.COMPLETE -> "Fotos guardadas y listas para sincronizar"
     }
     Surface(
@@ -2789,8 +2855,19 @@ private fun entradaPhotoCount(count: Int): String =
 private fun workflowPendingPhotoSummary(count: Int): String =
     if (count == 0) "0 fotos por tomar" else "${entradaPhotoCount(count)} registradas"
 
-private fun entradaFooterSummary(state: EntradaUiState): String =
-    "${entradaConceptCount(state.form.detalles.size)} · ${entradaPhotoCount(entradaEvidencePhotoCount(state))}"
+private fun entradaFooterSummary(state: EntradaUiState): String {
+    val concepts = entradaConceptCount(state.form.detalles.size)
+    // Una entrada nueva todavía no tiene fotos de evidencia: se toman después de guardar. Decir «0 fotos» ahí
+    // confunde, así que solo se cuentan las del daño (que sí se toman antes) cuando se declaró mercancía dañada.
+    if (!state.isEditMode && !state.form.isExisting) {
+        return if (state.form.danada) {
+            "$concepts · ${entradaPhotoCount(state.form.localDamagePhotoPaths.size)} de daño"
+        } else {
+            concepts
+        }
+    }
+    return "$concepts · ${entradaPhotoCount(entradaEvidencePhotoCount(state))}"
+}
 
 @Composable
 private fun FormCard(
