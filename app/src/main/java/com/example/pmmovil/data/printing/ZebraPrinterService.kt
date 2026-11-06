@@ -60,7 +60,10 @@ class ZebraPrinterService @Inject constructor(
      * puede imprimir. Un valor leído hace menos de 30 minutos se reutiliza sin tocar la impresora, y si la Zebra
      * no contesta se usa el último conocido en vez de detener el trabajo.
      */
-    suspend fun readPrintheadResolutionDpi(config: ZebraPrinterConfig): Result<Int> =
+    suspend fun readPrintheadResolutionDpi(
+        config: ZebraPrinterConfig,
+        onProgress: ((ZebraSendProgress) -> Unit)? = null
+    ): Result<Int> =
         withContext(Dispatchers.IO) {
             val validation = validateConfig(config)
             if (validation != null) {
@@ -76,7 +79,9 @@ class ZebraPrinterService @Inject constructor(
             lockFor(config).withLock {
                 // Si la Zebra no puede imprimir (pausa, sin etiquetas, cabezal abierto...) se dice tal cual, en
                 // vez de esperar un "timeout" sin explicación. Si está atendiendo otro envío, se espera su turno.
-                val outcome = awaitPrinterResponse(config, onWaiting = null)
+                val outcome = awaitPrinterResponse(config, onWaiting = { seconds ->
+                    onProgress?.invoke(ZebraSendProgress.WaitingForPrinter(seconds))
+                })
                 if (outcome is StatusOutcome.Read) {
                     outcome.status.blockingProblem()?.let { problem ->
                         Log.w(TAG, "Zebra no lista host=$host port=${config.port}: $problem")
@@ -515,7 +520,21 @@ class ZebraPrinterService @Inject constructor(
                     "Fallo ZPL host=$host port=${config.port} labels=$labelCount bytes=${bytes.size} elapsed=${elapsed}ms",
                     error
                 )
-                mapError(error, host, config.port, connected = sentBytes > 0)
+                if (error is IOException && sentBytes > 0) {
+                    // La conexión se perdió con el envío a medias (la Zebra la cerró o se cayó la red): se dice
+                    // cuánto se alcanzó a entregar y cómo está la impresora, no solo "error al enviar".
+                    ZebraPrintResult.WriteError(
+                        abortedSendMessage(
+                            config = config,
+                            headline = "Se perdió la conexión con la Zebra a media impresión " +
+                                "(${sentBytes / 1024} de ${bytes.size / 1024} KB; se alcanzaron a entregar " +
+                                "${ZplJobAnalyzer.labelsSent(blocks, sentBytes)} de $jobLabels etiquetas).",
+                        ),
+                        error
+                    )
+                } else {
+                    mapError(error, host, config.port, connected = sentBytes > 0)
+                }
             }
         }
     }
@@ -531,12 +550,17 @@ class ZebraPrinterService @Inject constructor(
         labelsSent: Int,
         labelCount: Int
     ): String {
-        val progress = if (sentBytes <= 0) {
+        val headline = if (sentBytes <= 0) {
             "La Zebra no aceptó ningún dato del envío."
         } else {
             "La Zebra dejó de recibir datos después de ${sentBytes / 1024} de ${totalBytes / 1024} KB " +
                 "(se alcanzaron a entregar $labelsSent de $labelCount etiquetas)."
         }
+        return abortedSendMessage(config, headline)
+    }
+
+    /** [headline] + estado actual de la Zebra + la advertencia de no duplicar etiquetas al reintentar. */
+    private fun abortedSendMessage(config: ZebraPrinterConfig, headline: String): String {
         val diagnosis = when (val outcome = readStatus(config)) {
             is StatusOutcome.Read -> outcome.status.describe()
             StatusOutcome.Unreadable -> "No se entendió la respuesta de estado de la Zebra."
@@ -544,7 +568,7 @@ class ZebraPrinterService @Inject constructor(
                 "Tampoco respondió a la consulta de estado: puede tener un envío anterior atorado. " +
                     "Apágala 10 segundos y vuelve a encenderla."
         }
-        return "$progress $diagnosis Pudieron salir algunas etiquetas: revisa la impresora antes de reintentar " +
+        return "$headline $diagnosis Pudieron salir algunas etiquetas: revisa la impresora antes de reintentar " +
             "para no duplicarlas."
     }
 

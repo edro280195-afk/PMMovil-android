@@ -121,6 +121,9 @@ data class ZebraLabelData(
 
 /** Avance de un envío largo, para que la pantalla diga qué está pasando en vez de un círculo sin explicación. */
 sealed interface ZebraSendProgress {
+    /** Se están dibujando las etiquetas (en una tableta lenta, 20 etiquetas tardan varios segundos). */
+    data class Preparing(val done: Int, val total: Int) : ZebraSendProgress
+
     /** La Zebra no contesta todavía (atiende otro envío): se espera su turno sin mandarle nada. */
     data class WaitingForPrinter(val waitedSeconds: Int) : ZebraSendProgress
 

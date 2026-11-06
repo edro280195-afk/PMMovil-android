@@ -32,13 +32,17 @@ class LabelZplFactory @Inject constructor(
         labels: List<ZebraLabelData>,
         compress: Boolean = true,
         layoutOverride: ZebraLabelLayout? = null,
-        targetDpi: Int = ZebraLabelLayout.REFERENCE_PRINTHEAD_DPI
+        targetDpi: Int = ZebraLabelLayout.REFERENCE_PRINTHEAD_DPI,
+        /** Se llama tras dibujar cada etiqueta con (hechas, total), desde un hilo de fondo. */
+        onLabelRendered: ((done: Int, total: Int) -> Unit)? = null
     ): String {
         // Una instantánea evita mezclar dos diseños si el usuario guarda mientras se imprime un lote.
         val layout = (layoutOverride ?: layoutPreferences.getLayout())
             .scaledForPrintheadDpi(targetDpi)
         return withContext(Dispatchers.Default) {
-            labels.joinToString(separator = "\n") { buildSingleLabel(it, layout, compress) }
+            labels.mapIndexed { index, label ->
+                buildSingleLabel(label, layout, compress).also { onLabelRendered?.invoke(index + 1, labels.size) }
+            }.joinToString(separator = "\n")
         }
     }
 
