@@ -148,10 +148,15 @@ $mandatoryValue = $Mandatory.IsPresent.ToString().ToLowerInvariant()
 Write-Host "Publicando versionCode=$VersionCode versionName=$VersionName mandatory=$mandatoryValue ..."
 
 $responseFile = New-TemporaryFile
+$authorizationHeaderFile = New-TemporaryFile
+Set-Content -LiteralPath $authorizationHeaderFile.FullName `
+    -Value "Authorization: Bearer $($env:PMM_UPDATE_ADMIN_API_KEY)" `
+    -Encoding Ascii `
+    -NoNewline
 $curlArgs = @(
     "-sS", "--fail-with-body",
     "-X", "POST",
-    "-H", "Authorization: Bearer $($env:PMM_UPDATE_ADMIN_API_KEY)",
+    "-H", "@$($authorizationHeaderFile.FullName)",
     "-F", "packageName=$packageName",
     "-F", "versionCode=$VersionCode",
     "-F", "versionName=$VersionName",
@@ -162,8 +167,12 @@ $curlArgs = @(
     "-w", "`nHTTP %{http_code} -- %{size_upload} bytes subidos en %{time_total}s`n",
     "$baseUrl/admin/releases"
 )
-& curl.exe @curlArgs
-$curlExitCode = $LASTEXITCODE
+try {
+    & curl.exe @curlArgs
+    $curlExitCode = $LASTEXITCODE
+} finally {
+    Remove-Item -LiteralPath $authorizationHeaderFile.FullName -Force -ErrorAction SilentlyContinue
+}
 
 $responseBody = Get-Content -LiteralPath $responseFile.FullName -Raw -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $responseFile.FullName -Force -ErrorAction SilentlyContinue
