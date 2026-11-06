@@ -471,8 +471,12 @@ class PrinterDetailViewModel @Inject constructor(
 
     private fun ZebraPrintResult.toConnectionMessage(config: ZebraPrinterConfig): String {
         return when (this) {
-            is ZebraPrintResult.Success ->
-                "Conexion correcta con ${config.printerName} (${stats.host}:${stats.port}) en ${stats.elapsedMillis} ms."
+            is ZebraPrintResult.Success -> {
+                val base = "Conexion correcta con ${config.printerName} (${stats.host}:${stats.port}) en ${stats.elapsedMillis} ms."
+                // El estado sale de ~HS: confirma que la Zebra contesta y que puede imprimir, no solo que el puerto abre.
+                val state = stats.printerStatus?.describe()
+                if (state == null) base else "$base $state"
+            }
             else -> userMessage()
         }
     }

@@ -124,7 +124,9 @@ data class ZebraPrintStats(
     val port: Int,
     val labelCount: Int,
     val zplBytes: Int,
-    val elapsedMillis: Long
+    val elapsedMillis: Long,
+    /** Estado leído con ~HS antes de enviar o al probar la conexión; null si la Zebra no lo entregó. */
+    val printerStatus: ZebraPrinterStatus? = null
 )
 
 sealed class ZebraPrintResult {
@@ -135,6 +137,18 @@ sealed class ZebraPrintResult {
     data class ConnectionError(val message: String, val cause: Throwable? = null) : ZebraPrintResult()
     data class Timeout(val message: String, val cause: Throwable? = null) : ZebraPrintResult()
     data class WriteError(val message: String, val cause: Throwable? = null) : ZebraPrintResult()
+
+    /**
+     * La Zebra respondió en la red pero no está en condiciones de imprimir (pausa, sin etiquetas, cabezal
+     * abierto, sin cinta o sin responder). No se envió nada: así no se acumulan trabajos detrás de una impresora
+     * detenida para que salgan todos juntos —y repetidos— cuando alguien la reanude.
+     */
+    data class PrinterNotReady(
+        val message: String,
+        val status: ZebraPrinterStatus? = null,
+        val cause: Throwable? = null
+    ) : ZebraPrintResult()
+
     data class UnknownError(val message: String, val cause: Throwable? = null) : ZebraPrintResult()
 
     val isSuccess: Boolean get() = this is Success
@@ -147,6 +161,7 @@ sealed class ZebraPrintResult {
         is ConnectionError -> message
         is Timeout -> message
         is WriteError -> message
+        is PrinterNotReady -> message
         is UnknownError -> message
     }
 }
