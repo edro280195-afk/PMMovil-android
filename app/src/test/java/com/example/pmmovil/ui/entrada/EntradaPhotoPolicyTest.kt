@@ -91,4 +91,95 @@ class EntradaPhotoPolicyTest {
             EntradaPhotoPolicy.primaryAction(EntradaWorkflowStage.COMPLETE, hasLocalPhotos = false, evidencePhotoCount = 0)
         )
     }
+
+    @Test
+    fun `evidence card in form appears only on existing or edited entries`() {
+        assertFalse(EntradaPhotoPolicy.showEvidenceCardInForm(isExisting = false, isEditMode = false))
+        assertTrue(EntradaPhotoPolicy.showEvidenceCardInForm(isExisting = true, isEditMode = false))
+        assertTrue(EntradaPhotoPolicy.showEvidenceCardInForm(isExisting = false, isEditMode = true))
+        assertTrue(EntradaPhotoPolicy.showEvidenceCardInForm(isExisting = true, isEditMode = true))
+    }
+
+    @Test
+    fun `warehouse operators can delete photos while capturing without module-level Borrar`() {
+        // Durante captura nueva (antes y después de guardar la recepción) el operador suele tener Agregar sin Borrar.
+        assertTrue(
+            EntradaPhotoPolicy.canDeletePhoto(
+                puedeAgregar = true,
+                puedeModificar = false,
+                puedeBorrar = false,
+                isExisting = false,
+                isEditMode = false
+            )
+        )
+        assertTrue(
+            EntradaPhotoPolicy.canDeletePhoto(
+                puedeAgregar = true,
+                puedeModificar = false,
+                puedeBorrar = false,
+                isExisting = true,
+                isEditMode = false
+            )
+        )
+    }
+
+    @Test
+    fun `editing an existing entry allows adding and deleting photos with Modificar or Agregar`() {
+        assertTrue(
+            EntradaPhotoPolicy.canManagePhotos(
+                puedeAgregar = false,
+                puedeModificar = true,
+                isExisting = true,
+                isEditMode = true
+            )
+        )
+        assertTrue(
+            EntradaPhotoPolicy.canDeletePhoto(
+                puedeAgregar = false,
+                puedeModificar = true,
+                puedeBorrar = false,
+                isExisting = true,
+                isEditMode = true
+            )
+        )
+        assertTrue(
+            EntradaPhotoPolicy.canDeletePhoto(
+                puedeAgregar = false,
+                puedeModificar = false,
+                puedeBorrar = true,
+                isExisting = true,
+                isEditMode = true
+            )
+        )
+    }
+
+    @Test
+    fun `read-only user cannot add or delete photos`() {
+        assertFalse(
+            EntradaPhotoPolicy.canManagePhotos(
+                puedeAgregar = false,
+                puedeModificar = false,
+                isExisting = true,
+                isEditMode = true
+            )
+        )
+        assertFalse(
+            EntradaPhotoPolicy.canDeletePhoto(
+                puedeAgregar = false,
+                puedeModificar = false,
+                puedeBorrar = false,
+                isExisting = true,
+                isEditMode = true
+            )
+        )
+        assertFalse(
+            EntradaPhotoPolicy.canDeletePhoto(
+                puedeAgregar = false,
+                puedeModificar = false,
+                puedeBorrar = false,
+                isExisting = false,
+                isEditMode = false
+            )
+        )
+    }
 }

@@ -261,8 +261,13 @@ fun EntradaScreen(
     }
 
     // Con la entrada ya guardada, cada foto entra sola a la cola de subida (sin botón «Guardar»); la cámara muestra
-    // también esas fotos para que el contador y las miniaturas sigan reflejando lo que se lleva tomado.
-    val canTakePhotos = state.puedeAgregar || (state.isEditMode && state.puedeModificar)
+    // también esas fotos y las ya subidas para que el contador, las miniaturas y el botón de eliminar sigan disponibles.
+    val canTakePhotos = EntradaPhotoPolicy.canManagePhotos(
+        puedeAgregar = state.puedeAgregar,
+        puedeModificar = state.puedeModificar,
+        isExisting = state.form.isExisting,
+        isEditMode = state.isEditMode
+    )
 
     if (showCamera) {
         LocalEvidenceCameraScreen(
@@ -280,6 +285,9 @@ fun EntradaScreen(
                     photo.id.startsWith("queued-") ->
                         state.queuedPhotos.firstOrNull { "queued-${it.id}" == photo.id }
                             ?.let(viewModel::deleteQueuedPhoto)
+                    photo.id.startsWith("remote-") ->
+                        state.remotePhotos.firstOrNull { "remote-${it.idFotos}" == photo.id }
+                            ?.let(viewModel::deleteRemotePhoto)
                 }
             },
             onClose = { showCamera = false }
@@ -303,6 +311,9 @@ fun EntradaScreen(
                     photo.id.startsWith("queued-") ->
                         state.queuedDamagePhotos.firstOrNull { "queued-${it.id}" == photo.id }
                             ?.let(viewModel::deleteQueuedPhoto)
+                    photo.id.startsWith("remote-") ->
+                        state.remoteDamagePhotos.firstOrNull { "remote-${it.idFotos}" == photo.id }
+                            ?.let(viewModel::deleteRemoteDamagePhoto)
                 }
             },
             onClose = { showDamageCamera = false }
@@ -385,7 +396,12 @@ fun EntradaScreen(
                 EntradaBottomBar(
                     state = state,
                     onPrimary = viewModel::executePrimaryAction,
-                    onPrint = viewModel::requestPrint
+                    onPrint = viewModel::requestPrint,
+                    onOpenPhotos = if (EntradaPhotoPolicy.showEvidenceCardInForm(state.form.isExisting, state.isEditMode)) {
+                        { viewModel.setSection(EntradaSection.CLOSE) }
+                    } else {
+                        null
+                    }
                 )
             } else {
                 EntradaWorkflowBottomBar(
@@ -425,6 +441,7 @@ fun EntradaScreen(
                         state = state,
                         isNewEntryFlow = isNewEntryFlow,
                         onScanCamera = onNavigateToScanner,
+                        onSelectSection = viewModel::setSection,
                         modifier = Modifier
                             .width(320.dp)
                             .fillMaxHeight()
@@ -437,6 +454,7 @@ fun EntradaScreen(
                         showStepBar = false,
                         isNewEntryFlow = isNewEntryFlow,
                         onScanCamera = onNavigateToScanner,
+                        onTakePhoto = { showCamera = true },
                         onTakeDamagePhoto = { showDamageCamera = true },
                         modifier = Modifier.weight(1f)
                     )
@@ -448,6 +466,7 @@ fun EntradaScreen(
                     showScanHeader = true,
                     isNewEntryFlow = isNewEntryFlow,
                     onScanCamera = onNavigateToScanner,
+                    onTakePhoto = { showCamera = true },
                     onTakeDamagePhoto = { showDamageCamera = true },
                     modifier = Modifier.fillMaxSize()
                 )
@@ -506,7 +525,9 @@ fun EntradaScreen(
     }
     state.galleryOpenIndex?.let { startIndex ->
         val galleryItems = entradaGalleryItems(state, viewModel)
-        if (galleryItems.isNotEmpty()) {
+        if (galleryItems.isEmpty()) {
+            LaunchedEffect(Unit) { viewModel.closeGallery() }
+        } else {
             PhotoGalleryDialog(
                 items = galleryItems,
                 startIndex = startIndex.coerceIn(0, galleryItems.lastIndex),
@@ -516,7 +537,9 @@ fun EntradaScreen(
     }
     state.damageGalleryOpenIndex?.let { startIndex ->
         val damageGalleryItems = entradaDamageGalleryItems(state, viewModel)
-        if (damageGalleryItems.isNotEmpty()) {
+        if (damageGalleryItems.isEmpty()) {
+            LaunchedEffect(Unit) { viewModel.closeDamageGallery() }
+        } else {
             PhotoGalleryDialog(
                 items = damageGalleryItems,
                 startIndex = startIndex.coerceIn(0, damageGalleryItems.lastIndex),
@@ -744,6 +767,7 @@ private fun EntradaSidePanel(
     state: EntradaUiState,
     isNewEntryFlow: Boolean,
     onScanCamera: () -> Unit,
+    onSelectSection: (EntradaSection) -> Unit,
     modifier: Modifier = Modifier
 ) {
     // Mismo modelo que en teléfono: talón verde o chip discreto, según si ya se leyó una caseta.
@@ -775,7 +799,8 @@ private fun EntradaSidePanel(
         EntradaSection.entries.forEach { section ->
             FlowOverviewItem(
                 section = section,
-                complete = sectionComplete(section, state.form)
+                complete = sectionComplete(section, state.form),
+                onClick = { onSelectSection(section) }
             )
         }
     }
@@ -919,10 +944,14 @@ private fun SummaryLine(label: String, value: String) {
 @Composable
 private fun FlowOverviewItem(
     section: EntradaSection,
-    complete: Boolean
+    complete: Boolean,
+    onClick: () -> Unit
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(13.dp))
+            .clickable(onClick = onClick),
         color = Color.White.copy(alpha = if (complete) 0.14f else 0.08f),
         shape = RoundedCornerShape(13.dp)
     ) {
@@ -971,6 +1000,7 @@ private fun EntradaFormContent(
     showScanHeader: Boolean,
     isNewEntryFlow: Boolean,
     onScanCamera: () -> Unit,
+    onTakePhoto: () -> Unit,
     onTakeDamagePhoto: () -> Unit,
     modifier: Modifier = Modifier,
     showStepBar: Boolean = true
@@ -988,7 +1018,7 @@ private fun EntradaFormContent(
     // La primera sección se muestra desde arriba del todo, con el talón/chip de caseta a la vista: antes se
     // saltaba directo a la sección y el chip quedaba cortado bajo la barra.
     fun listIndexOf(section: EntradaSection) = if (section.ordinal == 0) 0 else section.ordinal + headerOffset
-    LaunchedEffect(state.section, showHeaderItem) {
+    LaunchedEffect(state.section, state.sectionScrollNonce, showHeaderItem) {
         listState.animateScrollToItem(listIndexOf(state.section))
     }
     // La sección que se está viendo, para resaltarla en la barra de pasos.
@@ -1046,7 +1076,7 @@ private fun EntradaFormContent(
                             EntradaSection.REFERENCE -> ReferenceSection(state, viewModel, formEditable)
                             EntradaSection.ARRIVAL -> ArrivalSection(state, viewModel, onTakeDamagePhoto, formEditable)
                             EntradaSection.MERCHANDISE -> MerchandiseSection(state, viewModel, formEditable)
-                            EntradaSection.CLOSE -> CloseSection(state, viewModel, formEditable)
+                            EntradaSection.CLOSE -> CloseSection(state, viewModel, onTakePhoto, formEditable)
                         }
                     }
                 }
@@ -1568,7 +1598,13 @@ private fun ArrivalSection(
                     .fillMaxWidth()
                     .captureGlow(guide.status(CaptureField.DANO_DESCRIPCION), cornerRadius = 4.dp)
             )
-            DamagePhotoSection(state, viewModel, onTakeDamagePhoto, enabled)
+            val canManageDamagePhotos = EntradaPhotoPolicy.canManagePhotos(
+                puedeAgregar = state.puedeAgregar,
+                puedeModificar = state.puedeModificar,
+                isExisting = state.form.isExisting,
+                isEditMode = state.isEditMode
+            )
+            DamagePhotoSection(state, viewModel, onTakeDamagePhoto, canManageDamagePhotos && !state.isBusy)
             if ("danadaFotos" in state.invalidFields) {
                 Text(
                     "Agrega al menos una foto del daño.",
@@ -1639,43 +1675,84 @@ private fun DamagePhotoSection(
 @Composable
 private fun DamagePhotoStrip(state: EntradaUiState, viewModel: EntradaViewModel) {
     val items = entradaDamageGalleryItems(state, viewModel)
+    var itemPendingDelete by remember { mutableStateOf<EntradaGalleryItem?>(null) }
     if (items.isEmpty()) {
         EmptyState("Sin fotos del daño", "Toma al menos una foto antes de guardar.")
         return
     }
     LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         itemsIndexed(items, key = { _, it -> it.key }) { index, item ->
-            PhotoTile(item = item, onOpen = { viewModel.openDamageGallery(index) })
+            PhotoTile(
+                item = item,
+                onOpen = { viewModel.openDamageGallery(index) },
+                onRequestDelete = item.onDelete?.let { { itemPendingDelete = item } }
+            )
         }
+    }
+    itemPendingDelete?.let { target ->
+        ConfirmDeletePhotoDialog(
+            onConfirm = {
+                target.onDelete?.invoke()
+                itemPendingDelete = null
+            },
+            onDismiss = { itemPendingDelete = null }
+        )
     }
 }
 
 private fun entradaLocalDamagePhotos(state: EntradaUiState): List<LocalEvidencePhoto> {
-    val local = state.form.localDamagePhotoPaths.map { path ->
+    val reference = state.form.reference()
+    val canDelete = EntradaPhotoPolicy.canDeletePhoto(
+        puedeAgregar = state.puedeAgregar,
+        puedeModificar = state.puedeModificar,
+        puedeBorrar = state.puedeBorrar,
+        isExisting = state.form.isExisting,
+        isEditMode = state.isEditMode
+    )
+    val local = state.form.localDamagePhotoPaths.asReversed().map { path ->
         LocalEvidencePhoto(
             id = "local-$path",
             model = File(path),
-            label = "Nueva",
-            status = "Nueva",
-            canDelete = state.puedeBorrar
+            label = "Por guardar",
+            status = "Nueva · por guardar",
+            canDelete = canDelete
         )
     }
-    // Las que ya entraron a la cola de subida (la entrada ya estaba guardada) siguen a la vista en la cámara.
-    val queued = state.queuedDamagePhotos.map { photo ->
+    val queued = state.queuedDamagePhotos.asReversed().map { photo ->
         LocalEvidencePhoto(
             id = "queued-${photo.id}",
             model = File(photo.localFilePath),
             label = "Subiendo",
-            status = "Subiendo",
-            canDelete = state.puedeBorrar
+            status = "Nueva · subiendo",
+            canDelete = canDelete
         )
     }
-    return local + queued
+    val remote = if (reference.isBlank()) {
+        emptyList()
+    } else {
+        state.remoteDamagePhotos.asReversed().map { photo ->
+            LocalEvidencePhoto(
+                id = "remote-${photo.idFotos}",
+                model = "${PMM_API_BASE}Foto/entrada-danio/ver/$reference/${photo.nLineNo}",
+                label = "Daño ${photo.nLineNo}",
+                status = "Guardada",
+                canDelete = canDelete
+            )
+        }
+    }
+    return local + queued + remote
 }
 
 /** Construye la lista unificada de fotos de daño (locales + en cola + guardadas) en orden visual. */
 private fun entradaDamageGalleryItems(state: EntradaUiState, viewModel: EntradaViewModel): List<EntradaGalleryItem> {
     val reference = state.form.reference()
+    val canDelete = EntradaPhotoPolicy.canDeletePhoto(
+        puedeAgregar = state.puedeAgregar,
+        puedeModificar = state.puedeModificar,
+        puedeBorrar = state.puedeBorrar,
+        isExisting = state.form.isExisting,
+        isEditMode = state.isEditMode
+    )
     return buildList {
         state.form.localDamagePhotoPaths.forEach { path ->
             add(EntradaGalleryItem(
@@ -1683,7 +1760,7 @@ private fun entradaDamageGalleryItems(state: EntradaUiState, viewModel: EntradaV
                 model = File(path),
                 label = "Por guardar",
                 pending = true,
-                onDelete = if (state.puedeBorrar) ({ viewModel.deleteLocalDamagePhoto(path) }) else null
+                onDelete = if (canDelete) ({ viewModel.deleteLocalDamagePhoto(path) }) else null
             ))
         }
         state.queuedDamagePhotos.forEach { photo ->
@@ -1692,7 +1769,7 @@ private fun entradaDamageGalleryItems(state: EntradaUiState, viewModel: EntradaV
                 model = File(photo.localFilePath),
                 label = "Subiendo",
                 pending = true,
-                onDelete = if (state.puedeBorrar) ({ viewModel.deleteQueuedPhoto(photo) }) else null
+                onDelete = if (canDelete) ({ viewModel.deleteQueuedPhoto(photo) }) else null
             ))
         }
         state.remoteDamagePhotos.forEach { photo ->
@@ -1702,7 +1779,7 @@ private fun entradaDamageGalleryItems(state: EntradaUiState, viewModel: EntradaV
                     model = "${PMM_API_BASE}Foto/entrada-danio/ver/$reference/${photo.nLineNo}",
                     label = "Daño ${photo.nLineNo}",
                     pending = false,
-                    onDelete = if (state.puedeBorrar) ({ viewModel.deleteRemoteDamagePhoto(photo) }) else null
+                    onDelete = if (canDelete) ({ viewModel.deleteRemoteDamagePhoto(photo) }) else null
                 )
             )
         }
@@ -1962,8 +2039,19 @@ private fun MerchandiseSection(state: EntradaUiState, viewModel: EntradaViewMode
 private fun CloseSection(
     state: EntradaUiState,
     viewModel: EntradaViewModel,
+    onTakePhoto: () -> Unit,
     enabled: Boolean
 ) {
+    // En una entrada ya existente/editada se muestra aquí arriba para ver las fotos tomadas, agregar nuevas o eliminar
+    // alguna directo sin tener que pasar primero por Actualizar. En una entrada nueva sin guardar, la evidencia se
+    // captura en el paso «Fotos» posterior a guardar e imprimir etiquetas.
+    if (EntradaPhotoPolicy.showEvidenceCardInForm(state.form.isExisting, state.isEditMode)) {
+        EvidencePhotoCard(
+            state = state,
+            viewModel = viewModel,
+            onTakePhoto = onTakePhoto
+        )
+    }
     FormCard(title = "Cierre de recepción", icon = Icons.Default.CheckCircle) {
         // «Recibió» no se captura: es quien guarda la entrada. El API guarda su nombre completo (no su clave).
         ReadOnlyCapturedField(
@@ -1997,22 +2085,96 @@ private fun CloseSection(
             viewModel.updateForm { it.copy(noSello = enabled, noSelloCant = count) }
         }
     }
-    // La evidencia fotográfica ya no se captura aquí, al fondo del formulario: se toma en el paso «Fotos» que sigue a
-    // guardar (o a actualizar), como en el mockup «Registro Entrada Bodega v3». Las fotos del daño sí se toman en
-    // «Condiciones especiales», porque son obligatorias antes de poder guardar.
+}
+
+@Composable
+private fun EvidencePhotoCard(
+    state: EntradaUiState,
+    viewModel: EntradaViewModel,
+    onTakePhoto: () -> Unit
+) {
+    val canManagePhotos = EntradaPhotoPolicy.canManagePhotos(
+        puedeAgregar = state.puedeAgregar,
+        puedeModificar = state.puedeModificar,
+        isExisting = state.form.isExisting,
+        isEditMode = state.isEditMode
+    )
+    val summaryParts = listOfNotNull(
+        state.form.localPhotoPaths.size.takeIf { it > 0 }?.let { "$it por guardar" },
+        state.queuedPhotos.size.takeIf { it > 0 }?.let { "$it subiéndose" },
+        state.remotePhotos.size.takeIf { it > 0 }?.let { "$it guardadas" }
+    )
+    FormCard(title = "Evidencia fotográfica", icon = Icons.Default.CameraAlt) {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                if (summaryParts.isEmpty()) "Aún sin fotos de evidencia" else summaryParts.joinToString(" · "),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = PmmTextSecondary
+            )
+            if (state.gatePhotos.isNotEmpty()) {
+                Text(
+                    "${state.gatePhotos.size} fotos provenientes de caseta",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = PmmBlueDeep
+                )
+            }
+        }
+        OutlinedButton(
+            onClick = onTakePhoto,
+            enabled = canManagePhotos && !state.isBusy,
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.5.dp, PmmBlueDeep),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+        ) {
+            Icon(Icons.Default.CameraAlt, null, tint = PmmBlueDeep, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                if (summaryParts.isNotEmpty()) "Agregar fotos" else "Tomar fotos",
+                fontWeight = FontWeight.Black,
+                color = PmmBlueDeep
+            )
+        }
+        PhotoStrip(state, viewModel)
+        EntradaPhotoSyncNote(state)
+    }
 }
 
 @Composable
 private fun PhotoStrip(state: EntradaUiState, viewModel: EntradaViewModel) {
     val items = entradaGalleryItems(state, viewModel)
+    var itemPendingDelete by remember { mutableStateOf<EntradaGalleryItem?>(null) }
     if (items.isEmpty()) {
-        EmptyState("Sin fotografías", "Toma evidencia y revísala aquí antes de guardar.")
+        EmptyState(
+            "Sin fotografías",
+            if (state.form.isExisting || state.isEditMode) {
+                "Toma fotos para dejar evidencia de esta entrada."
+            } else {
+                "Toma evidencia y revísala aquí antes de finalizar."
+            }
+        )
         return
     }
     LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         itemsIndexed(items, key = { _, it -> it.key }) { index, item ->
-            PhotoTile(item = item, onOpen = { viewModel.openGallery(index) })
+            PhotoTile(
+                item = item,
+                onOpen = { viewModel.openGallery(index) },
+                onRequestDelete = item.onDelete?.let { { itemPendingDelete = item } }
+            )
         }
+    }
+    itemPendingDelete?.let { target ->
+        ConfirmDeletePhotoDialog(
+            onConfirm = {
+                target.onDelete?.invoke()
+                itemPendingDelete = null
+            },
+            onDismiss = { itemPendingDelete = null }
+        )
     }
 }
 
@@ -2031,32 +2193,59 @@ private data class EntradaGalleryItem(
 private val PMM_API_BASE: String = NetworkModule.BASE_URL
 
 private fun entradaLocalEvidencePhotos(state: EntradaUiState): List<LocalEvidencePhoto> {
-    val local = state.form.localPhotoPaths.map { path ->
+    val reference = state.form.reference()
+    val canDelete = EntradaPhotoPolicy.canDeletePhoto(
+        puedeAgregar = state.puedeAgregar,
+        puedeModificar = state.puedeModificar,
+        puedeBorrar = state.puedeBorrar,
+        isExisting = state.form.isExisting,
+        isEditMode = state.isEditMode
+    )
+    val local = state.form.localPhotoPaths.asReversed().map { path ->
         LocalEvidencePhoto(
             id = "local-$path",
             model = File(path),
-            label = "Nueva",
-            status = "Nueva",
-            canDelete = state.puedeBorrar
+            label = "Por guardar",
+            status = "Nueva · por guardar",
+            canDelete = canDelete
         )
     }
-    // Las que ya entraron a la cola de subida (la entrada ya estaba guardada) siguen a la vista en la cámara.
-    val queued = state.queuedPhotos.map { photo ->
+    val queued = state.queuedPhotos.asReversed().map { photo ->
         LocalEvidencePhoto(
             id = "queued-${photo.id}",
             model = File(photo.localFilePath),
             label = "Subiendo",
-            status = "Subiendo",
-            canDelete = state.puedeBorrar
+            status = "Nueva · subiendo",
+            canDelete = canDelete
         )
     }
-    return local + queued
+    val remote = if (reference.isBlank()) {
+        emptyList()
+    } else {
+        state.remotePhotos.asReversed().map { photo ->
+            LocalEvidencePhoto(
+                id = "remote-${photo.idFotos}",
+                model = "${PMM_API_BASE}Foto/entrada/ver/$reference/${photo.nLineNo}",
+                label = "Foto ${photo.nLineNo}",
+                status = "Guardada",
+                canDelete = canDelete
+            )
+        }
+    }
+    return local + queued + remote
 }
 
-/** Construye la lista unificada de fotos (locales + guardadas + caseta) en orden visual. */
+/** Construye la lista unificada de fotos (locales + en cola + guardadas + caseta) en orden visual. */
 private fun entradaGalleryItems(state: EntradaUiState, viewModel: EntradaViewModel): List<EntradaGalleryItem> {
     val reference = state.form.reference()
     val casetaId = state.form.casetaId
+    val canDelete = EntradaPhotoPolicy.canDeletePhoto(
+        puedeAgregar = state.puedeAgregar,
+        puedeModificar = state.puedeModificar,
+        puedeBorrar = state.puedeBorrar,
+        isExisting = state.form.isExisting,
+        isEditMode = state.isEditMode
+    )
     return buildList {
         state.form.localPhotoPaths.forEach { path ->
             add(EntradaGalleryItem(
@@ -2064,7 +2253,7 @@ private fun entradaGalleryItems(state: EntradaUiState, viewModel: EntradaViewMod
                 model = File(path),
                 label = "Por guardar",
                 pending = true,
-                onDelete = if (state.puedeBorrar) ({ viewModel.deleteLocalPhoto(path) }) else null
+                onDelete = if (canDelete) ({ viewModel.deleteLocalPhoto(path) }) else null
             ))
         }
         state.queuedPhotos.forEach { photo ->
@@ -2073,7 +2262,7 @@ private fun entradaGalleryItems(state: EntradaUiState, viewModel: EntradaViewMod
                 model = File(photo.localFilePath),
                 label = "Subiendo",
                 pending = true,
-                onDelete = if (state.puedeBorrar) ({ viewModel.deleteQueuedPhoto(photo) }) else null
+                onDelete = if (canDelete) ({ viewModel.deleteQueuedPhoto(photo) }) else null
             ))
         }
         state.remotePhotos.forEach { photo ->
@@ -2083,7 +2272,7 @@ private fun entradaGalleryItems(state: EntradaUiState, viewModel: EntradaViewMod
                     model = "${PMM_API_BASE}Foto/entrada/ver/$reference/${photo.nLineNo}",
                     label = "Guardada ${photo.nLineNo}",
                     pending = false,
-                    onDelete = if (state.puedeBorrar) ({ viewModel.deleteRemotePhoto(photo) }) else null
+                    onDelete = if (canDelete) ({ viewModel.deleteRemotePhoto(photo) }) else null
                 )
             )
         }
@@ -2104,7 +2293,11 @@ private fun entradaGalleryItems(state: EntradaUiState, viewModel: EntradaViewMod
 }
 
 @Composable
-private fun PhotoTile(item: EntradaGalleryItem, onOpen: () -> Unit) {
+private fun PhotoTile(
+    item: EntradaGalleryItem,
+    onOpen: () -> Unit,
+    onRequestDelete: (() -> Unit)? = item.onDelete
+) {
     Box(
         modifier = Modifier
             .size(132.dp)
@@ -2141,7 +2334,7 @@ private fun PhotoTile(item: EntradaGalleryItem, onOpen: () -> Unit) {
                 shape = RoundedCornerShape(999.dp)
             ) {
                 Text(
-                    "POR GUARDAR",
+                    item.label.uppercase(),
                     modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
                     fontSize = 8.sp,
                     color = Color.White,
@@ -2149,7 +2342,7 @@ private fun PhotoTile(item: EntradaGalleryItem, onOpen: () -> Unit) {
                 )
             }
         }
-        item.onDelete?.let { delete ->
+        onRequestDelete?.let { delete ->
             IconButton(
                 onClick = delete,
                 modifier = Modifier
@@ -2165,18 +2358,55 @@ private fun PhotoTile(item: EntradaGalleryItem, onOpen: () -> Unit) {
 }
 
 @Composable
+private fun ConfirmDeletePhotoDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("¿Eliminar fotografía?", fontWeight = FontWeight.Black) },
+        text = {
+            Text(
+                "Esta foto se quitará de la entrada.",
+                fontWeight = FontWeight.SemiBold,
+                color = PmmTextSecondary
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = PmmRed,
+                    contentColor = Color.White
+                )
+            ) {
+                Text("Eliminar", fontWeight = FontWeight.Black)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar", fontWeight = FontWeight.Bold)
+            }
+        }
+    )
+}
+
+@Composable
 private fun PhotoGalleryDialog(
     items: List<EntradaGalleryItem>,
     startIndex: Int,
     onClose: () -> Unit
 ) {
+    var pendingDeleteAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         val pagerState = rememberPagerState(initialPage = startIndex) { items.size }
         val scope = rememberCoroutineScope()
+        val currentIndex = pagerState.currentPage.coerceIn(0, (items.size - 1).coerceAtLeast(0))
 
         Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.97f))) {
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-                ZoomableImage(model = items[page].model, modifier = Modifier.fillMaxSize())
+                val item = items.getOrNull(page) ?: return@HorizontalPager
+                ZoomableImage(model = item.model, modifier = Modifier.fillMaxSize())
             }
 
             // Barra superior: contador + eliminar + cerrar
@@ -2190,7 +2420,7 @@ private fun PhotoGalleryDialog(
             ) {
                 Surface(color = Color.Black.copy(alpha = 0.5f), shape = RoundedCornerShape(999.dp)) {
                     Text(
-                        "${pagerState.currentPage + 1} / ${items.size}",
+                        "${currentIndex + 1} / ${items.size}",
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                         color = Color.White,
                         fontSize = 13.sp,
@@ -2198,10 +2428,10 @@ private fun PhotoGalleryDialog(
                     )
                 }
                 Spacer(Modifier.weight(1f))
-                val delete = items.getOrNull(pagerState.currentPage)?.onDelete
+                val delete = items.getOrNull(currentIndex)?.onDelete
                 if (delete != null) {
                     IconButton(
-                        onClick = { delete(); onClose() },
+                        onClick = { pendingDeleteAction = delete },
                         modifier = Modifier.background(Color.Black.copy(alpha = 0.5f), CircleShape)
                     ) {
                         Icon(Icons.Default.Delete, "Eliminar", tint = Color.White)
@@ -2227,7 +2457,7 @@ private fun PhotoGalleryDialog(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     itemsIndexed(items, key = { _, it -> "thumb-${it.key}" }) { i, item ->
-                        val selected = i == pagerState.currentPage
+                        val selected = i == currentIndex
                         AsyncImage(
                             model = item.model,
                             contentDescription = item.label,
@@ -2246,6 +2476,17 @@ private fun PhotoGalleryDialog(
                 }
             }
         }
+    }
+    pendingDeleteAction?.let { delete ->
+        ConfirmDeletePhotoDialog(
+            onConfirm = {
+                val shouldClose = items.size <= 1
+                pendingDeleteAction = null
+                delete()
+                if (shouldClose) onClose()
+            },
+            onDismiss = { pendingDeleteAction = null }
+        )
     }
 }
 
@@ -2295,7 +2536,8 @@ private fun ZoomableImage(model: Any, modifier: Modifier = Modifier) {
 private fun EntradaBottomBar(
     state: EntradaUiState,
     onPrimary: () -> Unit,
-    onPrint: () -> Unit
+    onPrint: () -> Unit,
+    onOpenPhotos: (() -> Unit)? = null
 ) {
     val form = state.form
     val hasLocalPhotos = form.localPhotoPaths.isNotEmpty() || form.localDamagePhotoPaths.isNotEmpty()
@@ -2334,15 +2576,32 @@ private fun EntradaBottomBar(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Text(
-                        text = summary,
-                        color = PmmTextSecondary,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = summary,
+                            color = PmmTextSecondary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (onOpenPhotos != null) {
+                            Text(
+                                text = "Ver fotos",
+                                color = PmmBlueDeep,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 12.sp,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .clickable(enabled = !state.isBusy, onClick = onOpenPhotos)
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (showPrintButton) {
                             OutlinedButton(
@@ -2373,14 +2632,33 @@ private fun EntradaBottomBar(
                         .padding(horizontal = if (compactPhone) 12.dp else 16.dp, vertical = 7.dp),
                     verticalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
-                    Text(
-                        text = summary,
-                        color = PmmTextSecondary,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = summary,
+                            color = PmmTextSecondary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (onOpenPhotos != null) {
+                            Text(
+                                text = "Ver fotos",
+                                color = PmmBlueDeep,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 11.sp,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .clickable(enabled = !state.isBusy, onClick = onOpenPhotos)
+                                    .padding(horizontal = 6.dp, vertical = 1.dp)
+                            )
+                        }
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -2486,7 +2764,12 @@ private fun EntradaWorkflowBottomBar(
         // Al editar, quien tiene permiso de Modificar también puede agregar fotos a la entrada que está corrigiendo.
         EntradaPhotoPolicy.WorkflowAction.TAKE_PHOTOS,
         EntradaPhotoPolicy.WorkflowAction.SAVE_LOCAL_PHOTOS ->
-            state.puedeAgregar || (state.isEditMode && state.puedeModificar)
+            EntradaPhotoPolicy.canManagePhotos(
+                puedeAgregar = state.puedeAgregar,
+                puedeModificar = state.puedeModificar,
+                isExisting = state.form.isExisting,
+                isEditMode = state.isEditMode
+            )
         EntradaPhotoPolicy.WorkflowAction.FINISH -> true
     }
     val onPrimary = when (action) {
@@ -2700,7 +2983,12 @@ private fun EntradaWorkflowContent(
                         state = state,
                         viewModel = viewModel,
                         onTakePhoto = onTakeDamagePhoto,
-                        enabled = state.puedeAgregar || (state.isEditMode && state.puedeModificar)
+                        enabled = EntradaPhotoPolicy.canManagePhotos(
+                            puedeAgregar = state.puedeAgregar,
+                            puedeModificar = state.puedeModificar,
+                            isExisting = state.form.isExisting,
+                            isEditMode = state.isEditMode
+                        ) && !state.isBusy
                     )
                 }
             }

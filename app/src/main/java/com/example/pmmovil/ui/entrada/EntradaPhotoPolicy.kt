@@ -54,4 +54,49 @@ object EntradaPhotoPolicy {
         }
         EntradaWorkflowStage.COMPLETE -> WorkflowAction.FINISH
     }
+
+    /**
+     * En una entrada nueva sin guardar, la evidencia se toma en el paso «Fotos» posterior a guardar e imprimir
+     * etiquetas. En una entrada ya existente (edición o consulta), la tarjeta de evidencia se muestra directo en el
+     * formulario para poder ver las fotos tomadas, agregar nuevas o eliminar alguna sin tener que pulsar Actualizar.
+     */
+    fun showEvidenceCardInForm(
+        isExisting: Boolean,
+        isEditMode: Boolean
+    ): Boolean = isExisting || isEditMode
+
+    /**
+     * ¿Puede tomar/agregar fotos en esta entrada?
+     * - Entrada nueva: requiere «Agregar».
+     * - Entrada existente / edición: basta «Agregar» o «Modificar» (solo «Lectura» no puede).
+     */
+    fun canManagePhotos(
+        puedeAgregar: Boolean,
+        puedeModificar: Boolean,
+        isExisting: Boolean,
+        isEditMode: Boolean
+    ): Boolean = if (isExisting || isEditMode) {
+        puedeAgregar || puedeModificar
+    } else {
+        puedeAgregar
+    }
+
+    /**
+     * ¿Puede eliminar fotos tomadas (mientras dispara con la cámara o en una entrada ya hecha)?
+     * En PMM el permiso «Borrar» del módulo 153 corresponde a borrar toda la recepción; los operadores de bodega
+     * normalmente tienen «Agregar» y/o «Modificar». Quien puede capturar o editar fotos en la entrada (o quien tiene
+     * «Borrar») puede eliminar fotos tomadas; un usuario de solo «Lectura» no.
+     */
+    fun canDeletePhoto(
+        puedeAgregar: Boolean,
+        puedeModificar: Boolean,
+        puedeBorrar: Boolean,
+        isExisting: Boolean,
+        isEditMode: Boolean
+    ): Boolean = puedeBorrar || canManagePhotos(
+        puedeAgregar = puedeAgregar,
+        puedeModificar = puedeModificar,
+        isExisting = isExisting,
+        isEditMode = isEditMode
+    )
 }

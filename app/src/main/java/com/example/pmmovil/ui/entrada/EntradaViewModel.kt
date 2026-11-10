@@ -90,6 +90,7 @@ data class EntradaUiState(
     val boxes: List<EntradaLookupItem> = emptyList(),
     val form: EntradaFormSnapshot = EntradaFormSnapshot(),
     val section: EntradaSection = EntradaSection.REFERENCE,
+    val sectionScrollNonce: Int = 0,
     val invalidFields: Set<String> = emptySet(),
     val drafts: List<EntradaDraft> = emptyList(),
     val showDraftRecovery: Boolean = false,
@@ -201,8 +202,22 @@ class EntradaViewModel @Inject constructor(
         }
     }
 
-    /** Subir fotos lo puede hacer quien agrega entradas o, al editar una existente, quien tiene permiso de Modificar. */
-    private fun canAddPhotos(): Boolean = canCreate() || (_uiState.value.isEditMode && canEdit())
+    /** Subir fotos lo puede hacer quien agrega entradas o, en una existente, quien tiene permiso de Modificar. */
+    private fun canAddPhotos(): Boolean = EntradaPhotoPolicy.canManagePhotos(
+        puedeAgregar = canCreate(),
+        puedeModificar = canEdit(),
+        isExisting = _uiState.value.form.isExisting,
+        isEditMode = _uiState.value.isEditMode
+    )
+
+    /** Eliminar fotos tomadas lo puede hacer quien captura/edita fotos en la entrada o quien tiene permiso Borrar. */
+    private fun canDeletePhotos(): Boolean = EntradaPhotoPolicy.canDeletePhoto(
+        puedeAgregar = canCreate(),
+        puedeModificar = canEdit(),
+        puedeBorrar = canDelete(),
+        isExisting = _uiState.value.form.isExisting,
+        isEditMode = _uiState.value.isEditMode
+    )
 
     /**
      * La entrada ya está en el servidor: la foto entra DE INMEDIATO a la cola persistente y el worker la sube sola. Nadie
@@ -313,7 +328,10 @@ class EntradaViewModel @Inject constructor(
     }
 
     fun setSection(section: EntradaSection) {
-        _uiState.value = _uiState.value.copy(section = section)
+        _uiState.value = _uiState.value.copy(
+            section = section,
+            sectionScrollNonce = _uiState.value.sectionScrollNonce + 1
+        )
     }
 
     fun dismissMessage() {
@@ -589,6 +607,11 @@ class EntradaViewModel @Inject constructor(
             workflowStage = null,
             section = EntradaSection.ARRIVAL,
             entryStartMode = EntradaEntryMode.MANUAL,
+            remotePhotos = emptyList(),
+            queuedPhotos = emptyList(),
+            remoteDamagePhotos = emptyList(),
+            queuedDamagePhotos = emptyList(),
+            gatePhotos = emptyList(),
             message = "Entrada cargada correctamente."
         )
         scheduleDraftSave()
@@ -872,7 +895,7 @@ class EntradaViewModel @Inject constructor(
     }
 
     fun deleteLocalPhoto(path: String) {
-        if (!canDelete()) {
+        if (!canDeletePhotos()) {
             denyEdit()
             return
         }
@@ -913,7 +936,7 @@ class EntradaViewModel @Inject constructor(
     }
 
     fun deleteLocalDamagePhoto(path: String) {
-        if (!canDelete()) {
+        if (!canDeletePhotos()) {
             denyEdit()
             return
         }
@@ -1513,7 +1536,7 @@ class EntradaViewModel @Inject constructor(
     }
 
     fun deleteQueuedPhoto(photo: EntradaPhotoSyncEntity) {
-        if (!canDelete()) {
+        if (!canDeletePhotos()) {
             denyEdit()
             return
         }
@@ -1525,7 +1548,7 @@ class EntradaViewModel @Inject constructor(
     }
 
     fun deleteRemotePhoto(photo: EntradaPhotoInfo) {
-        if (!canDelete()) {
+        if (!canDeletePhotos()) {
             denyEdit()
             return
         }
@@ -1551,7 +1574,7 @@ class EntradaViewModel @Inject constructor(
     }
 
     fun deleteRemoteDamagePhoto(photo: EntradaPhotoInfo) {
-        if (!canDelete()) {
+        if (!canDeletePhotos()) {
             denyEdit()
             return
         }
