@@ -121,6 +121,15 @@ Resultados del 21-oct con el Pixel 9 Pro XL (cifras y razones en `docs/mapeador-
 la persona se queda parada, gira sin avanzar o camina a más de ~1 m/s; la suave solo es confiable a ≤ 3 px de un píxel de cruda
 confiable (lejos de ellos se equivoca > 10 % en 50–70 % de los píxeles); y la cruda de confianza baja sirve (error mediano 2–7 %).
 
+## Laboratorio de la bodega nueva (L2 y L5, 6-nov)
+
+Dos herramientas para medir si el enfoque aguanta una nave de 80,000 ft² (`docs/mapeador-bodega.md` §12.9):
+
+| Herramienta | Qué hace |
+|---|---|
+| `drift_closure.py <mapa> [--real-m N] [--recta] [--desde ID] [--hasta ID]` · `--autoprueba` | Deriva de ARCore a partir de `keyframes.json`: longitud caminada, densidad de fotogramas, **error de cierre** (se empieza y se termina en la misma marca con la misma orientación) y, con `--real-m`, el **error de escala**. El cierre **no ve** un error de escala parejo: para eso `--recta --real-m <distancia medida>`. Solo numpy. |
+| `vitals_logger.py --serial <serie> [--cada 30] [--minutos N] [--salida vitales.csv] [--una-vez] [--paquete <app>]` | Anota batería, temperatura, estado térmico, memoria de la app y si vive/está al frente, durante una sesión larga. **Solo lee** por adb (`dumpsys`, `pidof`): no manda toques, apto para un teléfono personal. Con USB y Wi-Fi a la vez hay que elegir `--serial`. |
+
 ## Reconstruir con fotogrametría en la PC (vía 2)
 
 Lo que hace Scaniverse: reconstruir **después** de la captura con todas las fotos, no pintar en vivo la profundidad
