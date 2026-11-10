@@ -425,4 +425,47 @@ class LabelFieldExtractorTest {
         assertEquals("Acme  Industries", valor("BRAND: Acme  Industries MODEL: A123", Campo.MARCA))
         assertEquals("A123", valor("BRAND: Acme  Industries MODEL: A123", Campo.MODELO))
     }
+
+    // ── SIGMA-ALDRICH / MERCK / SUPELCO: etiquetas reales de cliente ─────────
+    @Test
+    fun `etiqueta Supelco entrega parte lote y serie desde DataMatrix`() {
+        val code = "(10)11368(21)300708-03(240)58298"
+        val text = "Supelco.\nSUPELCOSIL LC-18\nCat#: 58298\nCol: 300708-03\nBL: 11368"
+        val fields = LabelFieldExtractor.extraer(text, listOf(code))
+
+        assertEquals("58298", fields.first { it.campo == Campo.NUMERO_PARTE }.valor)
+        assertEquals("11368", fields.first { it.campo == Campo.LOTE }.valor)
+        assertEquals("300708-03", fields.first { it.campo == Campo.NUMERO_SERIE }.valor)
+        assertEquals("SUPELCO", fields.first { it.campo == Campo.MARCA }.valor)
+    }
+
+    @Test
+    fun `sobre Sigma-Aldrich entrega parte y lote desde DataMatrix delimitado por coma`() {
+        val code = "Z506729-2EA,3110"
+        val fields = LabelFieldExtractor.extraer("", listOf(code))
+
+        assertEquals("Z506729-2EA", fields.first { it.campo == Campo.NUMERO_PARTE }.valor)
+        assertEquals("3110", fields.first { it.campo == Campo.LOTE }.valor)
+    }
+
+    @Test
+    fun `frasco Sigma-Aldrich buffer entrega parte lote y pais de origen USA con AI 422`() {
+        val code = "(01)04061838260246(10)0000585854(240)T4415-1L(422)840"
+        val fields = LabelFieldExtractor.extraer("Sigma-Aldrich\nREF No T4415-1L\nLot 0000585854", listOf(code))
+
+        assertEquals("T4415-1L", fields.first { it.campo == Campo.NUMERO_PARTE }.valor)
+        assertEquals("0000585854", fields.first { it.campo == Campo.LOTE }.valor)
+        assertEquals("USA", fields.first { it.campo == Campo.PAIS_ORIGEN }.valor)
+        assertEquals("SIGMA-ALDRICH", fields.first { it.campo == Campo.MARCA }.valor)
+    }
+
+    @Test
+    fun `bolsa Sigma-Aldrich con delimitador FNC1 en crudo entrega parte y lote alfanumerico`() {
+        val rawDelimited = "0104061832565750\u001D10MKCX3293\u001D240537535-1L\u001D422840"
+        val fields = LabelFieldExtractor.extraer("", listOf(rawDelimited))
+
+        assertEquals("537535-1L", fields.first { it.campo == Campo.NUMERO_PARTE }.valor)
+        assertEquals("MKCX3293", fields.first { it.campo == Campo.LOTE }.valor)
+        assertEquals("USA", fields.first { it.campo == Campo.PAIS_ORIGEN }.valor)
+    }
 }

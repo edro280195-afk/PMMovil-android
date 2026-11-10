@@ -4,13 +4,13 @@ import com.google.mlkit.vision.barcode.common.Barcode
 
 object BarcodeFormatSets {
     /**
-     * Etiquetas impresas por PMM. Las plantillas ZPL usan `^BQ` (QR) para la
-     * referencia y `^BC` (Code 128) para el codigo de barras, y el renderer
-     * de Android imprime QR: no hay ninguna otra simbologia propia.
+     * Etiquetas impresas por PMM y códigos de producto básicos.
+     * Incluye DataMatrix para leer etiquetas 2D de clientes (ej. Sigma-Aldrich, Merck).
      */
     const val PMM_LABELS: Int =
         Barcode.FORMAT_QR_CODE or
-            Barcode.FORMAT_CODE_128
+            Barcode.FORMAT_CODE_128 or
+            Barcode.FORMAT_DATA_MATRIX
 
     /**
      * Mercancia de cliente, que puede traer cualquier simbologia comercial.

@@ -120,8 +120,17 @@ object LabelFieldExtractor {
     // descripción no demuestra quién fabricó la mercancía.
     private val knownBrandLines = listOf(
         "SKF", "BRIKKSEN", "ENERPAC", "VORTEX", "ADM", "ALLNEX", "LANXESS",
-        "RTP", "BASF", "KAMIN", "PATCO", "FREUDENBERG", "IMERYS", "CELITE"
-    ).associateWith { it } + mapOf("PATCO PRODUCTS" to "PATCO", "RTP COMPANY" to "RTP")
+        "RTP", "BASF", "KAMIN", "PATCO", "FREUDENBERG", "IMERYS", "CELITE",
+        "SIGMA-ALDRICH", "ALDRICH", "SUPELCO", "MILLIPORESIGMA", "MERCK"
+    ).associateWith { it } + mapOf(
+        "PATCO PRODUCTS" to "PATCO",
+        "SUPELCO." to "SUPELCO",
+        "RTP COMPANY" to "RTP",
+        "ALDRICH CHEMICAL CO" to "ALDRICH",
+        "ALDRICH CHEMICAL CO LLC" to "ALDRICH",
+        "ALDRICH CHEMICAL CO., LLC" to "ALDRICH",
+        "SIGMA-ALDRICH QUIMICA" to "SIGMA-ALDRICH"
+    )
 
     private val unPattern = Regex("""\bUN\s*(\d{4})\b""", RegexOption.IGNORE_CASE)
     private val ordinalPattern = Regex("""^(\d+)\s*(?:of|de)\s*(\d+)$""", RegexOption.IGNORE_CASE)
@@ -155,6 +164,7 @@ object LabelFieldExtractor {
             val code = BarcodeValueNormalizer.normalizeLabel(rawCode)
             observations += readGs1(code, rawCode)
             observations += readStructuredCode(code, rawCode)
+            observations += readCommaSeparatedCode(code, rawCode)
         }
         observations += barcodeObservations
 
@@ -366,6 +376,7 @@ object LabelFieldExtractor {
         listOf("240", "241").forEach { put(it, Gs1Spec(Campo.NUMERO_PARTE, maxLength = 30)) }
         listOf("250", "251", "400").forEach { put(it, Gs1Spec(maxLength = 30)) }
         (410..417).forEach { put(it.toString(), Gs1Spec(fixedLength = 13, maxLength = 13, numeric = true)) }
+        put("422", Gs1Spec(Campo.PAIS_ORIGEN, fixedLength = 3, maxLength = 3, numeric = true))
         (90..99).forEach { put(it.toString(), Gs1Spec(maxLength = 30)) }
         (3100..3169).forEach { put(it.toString(), Gs1Spec(fixedLength = 6, maxLength = 6, numeric = true)) }
     }
@@ -426,8 +437,44 @@ object LabelFieldExtractor {
             (spec.fixedLength == null || value.length == spec.fixedLength) &&
             value.none(Char::isISOControl) && (!spec.numeric || value.all { it in '0'..'9' })
 
-    private fun gs1Observation(field: Campo, ai: String, value: String, rawCode: String) = CampoLeido(
-        field, value, Origen.GS1, "($ai)", 99, rawCode = rawCode,
-        quantityScope = if (field == Campo.PIEZAS_POR_EMPAQUE) QuantityScope.PACKAGE_CONTENT else QuantityScope.UNSPECIFIED
-    )
+    private fun gs1Observation(field: Campo, ai: String, value: String, rawCode: String): CampoLeido {
+        val finalValue = if (field == Campo.PAIS_ORIGEN && ai == "422") {
+            when (value) {
+                "840" -> "USA"
+                "484" -> "MEX"
+                "276" -> "DEU"
+                "156" -> "CHN"
+                "392" -> "JPN"
+                "124" -> "CAN"
+                "724" -> "ESP"
+                "250" -> "FRA"
+                "826" -> "GBR"
+                else -> value
+            }
+        } else value
+        return CampoLeido(
+            field, finalValue, Origen.GS1, "($ai)", 99, rawCode = rawCode,
+            quantityScope = if (field == Campo.PIEZAS_POR_EMPAQUE) QuantityScope.PACKAGE_CONTENT else QuantityScope.UNSPECIFIED
+        )
+    }
+
+    /** Códigos 2D de accesorios/piezas delimitados por coma: [NUMERO_PARTE],[LOTE] (ej. Z506729-2EA,3110). */
+    private fun readCommaSeparatedCode(code: String, rawCode: String): List<CampoLeido> {
+        if (',' !in code) return emptyList()
+        val parts = code.split(',').map(String::trim)
+        if (parts.size != 2) return emptyList()
+        val partNumber = parts[0]
+        val lotNumber = parts[1]
+        if (partNumber.length in 3..35 && partNumber.any(Char::isLetterOrDigit) &&
+            lotNumber.length in 2..25 && lotNumber.any(Char::isLetterOrDigit) &&
+            !partNumber.contains(' ') && !lotNumber.contains(' ') &&
+            !partNumber.startsWith("(") && !partNumber.startsWith("+")
+        ) {
+            return listOf(
+                CampoLeido(Campo.NUMERO_PARTE, partNumber, Origen.STRUCTURED_BARCODE, "código 2D", 95, rawCode = rawCode),
+                CampoLeido(Campo.LOTE, lotNumber, Origen.STRUCTURED_BARCODE, "código 2D", 95, rawCode = rawCode)
+            )
+        }
+        return emptyList()
+    }
 }

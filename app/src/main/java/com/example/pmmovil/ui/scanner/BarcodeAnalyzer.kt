@@ -149,9 +149,13 @@ class BarcodeAnalyzer(
                                 MAX_CANDIDATE_CENTER_DISTANCE
                     }
                     .mapNotNull { barcode ->
-                        val value = BarcodeValueNormalizer.normalizeScan(
-                            barcode.rawValue ?: barcode.displayValue
-                        )?.takeIf(String::isNotBlank)
+                        val raw = barcode.rawValue ?: barcode.displayValue
+                        val isWarehouseOrMatrix = (barcodeFormats and Barcode.FORMAT_DATA_MATRIX) != 0
+                        val value = if (isWarehouseOrMatrix) {
+                            BarcodeValueNormalizer.normalizeLabel(raw)
+                        } else {
+                            BarcodeValueNormalizer.normalizeScan(raw)
+                        }?.takeIf(String::isNotBlank)
                         barcode.toVisualCandidate(
                             imageWidth = uprightWidth,
                             imageHeight = uprightHeight,

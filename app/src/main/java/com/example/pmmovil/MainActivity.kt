@@ -861,7 +861,7 @@ class MainActivity : AppCompatActivity() {
                                     navController.popBackStack()
                                 },
                                 onNavigateToScanner = {
-                                    navController.navigate("scanner")
+                                    navController.navigate("scanner?profile=${com.example.pmmovil.ui.scanner.ScanProfile.WarehouseProduct.name}")
                                 }
                             )
                         }
