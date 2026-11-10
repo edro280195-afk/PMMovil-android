@@ -26,6 +26,33 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
+import com.example.pmmovil.ui.theme.PmmGreen
+import com.example.pmmovil.ui.theme.PmmBlueLight
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.key
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -215,6 +242,9 @@ fun CasetaEntradaScreen(
     var autoHistoryMode by rememberSaveable { mutableStateOf<CasetaEntradaCameraMode?>(null) }
     var lastAutoPhotoPath by remember { mutableStateOf<String?>(null) }
     var liveCaptureMode by rememberSaveable { mutableStateOf<CasetaEntradaCaptureMode?>(if (startWithCamera && state.puedeAgregar) CasetaEntradaCaptureMode.Plate else null) }
+    // Paso visible (Camión, Caja, Evidencia) y pantalla de selección abierta (cliente, líneas, tipo de caja, país).
+    var step by rememberSaveable { mutableStateOf(CasetaStep.Camion) }
+    var picker by rememberSaveable { mutableStateOf<CasetaPicker?>(null) }
     val editMode = !casetaId.isNullOrBlank()
 
     // Volver atrás (gesto, botón o flecha) no tira lo capturado: si hay cambios sin guardar, pregunta primero. Los
@@ -487,6 +517,7 @@ fun CasetaEntradaScreen(
             onConfirm = {
                 showClearConfirm = false
                 viewModel.resetForm()
+                step = CasetaStep.Camion
             }
         )
     }
@@ -585,14 +616,6 @@ fun CasetaEntradaScreen(
             onDelete = { p -> pendingDeletePhoto = p },
             allowOcr = !editMode && state.puedeAgregar,
             canDelete = state.puedeBorrar
-        )
-    }
-
-    if (showHistorySheet) {
-        HistorySuggestionsSheet(
-            state = state,
-            viewModel = viewModel,
-            onDismiss = { showHistorySheet = false }
         )
     }
 
@@ -730,7 +753,35 @@ fun CasetaEntradaScreen(
                 .padding(padding)
         ) {
             val wide = maxWidth >= 840.dp
-            Column(modifier = Modifier.fillMaxSize()) {
+            val shortScreen = maxHeight < 700.dp
+            val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+            val focusChain = remember { CasetaFormFocusChain() }
+            val focusManager = LocalFocusManager.current
+            val editable = if (editMode) state.puedeModificar else state.puedeAgregar
+            val canSubmit = editable && !state.isLoadingCatalogs && !state.isSaving
+            val statuses = remember(state.form) { CasetaEntradaSteps.statuses(state.form) }
+            val stepAction = remember(state.form, step) { CasetaEntradaSteps.primaryAction(state.form, step) }
+            val openPicker: (CasetaPicker) -> Unit = { kind ->
+                when (kind) {
+                    CasetaPicker.Customer -> viewModel.searchLookup(CasetaEntradaLookupType.Customer, "")
+                    CasetaPicker.TruckLine -> viewModel.searchLookup(CasetaEntradaLookupType.TruckLine, "")
+                    CasetaPicker.BoxLine -> viewModel.searchLookup(CasetaEntradaLookupType.BoxLine, "")
+                    CasetaPicker.BoxType, CasetaPicker.Country -> Unit
+                }
+                picker = kind
+            }
+
+            // Si al guardar el sistema marca errores en un paso que no es el que se está viendo, lleva al primero.
+            // Solo cuando aparecen (no al ir corrigiéndolos, para no saltar de paso a media captura).
+            val hasFieldErrors = state.fieldErrors.isNotEmpty()
+            LaunchedEffect(hasFieldErrors) {
+                if (!hasFieldErrors) return@LaunchedEffect
+                val errorSteps = state.fieldErrors.keys.map(CasetaEntradaSteps::stepOf)
+                if (step !in errorSteps) step = errorSteps.first()
+            }
+
+            // El teclado empuja todo hacia arriba (imePadding): el paso se encoge y el campo enfocado no queda tapado.
+            Column(modifier = Modifier.fillMaxSize().imePadding()) {
                 CasetaEntradaHeader(
                     state = state,
                     updateMode = editMode,
@@ -739,147 +790,141 @@ fun CasetaEntradaScreen(
                         viewModel.loadCatalogs(force = true)
                         viewModel.loadBoxTypes()
                         viewModel.loadFrequentCatalogs()
-                    }
+                    },
+                    onClear = if (editMode) null else ({ showClearConfirm = true })
                 )
-                if (editMode) {
-                    val waitingForRecord = state.isLoadingRecord ||
+                val waitingForRecord = editMode && (
+                    state.isLoadingRecord ||
                         (state.form.casetaId.isBlank() && state.recordLoadError == null)
-                    if (waitingForRecord) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            EditRecordLoadingCard(
-                                casetaId = casetaId.orEmpty(),
-                                hint = state.recordLoadingHint
-                            )
-                        }
-                    } else if (state.recordLoadError != null) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            EditRecordErrorCard(
-                                message = state.recordLoadError.orEmpty(),
-                                onRetry = { viewModel.loadRecord(casetaId.orEmpty()) },
-                                onCancel = onNavigateBack
-                            )
-                        }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth(),
-                            contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 24.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            item {
-                                EditModeNotice()
-                            }
-                            item {
-                                CasetaEntradaFormContent(
-                                    state = state,
-                                    viewModel = viewModel,
-                                    editable = state.puedeModificar,
-                                    onTakePhoto = { cameraMode = CasetaEntradaCameraMode.Evidence },
-                                    onPreviewPhoto = { previewPhoto = it },
-                                    onDeletePhoto = { pendingDeletePhoto = it },
-                                    onOpenHistory = { showHistorySheet = true }
-                                )
-                            }
-                        }
-                        CasetaEntradaSaveBar(
-                            state = state,
-                            viewModel = viewModel,
-                            onRequestClear = { showClearConfirm = true },
-                            onCancel = requestExit,
-                            updateMode = true
-                        )
-                    }
-                } else if (wide) {
-                    Row(
+                    )
+                if (waitingForRecord) {
+                    Box(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth()
-                            .navigationBarsPadding()
-                            .padding(horizontal = 20.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            .padding(16.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        LazyColumn(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight(),
-                            contentPadding = PaddingValues(bottom = 24.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            item {
-                                CasetaEntradaFormContent(
-                                    state = state,
-                                    viewModel = viewModel,
-                                    editable = state.puedeAgregar,
-                                    onTakePhoto = { cameraMode = CasetaEntradaCameraMode.Evidence },
-                                    onPreviewPhoto = { previewPhoto = it },
-                                    onDeletePhoto = { pendingDeletePhoto = it },
-                                    onOpenHistory = { showHistorySheet = true }
-                                )
-                            }
-                        }
-                        CaptureAssistPanel(
-                            state = state,
-                            viewModel = viewModel,
-                            editable = state.puedeAgregar,
-                            compact = false,
-                            onScan = onNavigateToScanner,
-                            onOpenSmartCapture = { liveCaptureMode = CasetaEntradaCaptureMode.Box },
-                            onOpenHistory = { showHistorySheet = true },
-                            onRequestClear = { showClearConfirm = true },
-                            modifier = Modifier
-                                .width(350.dp)
-                                .fillMaxHeight()
+                        EditRecordLoadingCard(
+                            casetaId = casetaId.orEmpty(),
+                            hint = state.recordLoadingHint
+                        )
+                    }
+                } else if (editMode && state.recordLoadError != null) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        EditRecordErrorCard(
+                            message = state.recordLoadError.orEmpty(),
+                            onRetry = { viewModel.loadRecord(casetaId.orEmpty()) },
+                            onCancel = onNavigateBack
                         )
                     }
                 } else {
-                    LazyColumn(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                        contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 24.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        item {
-                            MobileCaptureHub(
-                                state = state,
-                                viewModel = viewModel,
-                                onOpenSmartCapture = { liveCaptureMode = CasetaEntradaCaptureMode.Box },
-                                onScan = onNavigateToScanner,
-                                onOpenHistory = { showHistorySheet = true },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                        item {
-                            CasetaEntradaFormContent(
-                                state = state,
-                                viewModel = viewModel,
-                                editable = state.puedeAgregar,
-                                onTakePhoto = { cameraMode = CasetaEntradaCameraMode.Evidence },
-                                onPreviewPhoto = { previewPhoto = it },
-                                onDeletePhoto = { pendingDeletePhoto = it },
-                                onOpenHistory = { showHistorySheet = true }
-                            )
+                    // Con el teclado abierto en una pantalla baja (tableta acostada) la barra de pasos sobra: se
+                    // esconde para darle el alto al formulario.
+                    if (!(imeVisible && shortScreen)) {
+                        CasetaStepBar(statuses = statuses, current = step, onSelect = { step = it })
+                    }
+                    key(step) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState())
+                                .padding(start = 16.dp, top = 14.dp, end = 16.dp, bottom = 20.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            when (step) {
+                                CasetaStep.Camion -> CasetaStepCamion(
+                                    state = state,
+                                    viewModel = viewModel,
+                                    editable = editable,
+                                    editMode = editMode,
+                                    wide = wide,
+                                    focusChain = focusChain,
+                                    focusManager = focusManager,
+                                    onOpenSmartCapture = { liveCaptureMode = CasetaEntradaCaptureMode.Box },
+                                    onScan = onNavigateToScanner,
+                                    onOpenHistory = {
+                                        // Si ya hay caja, placa o texto de búsqueda se busca de una vez; si no, la hoja
+                                        // se abre vacía para escribir ahí (sin el aviso de «captura algo primero»).
+                                        val term = state.historySearch
+                                            .ifBlank { state.form.boxNumber }
+                                            .ifBlank { state.form.plates }
+                                            .trim()
+                                        if (term.length >= 3) viewModel.searchHistoryNow()
+                                        showHistorySheet = true
+                                    },
+                                    onOpenPicker = openPicker
+                                )
+                                CasetaStep.Caja -> CasetaStepCaja(
+                                    state = state,
+                                    viewModel = viewModel,
+                                    editable = editable,
+                                    wide = wide,
+                                    focusChain = focusChain,
+                                    focusManager = focusManager,
+                                    onOpenPicker = openPicker
+                                )
+                                CasetaStep.Evidencia -> CasetaStepEvidencia(
+                                    state = state,
+                                    viewModel = viewModel,
+                                    editable = editable,
+                                    wide = wide,
+                                    focusChain = focusChain,
+                                    focusManager = focusManager,
+                                    onTakePhoto = { cameraMode = CasetaEntradaCameraMode.Evidence },
+                                    onPreviewPhoto = { previewPhoto = it },
+                                    onDeletePhoto = { pendingDeletePhoto = it }
+                                )
+                            }
                         }
                     }
-                    CasetaEntradaSaveBar(
-                        state = state,
-                        viewModel = viewModel,
-                        onRequestClear = { showClearConfirm = true }
-                    )
+                    // Con el teclado abierto la barra de abajo se esconde: no hay lugar para ella.
+                    if (!imeVisible) {
+                        CasetaStepBottomBar(
+                            action = stepAction,
+                            step = step,
+                            editMode = editMode,
+                            isSaving = state.isSaving,
+                            canSubmit = canSubmit,
+                            onBack = when {
+                                step != CasetaStep.Camion -> ({ step = CasetaStep.entries[step.ordinal - 1] })
+                                editMode -> requestExit
+                                else -> null
+                            },
+                            onAction = {
+                                when (val current = stepAction) {
+                                    is CasetaStepAction.Next -> step = current.target
+                                    is CasetaStepAction.GoTo -> step = current.target
+                                    is CasetaStepAction.Save -> viewModel.requestReview(updateMode = editMode)
+                                }
+                            }
+                        )
+                    }
                 }
+            }
+
+            // Pantallas de selección y hojas de búsqueda: dentro de esta misma ventana para que respeten el teclado.
+            if (showHistorySheet) {
+                HistorySuggestionsSheet(
+                    state = state,
+                    viewModel = viewModel,
+                    onDismiss = { showHistorySheet = false }
+                )
+            }
+            picker?.let { kind ->
+                CasetaPickerPanel(
+                    kind = kind,
+                    state = state,
+                    viewModel = viewModel,
+                    onDismiss = { picker = null }
+                )
             }
         }
     }
@@ -889,180 +934,6 @@ private enum class CasetaEntradaCameraMode {
     Plate,
     Box,
     Evidence
-}
-
-@Composable
-private fun CasetaEntradaHeader(
-    state: CasetaEntradaUiState,
-    updateMode: Boolean = false,
-    onNavigateBack: () -> Unit,
-    onRefresh: () -> Unit
-) {
-    val progress = captureProgress(state)
-    Surface(
-        color = Color.Transparent,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(Color(0xFF003875), Color(0xFF001A38))
-                    )
-                )
-                .statusBarsPadding()
-                .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            // Fila de barra de estado superior
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                // Botón Regresar circular blanco con sombra
-                Surface(
-                    shape = CircleShape,
-                    color = Color.White.copy(alpha = 0.15f),
-                    modifier = Modifier.size(40.dp)
-                ) {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Regresar",
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-
-                // Textos centrales del Header Hero
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = 8.dp)
-                ) {
-                    Text(
-                        text = if (updateMode) "EDICIÓN DE REGISTRO" else "ENTRADA A CASETA",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = if (updateMode) {
-                            state.form.casetaId.ifBlank { "Modificando datos" }
-                        } else {
-                            "Módulo de Recepción y Control"
-                        },
-                        color = Color(0xFF93C5FD),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                // Insignia de Bodega + Botón Refresh
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    if (state.lastDraftSavedAt != null) {
-                        Icon(
-                            imageVector = Icons.Default.CloudDone,
-                            contentDescription = "Borrador guardado localmente",
-                            tint = Color(0xFF4ADE80),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                    Surface(
-                        color = Color(0xFFEF4444),
-                        shape = RoundedCornerShape(6.dp)
-                    ) {
-                        Text(
-                            text = state.form.bodega.ifBlank { "B1 LAREDO" },
-                            color = Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
-
-                    Surface(
-                        shape = CircleShape,
-                        color = Color.White.copy(alpha = 0.15f),
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        IconButton(onClick = onRefresh, enabled = !state.isLoadingCatalogs) {
-                            if (state.isLoadingCatalogs) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    color = Color.White,
-                                    strokeWidth = 2.dp
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Default.Refresh,
-                                    contentDescription = "Actualizar catálogos",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Tarjeta de Progreso del Checklist (Solo en modo registro nuevo)
-            if (!updateMode) {
-                Surface(
-                    color = Color.White.copy(alpha = 0.10f),
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Checklist de Entrada",
-                                color = Color(0xFFE2E8F0),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "${progress.done} / ${progress.total} Obligatorios",
-                                color = if (progress.done == progress.total) Color(0xFF4ADE80) else Color(0xFF38BDF8),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.ExtraBold
-                            )
-                        }
-
-                        // Barra de progreso estilizada
-                        LinearProgressIndicator(
-                            progress = { progress.fraction.coerceIn(0f, 1f) },
-                            color = if (progress.done == progress.total) Color(0xFF4ADE80) else Color(0xFF38BDF8),
-                            trackColor = Color.White.copy(alpha = 0.20f),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(6.dp)
-                                .clip(RoundedCornerShape(999.dp))
-                        )
-                    }
-                }
-            }
-        }
-    }
 }
 
 @Composable
@@ -1238,450 +1109,6 @@ private fun HeaderChip(text: String) {
     }
 }
 
-@Composable
-private fun CasetaEntradaSaveBar(
-    state: CasetaEntradaUiState,
-    viewModel: CasetaEntradaViewModel,
-    onRequestClear: () -> Unit,
-    onCancel: (() -> Unit)? = null,
-    updateMode: Boolean = false
-) {
-    val isValid = CasetaEntradaRules.validate(state.form).isEmpty()
-    val canEdit = if (updateMode) state.puedeModificar else state.puedeAgregar
-    val canSubmit = canEdit && !state.isLoadingCatalogs && !state.isSaving
-
-    Surface(
-        color = Color.White,
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        shadowElevation = 12.dp
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Botón Limpiar / Cancelar
-            OutlinedButton(
-                onClick = if (updateMode) {
-                    { onCancel?.invoke() ?: onRequestClear() }
-                } else {
-                    onRequestClear
-                },
-                enabled = !state.isSaving && (updateMode || state.puedeAgregar),
-                modifier = Modifier.height(48.dp),
-                shape = RoundedCornerShape(999.dp),
-                border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = PmmTextSecondary)
-            ) {
-                if (updateMode) {
-                    Text("Cancelar", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                } else {
-                    Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Limpiar", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                }
-            }
-
-            // Botón Guardar / Completa lo requerido
-            Button(
-                onClick = { viewModel.requestReview(updateMode = updateMode) },
-                enabled = canSubmit,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(48.dp),
-                shape = RoundedCornerShape(999.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isValid) Color(0xFF003DA5) else Color(0xFFE2E8F0),
-                    contentColor = if (isValid) Color.White else PmmTextMuted,
-                    disabledContainerColor = Color(0xFFE2E8F0)
-                )
-            ) {
-                if (state.isSaving) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
-                } else {
-                    if (isValid) {
-                        Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                    }
-                    Text(
-                        text = if (isValid) {
-                            if (updateMode) "Actualizar" else "Guardar entrada"
-                        } else {
-                            "Completa lo requerido"
-                        },
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
- * Orden de "siguiente campo" cuando el usuario da Enter/Listo en el teclado.
- * Los campos condicionales (guias, pedimento, temperatura, combustible) solo
- * entran a la cadena cuando su seccion esta visible, para no saltar a un
- * TextField que no llego a componerse.
- */
-private class CasetaFormFocusChain {
-    val boxNumber = FocusRequester()
-    val truckNumber = FocusRequester()
-    val operatorName = FocusRequester()
-    val seals = FocusRequester()
-    val plates = FocusRequester()
-    val guideCount = FocusRequester()
-    val pedimento = FocusRequester()
-    val temperature = FocusRequester()
-    val fuel = FocusRequester()
-    val observations = FocusRequester()
-
-    private fun order(state: CasetaEntradaUiState): List<FocusRequester> = buildList {
-        add(boxNumber)
-        add(truckNumber)
-        add(operatorName)
-        add(seals)
-        add(plates)
-        if (state.requiresGuide) add(guideCount)
-        if (state.form.operation == CasetaEntradaRules.OP_EXPORT) add(pedimento)
-        if (state.isRefrigerated) {
-            add(temperature)
-            add(fuel)
-        }
-        add(observations)
-    }
-
-    fun next(state: CasetaEntradaUiState, current: FocusRequester, focusManager: FocusManager) {
-        val chain = order(state)
-        val target = chain.getOrNull(chain.indexOf(current) + 1)
-        if (target != null) target.requestFocus() else focusManager.clearFocus()
-    }
-}
-
-@Composable
-private fun CasetaEntradaFormContent(
-    state: CasetaEntradaUiState,
-    viewModel: CasetaEntradaViewModel,
-    editable: Boolean,
-    onTakePhoto: () -> Unit,
-    onPreviewPhoto: (CasetaEntradaPreviewPhoto) -> Unit,
-    onDeletePhoto: (CasetaEntradaPreviewPhoto) -> Unit,
-    onOpenHistory: () -> Unit
-) {
-    val focusChain = remember { CasetaFormFocusChain() }
-    val focusManager = LocalFocusManager.current
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        if (!editable) {
-            CasetaEntradaPermissionNotice(
-                message = "Tienes acceso de lectura. Los campos y acciones que guardan cambios están deshabilitados.",
-                enabled = false
-            )
-        }
-        PrimaryCaptureSection(state = state, viewModel = viewModel, enabled = editable)
-        // Un tractocamion sin caja no tiene cliente: es dato de una carga que no trae.
-        if (!state.form.esTractocamion) {
-            ClientSection(state = state, viewModel = viewModel, enabled = editable)
-        }
-        EquipmentSection(
-            state = state,
-            viewModel = viewModel,
-            onOpenHistory = onOpenHistory,
-            focusChain = focusChain,
-            focusManager = focusManager,
-            enabled = editable
-        )
-        ConditionalSection(
-            state = state,
-            viewModel = viewModel,
-            focusChain = focusChain,
-            focusManager = focusManager,
-            enabled = editable
-        )
-        PhotosSection(
-            state = state,
-            viewModel = viewModel,
-            onTakePhoto = onTakePhoto,
-            onPreviewPhoto = onPreviewPhoto,
-            onDeletePhoto = onDeletePhoto,
-            canAdd = state.puedeAgregar,
-            canDelete = state.puedeBorrar
-        )
-        ObservationsSection(
-            state = state,
-            viewModel = viewModel,
-            focusChain = focusChain,
-            focusManager = focusManager,
-            enabled = editable
-        )
-    }
-}
-
-@Composable
-private fun CaptureAssistPanel(
-    state: CasetaEntradaUiState,
-    viewModel: CasetaEntradaViewModel,
-    editable: Boolean,
-    compact: Boolean,
-    onScan: () -> Unit,
-    onOpenSmartCapture: () -> Unit,
-    onOpenHistory: () -> Unit,
-    onRequestClear: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val progress = captureProgress(state)
-    val contentModifier = Modifier
-        .padding(if (compact) 12.dp else 14.dp)
-        .then(if (compact) Modifier else Modifier.verticalScroll(rememberScrollState()))
-
-    Surface(
-        modifier = modifier,
-        color = PmmBgSurface,
-        shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, PmmNavyBorder)
-    ) {
-        Column(
-            modifier = contentModifier,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Surface(color = PmmBlueDeep, shape = RoundedCornerShape(8.dp)) {
-                    Icon(
-                        Icons.Default.CheckCircle,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.padding(7.dp).size(20.dp)
-                    )
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Mesa de captura", color = PmmTextPrimary, fontWeight = FontWeight.Bold)
-                    Text("Campos listos para guardar", color = PmmTextSecondary, fontSize = 13.sp)
-                }
-                StatusChip(
-                    text = "${progress.done}/${progress.total}",
-                    tone = if (progress.done == progress.total) ChipTone.Success else ChipTone.Info
-                )
-            }
-
-            ProgressBar(progress)
-            CaptureCommandCenter(
-                state = state,
-                onOpenSmartCapture = onOpenSmartCapture,
-                onScan = onScan,
-                onOpenHistory = {
-                    viewModel.searchHistoryNow()
-                    onOpenHistory()
-                }
-            )
-            CaptureChecklist(state)
-
-            HorizontalDivider(color = PmmNavyBorder)
-            AssistMetricRow("Fotos", "${state.form.photoCount}/15")
-            if (state.form.esTractocamion) {
-                AssistMetricRow("Camión", state.form.truckNumber.ifBlank { "Pendiente" })
-                AssistMetricRow("Operador", state.form.operatorName.ifBlank { "Pendiente" })
-            } else {
-                AssistMetricRow("Caja", state.form.boxNumber.ifBlank { "Pendiente" })
-                AssistMetricRow("Cliente", state.form.customerLabel.ifBlank { "Pendiente" })
-            }
-
-            AnimatedVisibility(visible = state.capture.phase != CasetaEntradaOcrPhase.Idle) {
-                SmartCaptureCard(
-                    state = state.capture,
-                    onApply = viewModel::applyCaptureCandidate,
-                    onRetry = viewModel::retryCapture,
-                    onDismiss = viewModel::dismissCapture
-                )
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedButton(
-                    onClick = onRequestClear,
-                    enabled = editable && !state.isSaving,
-                    modifier = Modifier.weight(1f).height(52.dp)
-                ) {
-                    Icon(Icons.Default.Close, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("Limpiar")
-                }
-                Button(
-                    onClick = { viewModel.requestReview() },
-                    enabled = editable && !state.isLoadingCatalogs && !state.isSaving,
-                    modifier = Modifier.weight(1.4f).height(52.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = PmmBlueDeep)
-                ) {
-                    if (state.isSaving) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
-                    } else {
-                        Icon(Icons.Default.CheckCircle, contentDescription = null)
-                    }
-                    Spacer(Modifier.width(6.dp))
-                    Text(if (state.isSaving) "Guardando" else "Guardar")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun MobileCaptureHub(
-    state: CasetaEntradaUiState,
-    viewModel: CasetaEntradaViewModel,
-    onOpenSmartCapture: () -> Unit,
-    onScan: () -> Unit,
-    onOpenHistory: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    CaptureCommandCenter(
-        state = state,
-        onOpenSmartCapture = onOpenSmartCapture,
-        onScan = onScan,
-        onOpenHistory = {
-            viewModel.searchHistoryNow()
-            onOpenHistory()
-        },
-        modifier = modifier
-    )
-}
-
-@Composable
-private fun CaptureCommandCenter(
-    state: CasetaEntradaUiState,
-    onOpenSmartCapture: () -> Unit,
-    onScan: () -> Unit,
-    onOpenHistory: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val canTakePhoto = state.puedeAgregar && state.form.photoCount < 15 && !state.isSaving
-    val historyCount = state.historySuggestions.size
-    val lastRead = state.form.boxNumber
-        .ifBlank { state.form.plates }
-        .ifBlank { "Reusar datos" }
-
-    Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        if (state.form.origenPreRegistro) {
-            PreregistroFolioStatusRow(
-                folio = state.preregistroFolio,
-                confirmadas = state.preregistroPlacasConfirmadas
-            )
-        }
-
-        // Tarjeta de Cámara Inteligente con Gradiente y Chevron -- solo lee caja,
-        // no aplica para un tractocamion sin caja.
-        if (!state.form.esTractocamion) {
-        val gradientBrush = Brush.linearGradient(
-            colors = listOf(
-                Color(0xFFE2ECFB), // Azul translúcido
-                Color(0xFFFFFBEB)  // Amarillo/miel muy claro
-            )
-        )
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(enabled = canTakePhoto, onClick = onOpenSmartCapture),
-            shape = RoundedCornerShape(20.dp),
-            shadowElevation = 2.dp
-        ) {
-            Row(
-                modifier = Modifier
-                    .background(gradientBrush)
-                    .padding(horizontal = 16.dp, vertical = 18.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // Contenedor de cámara azul
-                Surface(
-                    color = Color(0xFF003DA5),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Camera,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier
-                            .padding(10.dp)
-                            .size(24.dp)
-                    )
-                }
-
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            text = "Cámara inteligente",
-                            color = PmmTextPrimary,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp
-                        )
-                        // Badge amarillo IA
-                        Surface(
-                            color = Color(0xFFFDE047),
-                            shape = RoundedCornerShape(4.dp)
-                        ) {
-                            Text(
-                                text = "IA",
-                                color = Color(0xFF854D0E),
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Black,
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                            )
-                        }
-                    }
-                    Text(
-                        text = "Lee caja y placa dentro del visor",
-                        color = PmmTextSecondary,
-                        fontSize = 12.sp
-                    )
-                }
-
-                // Chevron azul a la derecha
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = Color(0xFF003DA5),
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-        }
-        }
-
-        // Fila de Mini Acciones (Leer QR de pre-registro -- solo tractocamion -- e Histórico)
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            if (state.form.esTractocamion) {
-                CaptureMiniAction(
-                    title = "Leer QR",
-                    subtitle = "QR de pre-registro del chofer",
-                    icon = Icons.Default.QrCodeScanner,
-                    enabled = state.puedeAgregar && !state.isSaving,
-                    onClick = onScan,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            CaptureMiniAction(
-                title = "Histórico",
-                subtitle = if (historyCount > 0) "Reusar ($historyCount)" else lastRead,
-                icon = Icons.Default.Search,
-                enabled = !state.isSaving,
-                onClick = onOpenHistory,
-                modifier = Modifier.weight(1f)
-            )
-        }
-    }
-}
-
 /**
  * Modal bloqueante que se abre justo despues de escanear un QR de pre-registro
  * VIGENTE. El formulario NO tiene ningun dato del pre-registro todavia -- eso
@@ -1839,82 +1266,6 @@ private fun PreregistroFolioStatusRow(folio: String, confirmadas: Boolean?) {
                 fontWeight = FontWeight.Bold
             )
         }
-    }
-}
-
-@Composable
-private fun CaptureMiniAction(
-    title: String,
-    subtitle: String,
-    icon: ImageVector,
-    enabled: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        modifier = modifier
-            .heightIn(min = 68.dp)
-            .clickable(enabled = enabled, onClick = onClick),
-        color = Color.White,
-        shape = RoundedCornerShape(16.dp),
-        shadowElevation = 2.dp
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .background(Color(0xFFEEF3FF), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = if (enabled) Color(0xFF003DA5) else PmmTextMuted,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    color = if (enabled) PmmTextPrimary else PmmTextMuted,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = subtitle,
-                    color = PmmTextSecondary,
-                    fontSize = 11.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun AssistMetricRow(label: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(label, color = PmmTextSecondary, fontSize = 13.sp)
-        Text(
-            value,
-            color = PmmTextPrimary,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f).padding(start = 10.dp),
-        )
     }
 }
 
@@ -2615,40 +1966,25 @@ private fun HistorySuggestionsSheet(
     viewModel: CasetaEntradaViewModel,
     onDismiss: () -> Unit
 ) {
-    BackHandler(onBack = onDismiss)
-
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.45f))
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onDismiss
-                ),
-            contentAlignment = Alignment.BottomCenter
-        ) {
-            Surface(
-                color = PmmBgSurface,
-                shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = {} // Evita que clics dentro del diálogo lo cierren
-                    )
-            ) {
-                Column(
+    // Dentro de la ventana de la pantalla (no un Dialog) y levantado sobre el teclado: con el teclado abierto la
+    // lista se encoge en vez de quedar tapada.
+    CasetaOverlayHost(
+        onDismiss = onDismiss,
+        top = false,
+        maxHeight = 690.dp,
+        overlay = if (state.isLoadingRecord) {
+            {
+                HistoricalTemplateLoadingOverlay(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 690.dp)
-                ) {
+                        .align(Alignment.Center)
+                        .padding(horizontal = 24.dp)
+                )
+            }
+        } else {
+            null
+        }
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -2709,16 +2045,6 @@ private fun HistorySuggestionsSheet(
                             )
                         }
                     }
-                }
-            }
-
-            if (state.isLoadingRecord) {
-                HistoricalTemplateLoadingOverlay(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .padding(horizontal = 24.dp)
-                )
-            }
         }
     }
 }
@@ -3281,91 +2607,6 @@ private fun ConfidenceBar(confidence: Double, compact: Boolean = false) {
     }
 }
 
-@Composable
-private fun PrimaryCaptureSection(
-    state: CasetaEntradaUiState,
-    viewModel: CasetaEntradaViewModel,
-    enabled: Boolean
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = Color.White,
-        shape = RoundedCornerShape(20.dp),
-        shadowElevation = 2.dp
-    ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .background(Color(0xFFEEF3FF), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.QrCodeScanner,
-                        contentDescription = null,
-                        tint = Color(0xFF003DA5),
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("General", color = PmmTextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    Text("Operación, movimiento y bodega", color = PmmTextSecondary, fontSize = 12.sp)
-                }
-                StatusChip(text = state.form.bodega.ifBlank { "Laredo, TX" }, tone = ChipTone.Neutral)
-            }
-
-            Text("¿Qué vas a registrar?", color = PmmTextSecondary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                TipoRegistroCard(
-                    iconRes = R.drawable.ic_caseta_con_caja,
-                    title = "Con caja",
-                    subtitle = "Camión + caja/remolque",
-                    selected = !state.form.esTractocamion,
-                    onClick = { viewModel.setTipoRegistro(TipoRegistro.CAJA) },
-                    enabled = enabled,
-                    modifier = Modifier.weight(1f)
-                )
-                TipoRegistroCard(
-                    iconRes = R.drawable.ic_caseta_tractocamion,
-                    title = "Solo tractocamión",
-                    subtitle = "Sin caja, viene a recoger",
-                    selected = state.form.esTractocamion,
-                    onClick = { viewModel.setTipoRegistro(TipoRegistro.TRACTOCAMION) },
-                    enabled = enabled,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            Text("Operación", color = PmmTextSecondary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-            SelectionGroup(
-                items = listOf(CasetaEntradaRules.OP_IMPORT, CasetaEntradaRules.OP_EXPORT),
-                selected = state.form.operation,
-                onSelected = viewModel::updateOperation,
-                error = state.fieldErrors["operation"],
-                dense = false,
-                enabled = enabled
-            )
-
-            if (state.form.operation.isNotBlank()) {
-                Text("Movimiento", color = PmmTextSecondary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                SelectionGroup(
-                    items = state.availableMovements,
-                    selected = state.form.movement,
-                    onSelected = viewModel::updateMovement,
-                    error = state.fieldErrors["movement"],
-                    dense = true,
-                    enabled = enabled
-                )
-            }
-        }
-    }
-}
-
 /**
  * Tarjeta grande con emoji real de camión (no un ícono abstracto) para elegir
  * el tipo de registro. Va al inicio del formulario -- el usuario pidió
@@ -3390,7 +2631,9 @@ private fun TipoRegistroCard(
     val contentColor = if (selected) Color.White else PmmTextPrimary
 
     Surface(
-        modifier = modifier.clickable(enabled = enabled, onClick = onClick),
+        modifier = modifier
+            .graphicsLayer { alpha = if (enabled) 1f else 0.45f }
+            .clickable(enabled = enabled, onClick = onClick),
         color = background,
         shape = RoundedCornerShape(16.dp),
         border = if (selected) null else BorderStroke(1.dp, PmmNavyBorder)
@@ -3425,366 +2668,6 @@ private fun TipoRegistroCard(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
-        }
-    }
-}
-
-@Composable
-private fun ClientSection(
-    state: CasetaEntradaUiState,
-    viewModel: CasetaEntradaViewModel,
-    enabled: Boolean
-) {
-    FormCard(
-        title = "Cliente",
-        subtitle = "Selecciona de catálogo o usa accesos frecuentes",
-        icon = Icons.Default.Search
-    ) {
-        LookupSearchField(
-            title = "Cliente",
-            selectedLabel = state.form.customerLabel,
-            placeholder = "Buscar cliente",
-            type = CasetaEntradaLookupType.Customer,
-            results = state.customerResults,
-            frequentItems = state.frequentCustomers,
-            isSearching = state.isSearching,
-            error = state.fieldErrors["customer"],
-            onSearch = viewModel::searchLookup,
-            onSelect = viewModel::selectCustomer,
-            onClear = viewModel::clearSelection,
-            enabled = enabled
-        )
-
-        if (state.frequentCustomers.isNotEmpty()) {
-            Spacer(Modifier.height(10.dp))
-            Text(
-                text = "Frecuentes rápido:",
-                color = PmmTextSecondary,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(4.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(state.frequentCustomers.take(5)) { freq ->
-                    val isSelected = state.form.idCustomer == freq.id || state.form.customerName == freq.nombre
-                    Surface(
-                        color = if (isSelected) Color(0xFFE0F2FE) else Color(0xFFF1F5FA),
-                        shape = RoundedCornerShape(999.dp),
-                        border = BorderStroke(1.dp, if (isSelected) Color(0xFF38BDF8) else Color(0xFFCBD5E1)),
-                        modifier = Modifier.clickable(enabled = enabled) { viewModel.selectCustomer(freq.catalogItem) }
-                    ) {
-                        Text(
-                            text = freq.nombre.take(22),
-                            color = if (isSelected) Color(0xFF0369A1) else PmmTextPrimary,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun EquipmentSection(
-    state: CasetaEntradaUiState,
-    viewModel: CasetaEntradaViewModel,
-    onOpenHistory: () -> Unit,
-    focusChain: CasetaFormFocusChain,
-    focusManager: FocusManager,
-    enabled: Boolean
-) {
-    FormCard(
-        title = if (state.form.esTractocamion) "Tractocamión" else "Camión y caja",
-        subtitle = if (state.form.esTractocamion) "Solo el vehículo, sin datos de carga" else "Equipo, transportistas y datos físicos",
-        icon = Icons.Default.LocalShipping
-    ) {
-        if (!state.form.esTractocamion) {
-            CasetaTextField(
-                value = state.form.boxNumber,
-                onValueChange = { viewModel.updateText("boxNumber", it) },
-                enabled = enabled,
-                label = { Text("Número de caja") },
-                placeholder = { Text("Captura o consulta caja") },
-                singleLine = true,
-                isError = state.fieldErrors.containsKey("boxNumber"),
-                supportingText = errorText(state.fieldErrors["boxNumber"]),
-                leadingIcon = { Icon(Icons.Default.LocalShipping, contentDescription = null) },
-                trailingIcon = {
-                    Surface(
-                        color = Color(0xFF0284C7),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier
-                            .padding(end = 4.dp)
-                            .clickable(enabled = enabled) { onOpenHistory() }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(Icons.Default.Search, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
-                            Text("Histórico", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                keyboardActions = KeyboardActions(onNext = {
-                    focusChain.next(state, focusChain.boxNumber, focusManager)
-                }),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(focusChain.boxNumber)
-            )
-            Spacer(Modifier.height(10.dp))
-            if (state.boxTypes.isNotEmpty()) {
-                CatalogChoiceGrid(
-                    label = "Tipo caja",
-                    selectedId = state.form.idBoxType,
-                    selectedLabel = state.form.boxTypeDescription,
-                    items = state.boxTypes,
-                    onSelect = viewModel::selectBoxType,
-                    error = state.fieldErrors["idBoxType"],
-                    enabled = enabled
-                )
-            } else {
-                BoxTypesUnavailable(
-                    selectedLabel = state.form.boxTypeDescription,
-                    loading = state.isLoadingBoxTypes || state.isLoadingCatalogs,
-                    error = state.fieldErrors["idBoxType"],
-                    onRetry = viewModel::loadBoxTypes
-                )
-            }
-            Spacer(Modifier.height(10.dp))
-        }
-        LookupSearchField(
-            title = "Línea de camión *",
-            selectedLabel = state.form.truckLineLabel,
-            placeholder = "Buscar línea de camión",
-            type = CasetaEntradaLookupType.TruckLine,
-            results = state.truckLineResults,
-            frequentItems = state.frequentTruckLines,
-            isSearching = state.isSearching,
-            error = state.fieldErrors["truckLine"],
-            pending = "truckLine" in state.pendingTruckFields,
-            onSearch = viewModel::searchLookup,
-            onSelect = viewModel::selectTruckLine,
-            onClear = viewModel::clearSelection,
-            enabled = enabled
-        )
-        if (!state.form.esTractocamion) {
-            Spacer(Modifier.height(10.dp))
-            LookupSearchField(
-                title = "Linea caja",
-                selectedLabel = state.form.boxLineLabel,
-                placeholder = "Buscar linea caja",
-                type = CasetaEntradaLookupType.BoxLine,
-                results = state.boxLineResults,
-                frequentItems = state.frequentBoxLines,
-                isSearching = state.isSearching,
-                error = state.fieldErrors["boxLine"],
-                onSearch = viewModel::searchLookup,
-                onSelect = viewModel::selectBoxLine,
-                onClear = viewModel::clearSelection,
-                enabled = enabled
-            )
-        }
-        Spacer(Modifier.height(10.dp))
-        ResponsiveFields {
-            FieldBox {
-                CasetaTextField(
-                    value = state.form.truckNumber,
-                    onValueChange = { viewModel.updateText("truckNumber", it) },
-                    enabled = enabled,
-                    label = { Text("No camion") },
-                    resaltado = true,
-                    singleLine = true,
-                    pending = "truckNumber" in state.pendingTruckFields,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                    keyboardActions = KeyboardActions(onNext = {
-                        focusChain.next(state, focusChain.truckNumber, focusManager)
-                    }),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(focusChain.truckNumber)
-                )
-            }
-            FieldBox {
-                CasetaTextField(
-                    value = state.form.operatorName,
-                    onValueChange = { viewModel.updateText("operatorName", it) },
-                    enabled = enabled,
-                    label = { Text("Operador") },
-                    resaltado = true,
-                    singleLine = true,
-                    pending = "operatorName" in state.pendingTruckFields,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                    keyboardActions = KeyboardActions(onNext = {
-                        focusChain.next(state, focusChain.operatorName, focusManager)
-                    }),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(focusChain.operatorName)
-                )
-            }
-            FieldBox {
-                CasetaTextField(
-                    value = state.form.seals,
-                    onValueChange = { viewModel.updateText("seals", it) },
-                    enabled = enabled,
-                    label = { Text("Sellos") },
-                    resaltado = true,
-                    singleLine = true,
-                    pending = "seals" in state.pendingTruckFields,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                    keyboardActions = KeyboardActions(onNext = {
-                        focusChain.next(state, focusChain.seals, focusManager)
-                    }),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(focusChain.seals)
-                )
-            }
-            FieldBox {
-                CasetaTextField(
-                    value = state.form.plates,
-                    onValueChange = { viewModel.updateText("plates", it) },
-                    enabled = enabled,
-                    label = { Text("Placas") },
-                    placeholder = { Text("OCR o captura manual") },
-                    resaltado = true,
-                    singleLine = true,
-                    isError = state.fieldErrors.containsKey("plates"),
-                    supportingText = errorText(state.fieldErrors["plates"]),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                    keyboardActions = KeyboardActions(onNext = {
-                        focusChain.next(state, focusChain.plates, focusManager)
-                    }),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(focusChain.plates)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ConditionalSection(
-    state: CasetaEntradaUiState,
-    viewModel: CasetaEntradaViewModel,
-    focusChain: CasetaFormFocusChain,
-    focusManager: FocusManager,
-    enabled: Boolean
-) {
-    val shouldShow = state.requiresCountry ||
-        state.requiresGuide ||
-        state.form.operation == CasetaEntradaRules.OP_EXPORT ||
-        state.isRefrigerated
-
-    if (!shouldShow) return
-
-    FormCard(
-        title = "Validaciones especiales",
-        subtitle = "Aparecen solo cuando el movimiento o la caja lo exige",
-        icon = Icons.Default.WarningAmber
-    ) {
-        if (state.requiresCountry) {
-            ResponsiveFields {
-                FieldBox {
-                    CatalogDropdown(
-                        label = "Pais origen",
-                        selected = state.form.countryLabel,
-                        items = state.countries,
-                        onSelect = viewModel::selectCountry,
-                        emptyText = "Selecciona pais",
-                        error = state.fieldErrors["idCountry"],
-                        enabled = enabled
-                    )
-                }
-            }
-        }
-
-        if (state.requiresGuide) {
-            CasetaTextField(
-                value = state.form.guideCount,
-                onValueChange = { viewModel.updateText("guideCount", it) },
-                enabled = enabled,
-                label = { Text("Cantidad de guias") },
-                singleLine = true,
-                isError = state.fieldErrors.containsKey("guideCount"),
-                supportingText = errorText(state.fieldErrors["guideCount"]),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
-                keyboardActions = KeyboardActions(onNext = {
-                    focusChain.next(state, focusChain.guideCount, focusManager)
-                }),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(focusChain.guideCount)
-            )
-        }
-
-        if (state.form.operation == CasetaEntradaRules.OP_EXPORT) {
-            CasetaTextField(
-                value = state.form.pedimento,
-                onValueChange = { viewModel.updateText("pedimento", it) },
-                enabled = enabled,
-                label = { Text("Pedimento") },
-                placeholder = { Text("7 digitos si aplica") },
-                singleLine = true,
-                isError = state.fieldErrors.containsKey("pedimento"),
-                supportingText = errorText(state.fieldErrors["pedimento"]),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
-                keyboardActions = KeyboardActions(onNext = {
-                    focusChain.next(state, focusChain.pedimento, focusManager)
-                }),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(focusChain.pedimento)
-            )
-        }
-
-        if (state.isRefrigerated) {
-            ResponsiveFields {
-                FieldBox {
-                    CasetaTextField(
-                        value = state.form.temperature,
-                        onValueChange = { viewModel.updateText("temperature", it) },
-                        enabled = enabled,
-                        label = { Text("Temperatura") },
-                        singleLine = true,
-                        isError = state.fieldErrors.containsKey("temperature"),
-                        supportingText = errorText(state.fieldErrors["temperature"]),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                        keyboardActions = KeyboardActions(onNext = {
-                            focusChain.next(state, focusChain.temperature, focusManager)
-                        }),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .focusRequester(focusChain.temperature)
-                    )
-                }
-                FieldBox {
-                    CasetaTextField(
-                        value = state.form.fuel,
-                        onValueChange = { viewModel.updateText("fuel", it) },
-                        enabled = enabled,
-                        label = { Text("Combustible") },
-                        singleLine = true,
-                        isError = state.fieldErrors.containsKey("fuel"),
-                        supportingText = errorText(state.fieldErrors["fuel"]),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                        keyboardActions = KeyboardActions(onNext = {
-                            focusChain.next(state, focusChain.fuel, focusManager)
-                        }),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .focusRequester(focusChain.fuel)
-                    )
-                }
-            }
         }
     }
 }
@@ -3909,7 +2792,7 @@ private fun ObservationsSection(
     focusManager: FocusManager,
     enabled: Boolean
 ) {
-    FormCard(title = "Observaciones", subtitle = "Notas visibles en correo y consulta", icon = Icons.Default.Summarize) {
+    FormCard(title = "Observaciones", subtitle = "Opcional", icon = Icons.Default.Summarize) {
         // Ultimo campo de la cadena: se deja el salto de linea por defecto del
         // teclado (es multilinea), solo se registra el FocusRequester para que
         // "Combustible"/"Pedimento"/etc puedan saltar aqui con Siguiente.
@@ -3932,14 +2815,6 @@ private enum class ChipTone {
     Info,
     Success,
     Warning
-}
-
-private data class CaptureProgress(
-    val done: Int,
-    val total: Int
-) {
-    val fraction: Float
-        get() = if (total <= 0) 0f else done.toFloat() / total.toFloat()
 }
 
 @Composable
@@ -3970,90 +2845,6 @@ private fun StatusChip(
             modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
         )
     }
-}
-
-@Composable
-private fun ProgressBar(progress: CaptureProgress) {
-    Surface(
-        color = PmmBgCard,
-        shape = RoundedCornerShape(999.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(8.dp)
-    ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .fillMaxWidth(progress.fraction.coerceIn(0f, 1f))
-                    .background(
-                        color = if (progress.done == progress.total) PmmGreenDark else PmmBlueDeep,
-                        shape = RoundedCornerShape(999.dp)
-                    )
-            )
-        }
-    }
-}
-
-@Composable
-private fun CaptureChecklist(state: CasetaEntradaUiState) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        requiredChecks(state).forEach { check ->
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(
-                    imageVector = if (check.second) Icons.Default.CheckCircle else Icons.Default.ErrorOutline,
-                    contentDescription = null,
-                    tint = if (check.second) PmmGreenDark else PmmTextMuted,
-                    modifier = Modifier.size(18.dp)
-                )
-                Text(
-                    text = check.first,
-                    color = if (check.second) PmmTextPrimary else PmmTextSecondary,
-                    fontSize = 13.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-    }
-}
-
-private fun captureProgress(state: CasetaEntradaUiState): CaptureProgress {
-    val checks = requiredChecks(state)
-    return CaptureProgress(done = checks.count { it.second }, total = checks.size.coerceAtLeast(1))
-}
-
-private fun requiredChecks(state: CasetaEntradaUiState): List<Pair<String, Boolean>> {
-    val form = state.form
-    val checks = mutableListOf(
-        "Operacion" to form.operation.isNotBlank(),
-        "Movimiento" to form.movement.isNotBlank()
-    )
-    // Camion sin caja (tipoRegistro=TRACTOCAMION): caja/cliente/tipo caja/linea de caja no aplican.
-    if (!form.esTractocamion) {
-        checks += "Caja" to form.boxNumber.isNotBlank()
-        checks += "Cliente" to (form.idCustomer.isNotBlank() || form.customerName.isNotBlank())
-        checks += "Tipo caja" to (form.idBoxType.isNotBlank() || form.boxTypeDescription.isNotBlank())
-        checks += "Linea caja" to (form.idBoxLine.isNotBlank() || form.boxLineName.isNotBlank())
-    }
-    if (state.requiresCountry) {
-        checks += "Placas" to form.plates.isNotBlank()
-        checks += "Pais origen" to form.idCountry.isNotBlank()
-    }
-    if (state.requiresGuide) {
-        checks += "Guias" to ((form.guideCount.toIntOrNull() ?: 0) > 0)
-    }
-    if (state.isRefrigerated) {
-        checks += "Temperatura" to form.temperature.isNotBlank()
-        checks += "Combustible" to form.fuel.isNotBlank()
-    }
-    if (form.pedimento.isNotBlank()) {
-        checks += "Pedimento 7 digitos" to Regex("^\\d{7}$").matches(form.pedimento)
-    }
-    return checks
 }
 
 @Composable
@@ -4191,43 +2982,6 @@ private fun CasetaEntradaPermissionNotice(
 }
 
 @Composable
-private fun SelectionGroup(
-    items: List<String>,
-    selected: String,
-    onSelected: (String) -> Unit,
-    error: String? = null,
-    dense: Boolean = true,
-    enabled: Boolean = true
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        BoxWithConstraints {
-            val columns = if (maxWidth >= 620.dp && items.size > 1) 2 else 1
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items.chunked(columns).forEach { rowItems ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        rowItems.forEach { item ->
-                            DecisionCard(
-                                title = item,
-                                subtitle = null,
-                                selected = selected == item,
-                                onClick = { onSelected(item) },
-                                enabled = enabled,
-                                compact = dense,
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                        repeat(columns - rowItems.size) {
-                            Spacer(modifier = Modifier.weight(1f))
-                        }
-                    }
-                }
-            }
-        }
-        if (error != null) ErrorText(error)
-    }
-}
-
-@Composable
 private fun DecisionCard(
     title: String,
     subtitle: String?,
@@ -4246,7 +3000,7 @@ private fun DecisionCard(
     
     Surface(
         modifier = modifier
-            .heightIn(min = if (compact) 46.dp else 56.dp)
+            .heightIn(min = if (compact) 48.dp else 56.dp)
             .clickable(enabled = enabled, onClick = onClick),
         color = background,
         shape = RoundedCornerShape(12.dp)
@@ -4291,73 +3045,23 @@ private fun DecisionCard(
 }
 
 @Composable
-private fun LookupSearchField(
-    title: String,
-    selectedLabel: String,
-    placeholder: String,
-    type: CasetaEntradaLookupType,
-    results: List<CasetaEntradaCatalogItem>,
-    frequentItems: List<CasetaEntradaFrequentItem>,
-    isSearching: Boolean,
-    error: String?,
-    pending: Boolean = false,
-    enabled: Boolean = true,
-    onSearch: (CasetaEntradaLookupType, String) -> Unit,
-    onSelect: (CasetaEntradaCatalogItem) -> Unit,
-    onClear: (CasetaEntradaLookupType) -> Unit
-) {
-    var openSearch by remember(type) { mutableStateOf(false) }
-
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        SelectionDisplayCard(
-            label = title,
-            value = selectedLabel,
-            placeholder = placeholder,
-            error = error,
-            pending = pending,
-            onClick = {
-                openSearch = true
-                onSearch(type, "")
-            },
-            onClear = if (selectedLabel.isNotBlank()) ({ onClear(type) }) else null,
-            enabled = enabled
-        )
-        if (error != null) ErrorText(error) else if (pending) PendingHintText()
-    }
-
-    if (openSearch) {
-        CatalogSearchDialog(
-            title = title,
-            placeholder = placeholder,
-            type = type,
-            results = results,
-            frequentItems = frequentItems,
-            isSearching = isSearching,
-            onSearch = onSearch,
-            onDismiss = { openSearch = false },
-            onSelect = {
-                onSelect(it)
-                openSearch = false
-            }
-        )
-    }
-}
-
-@Composable
 private fun SelectionDisplayCard(
     label: String,
     value: String,
     placeholder: String,
     error: String?,
     pending: Boolean = false,
+    missing: Boolean = false,
     enabled: Boolean = true,
     onClick: () -> Unit,
     onClear: (() -> Unit)?
 ) {
     val pendingActive = pending && error == null
+    // Obligatorio sin elegir: raya ámbar y la palabra «Falta» en lugar de la flecha.
+    val missingActive = missing && error == null && !pendingActive
     val borderColor = when {
         error != null -> PmmRed
-        pendingActive -> PmmAmber
+        pendingActive || missingActive -> PmmAmber
         else -> Color.Transparent
     }
     Surface(
@@ -4365,9 +3069,9 @@ private fun SelectionDisplayCard(
             .fillMaxWidth()
             .heightIn(min = 68.dp)
             .clickable(enabled = enabled, onClick = onClick),
-        color = pendingPulseColor(pendingActive),
+        color = if (missingActive) Color(0xFFFFFBEB) else pendingPulseColor(pendingActive),
         shape = RoundedCornerShape(14.dp),
-        border = if (error != null || pendingActive) BorderStroke(1.dp, borderColor) else null
+        border = if (error != null || pendingActive || missingActive) BorderStroke(1.dp, borderColor) else null
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
@@ -4390,256 +3094,18 @@ private fun SelectionDisplayCard(
                 IconButton(onClick = onClear, enabled = enabled, modifier = Modifier.size(36.dp)) {
                     Icon(Icons.Default.Close, contentDescription = "Limpiar", tint = PmmTextSecondary, modifier = Modifier.size(18.dp))
                 }
+            } else if (missingActive) {
+                Surface(color = Color(0xFFFEF3C7), shape = RoundedCornerShape(999.dp)) {
+                    Text(
+                        text = "Falta",
+                        color = PmmAmberDark,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp)
+                    )
+                }
             } else {
                 Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = PmmTextMuted, modifier = Modifier.size(24.dp))
-            }
-        }
-    }
-}
-
-@Composable
-private fun CatalogSearchDialog(
-    title: String,
-    placeholder: String,
-    type: CasetaEntradaLookupType,
-    results: List<CasetaEntradaCatalogItem>,
-    frequentItems: List<CasetaEntradaFrequentItem>,
-    isSearching: Boolean,
-    onSearch: (CasetaEntradaLookupType, String) -> Unit,
-    onDismiss: () -> Unit,
-    onSelect: (CasetaEntradaCatalogItem) -> Unit
-) {
-    var query by remember(type) { mutableStateOf("") }
-
-    LaunchedEffect(type, query) {
-        delay(280)
-        onSearch(type, query)
-    }
-
-    BackHandler(onBack = onDismiss)
-
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.45f))
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onDismiss
-                ),
-            contentAlignment = Alignment.BottomCenter
-        ) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 580.dp)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = {}
-                    ),
-                color = PmmBgSurface,
-                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-                shadowElevation = 16.dp
-            ) {
-                Column(
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    // Barra de arrastre (Drag Handle)
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.CenterHorizontally)
-                            .width(40.dp)
-                            .height(4.dp)
-                            .background(Color(0xFFE2E8F0), RoundedCornerShape(999.dp))
-                    )
-
-                    // Fila de encabezado
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column {
-                            Text(title, color = PmmTextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                            Text("Frecuentes y catálogo", color = PmmTextSecondary, fontSize = 12.sp)
-                        }
-
-                        // Botón cerrar circular
-                        Surface(
-                            shape = CircleShape,
-                            color = Color(0xFFF1F5FA),
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            IconButton(onClick = onDismiss) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Cerrar",
-                                    tint = PmmTextSecondary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    // Campo de búsqueda estilizado
-                    CasetaTextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        placeholder = { Text(placeholder) },
-                        singleLine = true,
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = PmmTextMuted) },
-                        trailingIcon = {
-                            if (isSearching) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Color(0xFF003DA5))
-                            } else if (query.isNotBlank()) {
-                                IconButton(onClick = { query = "" }) {
-                                    Icon(Icons.Default.Close, contentDescription = "Limpiar busqueda", tint = PmmTextSecondary)
-                                }
-                            }
-                        },
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = KeyboardActions(onSearch = { onSearch(type, query) }),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    val scroll = rememberScrollState()
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .verticalScroll(scroll),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        if (frequentItems.isNotEmpty() && query.isBlank()) {
-                            Text("Frecuentes", color = PmmTextSecondary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            BoxWithConstraints {
-                                val columns = if (maxWidth >= 620.dp) 2 else 1
-                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    frequentItems.chunked(columns).forEach { rowItems ->
-                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                                            rowItems.forEach { item ->
-                                                CatalogResultCard(
-                                                    item = item.catalogItem,
-                                                    usage = item.uso,
-                                                    onClick = { onSelect(item.catalogItem) },
-                                                    modifier = Modifier.weight(1f)
-                                                )
-                                            }
-                                            repeat(columns - rowItems.size) {
-                                                Spacer(modifier = Modifier.weight(1f))
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        Text("Resultados", color = PmmTextSecondary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        if (results.isEmpty() && !isSearching) {
-                            EmptyLookupState()
-                        } else {
-                            BoxWithConstraints {
-                                val columns = if (maxWidth >= 620.dp) 2 else 1
-                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    results.chunked(columns).forEach { rowItems ->
-                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                                            rowItems.forEach { item ->
-                                                CatalogResultCard(
-                                                    item = item,
-                                                    usage = null,
-                                                    onClick = { onSelect(item) },
-                                                    modifier = Modifier.weight(1f)
-                                                )
-                                            }
-                                            repeat(columns - rowItems.size) {
-                                                Spacer(modifier = Modifier.weight(1f))
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun CatalogResultCard(
-    item: CasetaEntradaCatalogItem,
-    usage: Int?,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val name = item.nombre.ifBlank { item.label.ifBlank { "Sin nombre" } }
-    val initials = name.split(" ")
-        .filter { it.isNotBlank() }
-        .map { it.first() }
-        .take(2)
-        .joinToString("")
-        .uppercase()
-        .ifBlank { "CS" }
-
-    Surface(
-        modifier = modifier
-            .heightIn(min = 68.dp)
-            .clickable(onClick = onClick),
-        color = Color.White,
-        shape = RoundedCornerShape(14.dp),
-        shadowElevation = 2.dp
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // Avatar circular con iniciales
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .background(Color(0xFFEEF3FF), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = initials,
-                    color = Color(0xFF003DA5),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
-                )
-            }
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = name,
-                    color = PmmTextPrimary,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = item.id.ifBlank { "SIN ID" },
-                    color = PmmTextSecondary,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-
-            usage?.let {
-                Text(
-                    text = "$it usos",
-                    color = PmmTextSecondary,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
-                )
             }
         }
     }
@@ -4709,106 +3175,6 @@ private fun BoxTypesUnavailable(
             OutlinedButton(onClick = onRetry) { Text("Reintentar") }
         }
         if (error != null) ErrorText(error)
-    }
-}
-
-@Composable
-private fun CatalogChoiceGrid(
-    label: String,
-    selectedId: String,
-    selectedLabel: String,
-    items: List<CasetaEntradaCatalogItem>,
-    onSelect: (CasetaEntradaCatalogItem) -> Unit,
-    error: String? = null,
-    enabled: Boolean = true
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(label, color = PmmTextSecondary, fontWeight = FontWeight.SemiBold)
-        BoxWithConstraints {
-            val columns = if (maxWidth >= 620.dp) 2 else 1
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items.chunked(columns).forEach { rowItems ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        rowItems.forEach { item ->
-                            val selected = item.id == selectedId || item.nombre == selectedLabel
-                            DecisionCard(
-                                title = item.nombre,
-                                subtitle = item.id,
-                                selected = selected,
-                                onClick = { onSelect(item) },
-                                enabled = enabled,
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                        repeat(columns - rowItems.size) {
-                            Spacer(modifier = Modifier.weight(1f))
-                        }
-                    }
-                }
-            }
-        }
-        if (error != null) ErrorText(error)
-    }
-}
-
-@Composable
-private fun CatalogDropdown(
-    label: String,
-    selected: String,
-    items: List<CasetaEntradaCatalogItem>,
-    onSelect: (CasetaEntradaCatalogItem) -> Unit,
-    emptyText: String,
-    error: String? = null,
-    enabled: Boolean = true
-) {
-    var expanded by remember { mutableStateOf(false) }
-    Column {
-        OutlinedButton(
-            onClick = { expanded = true },
-            enabled = enabled,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            border = BorderStroke(1.dp, if (error == null) PmmNavyBorder else PmmRed),
-            contentPadding = PaddingValues(horizontal = 12.dp)
-        ) {
-            Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
-                Text(label, color = PmmTextSecondary, fontSize = 12.sp)
-                Text(
-                    selected.ifBlank { emptyText },
-                    color = if (selected.isBlank()) PmmTextMuted else PmmTextPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Icon(Icons.Default.ExpandMore, contentDescription = null)
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            items.forEach { item ->
-                DropdownMenuItem(
-                    text = { Text(item.label.ifBlank { item.nombre }) },
-                    onClick = {
-                        onSelect(item)
-                        expanded = false
-                    }
-                )
-            }
-        }
-        if (error != null) ErrorText(error)
-    }
-}
-
-@Composable
-private fun ResponsiveFields(content: @Composable () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-        content()
-    }
-}
-
-@Composable
-private fun FieldBox(content: @Composable () -> Unit) {
-    Box(modifier = Modifier.fillMaxWidth()) {
-        content()
     }
 }
 
@@ -5772,5 +4138,1425 @@ private fun SavingProgressOverlay(
                 }
             }
         }
+    }
+}
+
+/**
+ * Orden de «siguiente campo» cuando el usuario da Enter/Siguiente en el teclado, DENTRO de cada paso. Cada paso es una
+ * pantalla distinta: pasarle el foco a un campo de otro paso rompería (su FocusRequester no está compuesto).
+ * Los campos condicionales solo entran a la cadena cuando su sección está visible.
+ */
+private class CasetaFormFocusChain {
+    val boxNumber = FocusRequester()
+    val plates = FocusRequester()
+    val truckNumber = FocusRequester()
+    val operatorName = FocusRequester()
+    val seals = FocusRequester()
+    val guideCount = FocusRequester()
+    val pedimento = FocusRequester()
+    val temperature = FocusRequester()
+    val fuel = FocusRequester()
+    val observations = FocusRequester()
+
+    private fun order(step: CasetaStep, state: CasetaEntradaUiState): List<FocusRequester> = when (step) {
+        CasetaStep.Camion -> buildList {
+            if (!state.form.esTractocamion) add(boxNumber)
+            add(plates)
+            add(truckNumber)
+            add(operatorName)
+            add(seals)
+        }
+        CasetaStep.Caja -> buildList {
+            if (state.requiresGuide) add(guideCount)
+            if (state.form.operation == CasetaEntradaRules.OP_EXPORT) add(pedimento)
+            if (state.isRefrigerated && !state.form.esTractocamion) {
+                add(temperature)
+                add(fuel)
+            }
+        }
+        CasetaStep.Evidencia -> listOf(observations)
+    }
+
+    fun next(step: CasetaStep, state: CasetaEntradaUiState, current: FocusRequester, focusManager: FocusManager) {
+        val chain = order(step, state)
+        val target = chain.getOrNull(chain.indexOf(current) + 1)
+        if (target != null) target.requestFocus() else focusManager.clearFocus()
+    }
+}
+
+/** Encabezado compacto: el avance ya no vive aquí sino en la barra de pasos de abajo. */
+@Composable
+private fun CasetaEntradaHeader(
+    state: CasetaEntradaUiState,
+    updateMode: Boolean = false,
+    onNavigateBack: () -> Unit,
+    onRefresh: () -> Unit,
+    onClear: (() -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Brush.verticalGradient(colors = listOf(Color(0xFF003875), Color(0xFF001A38))))
+            .statusBarsPadding()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Surface(
+            shape = CircleShape,
+            color = Color.White.copy(alpha = 0.15f),
+            modifier = Modifier.size(40.dp)
+        ) {
+            IconButton(onClick = onNavigateBack) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Regresar",
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 4.dp)
+        ) {
+            Text(
+                text = if (updateMode) "EDICIÓN DE REGISTRO" else "ENTRADA A CASETA",
+                fontSize = 16.sp,
+                lineHeight = 18.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = Color.White,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (updateMode) {
+                Text(
+                    text = state.form.casetaId.ifBlank { "Modificando datos" },
+                    color = Color(0xFF93C5FD),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        if (state.lastDraftSavedAt != null) {
+            Icon(
+                imageVector = Icons.Default.CloudDone,
+                contentDescription = "Borrador guardado localmente",
+                tint = Color(0xFF4ADE80),
+                modifier = Modifier.size(18.dp)
+            )
+        }
+        Surface(
+            color = Color(0xFFEF4444),
+            shape = RoundedCornerShape(6.dp)
+        ) {
+            Text(
+                text = state.form.bodega.ifBlank { "B1 LAREDO" },
+                color = Color.White,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.ExtraBold,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+            )
+        }
+        if (onClear != null) {
+            Surface(
+                shape = CircleShape,
+                color = Color.White.copy(alpha = 0.15f),
+                modifier = Modifier.size(36.dp)
+            ) {
+                IconButton(onClick = onClear, enabled = !state.isSaving) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Limpiar formulario",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+        Surface(
+            shape = CircleShape,
+            color = Color.White.copy(alpha = 0.15f),
+            modifier = Modifier.size(36.dp)
+        ) {
+            IconButton(onClick = onRefresh, enabled = !state.isLoadingCatalogs) {
+                if (state.isLoadingCatalogs) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Actualizar catálogos",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Pasos de la captura: Camión → Caja → Evidencia
+// Las reglas (qué falta en cada paso, qué hace el botón de abajo) viven en CasetaEntradaSteps.kt.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Catálogos que se eligen en una pantalla de selección: ni lista desplegable ni hoja pegada abajo. */
+private enum class CasetaPicker { Customer, TruckLine, BoxLine, BoxType, Country }
+
+@Composable
+private fun CasetaStepBar(
+    statuses: List<CasetaStepStatus>,
+    current: CasetaStep,
+    onSelect: (CasetaStep) -> Unit
+) {
+    val last = statuses.lastIndex
+    Surface(color = PmmBgSurface, shadowElevation = 3.dp) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 6.dp)
+        ) {
+            statuses.forEachIndexed { index, status ->
+                val isCurrent = status.step == current
+                val statusColor = when (status.tone) {
+                    CasetaStepTone.Done -> PmmGreenDark
+                    CasetaStepTone.Missing -> PmmAmberDark
+                    CasetaStepTone.Neutral -> PmmTextSecondary
+                }
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable(role = Role.Tab) { onSelect(status.step) }
+                        .semantics { selected = isCurrent }
+                        .padding(vertical = 2.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(30.dp)
+                            .drawBehind {
+                                // El hilo une los círculos pasando por detrás de cada uno, sin tocarlos.
+                                val y = size.height / 2
+                                val gap = 17.dp.toPx()
+                                val stroke = 2.dp.toPx()
+                                val color = PmmBlueLight.copy(alpha = 0.45f)
+                                if (index > 0) drawLine(color, Offset(0f, y), Offset(size.width / 2 - gap, y), stroke)
+                                if (index < last) drawLine(color, Offset(size.width / 2 + gap, y), Offset(size.width, y), stroke)
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CasetaStepBadge(
+                            number = index + 1,
+                            done = status.tone == CasetaStepTone.Done,
+                            highlighted = isCurrent
+                        )
+                    }
+                    Text(
+                        text = status.step.label,
+                        color = if (isCurrent) PmmBlueDeep else PmmTextSecondary,
+                        fontSize = 13.sp,
+                        fontWeight = if (isCurrent) FontWeight.Black else FontWeight.SemiBold,
+                        maxLines = 1
+                    )
+                    Text(
+                        text = status.text,
+                        color = statusColor,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Círculo de un paso: palomita verde si está completo, su número en azul si no (más fuerte si es el actual). */
+@Composable
+private fun CasetaStepBadge(number: Int, done: Boolean, highlighted: Boolean) {
+    Box(
+        modifier = Modifier
+            .size(28.dp)
+            .clip(CircleShape)
+            .background(
+                when {
+                    done -> PmmGreen
+                    highlighted -> PmmBlueDeep
+                    else -> PmmBlueDeep.copy(alpha = 0.55f)
+                }
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        if (done) {
+            Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+        } else {
+            Text("$number", color = Color.White, fontWeight = FontWeight.Black, fontSize = 12.sp)
+        }
+    }
+}
+
+/**
+ * Barra de abajo: «Atrás» (o «Cancelar» al editar) y el botón principal, que cambia según lo que falte:
+ * «Siguiente», «Faltan N · ir a…» o «Guardar entrada». Avanzar nunca se bloquea; solo guardar exige lo obligatorio.
+ */
+@Composable
+private fun CasetaStepBottomBar(
+    action: CasetaStepAction,
+    step: CasetaStep,
+    editMode: Boolean,
+    isSaving: Boolean,
+    canSubmit: Boolean,
+    onBack: (() -> Unit)?,
+    onAction: () -> Unit
+) {
+    val saving = action is CasetaStepAction.Save
+    val warn = action is CasetaStepAction.GoTo
+    Surface(
+        color = Color.White,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        shadowElevation = 12.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (onBack != null) {
+                OutlinedButton(
+                    onClick = onBack,
+                    enabled = !isSaving,
+                    modifier = Modifier.height(52.dp),
+                    shape = RoundedCornerShape(999.dp),
+                    border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = PmmTextSecondary)
+                ) {
+                    if (step != CasetaStep.Camion) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Atrás", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    } else {
+                        Text("Cancelar", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
+                }
+            }
+            Button(
+                onClick = onAction,
+                enabled = if (saving) canSubmit else true,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(52.dp),
+                shape = RoundedCornerShape(999.dp),
+                border = if (warn) BorderStroke(2.dp, PmmAmber) else null,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = when {
+                        saving -> PmmGreenDark
+                        warn -> Color.White
+                        else -> PmmBlueDeep
+                    },
+                    contentColor = if (warn) PmmAmberDark else Color.White,
+                    disabledContainerColor = Color(0xFFE2E8F0)
+                )
+            ) {
+                if (isSaving) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+                } else {
+                    when (action) {
+                        is CasetaStepAction.Save -> {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                if (editMode) "Actualizar" else "Guardar entrada",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
+                        }
+                        is CasetaStepAction.Next -> {
+                            Text("Siguiente: ${action.target.label}", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Spacer(Modifier.width(8.dp))
+                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
+                        }
+                        is CasetaStepAction.GoTo -> {
+                            Text(
+                                "Faltan ${action.missing} · ir a ${action.target.label}",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Dos columnas en pantalla ancha (tableta acostada); una sola, una encima de otra, en cualquier otro caso. */
+@Composable
+private fun StepPanes(
+    wide: Boolean,
+    left: @Composable ColumnScope.() -> Unit,
+    right: @Composable ColumnScope.() -> Unit
+) {
+    if (wide) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp), content = left)
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp), content = right)
+        }
+    } else {
+        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            left()
+            right()
+        }
+    }
+}
+
+@Composable
+private fun StepLabel(text: String) {
+    Text(text, color = PmmTextSecondary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+}
+
+/** Aviso corto de por qué aparece un campo condicional. */
+@Composable
+private fun StepHint(text: String) {
+    Surface(
+        color = Color(0xFFFFFBEB),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, Color(0xFFFDE68A)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = PmmAmberDark, modifier = Modifier.size(16.dp))
+            Text(text, color = PmmAmberDark, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+/** Campos que solo aplican por lo elegido arriba: llevan una raya ámbar a la izquierda. */
+@Composable
+private fun StepConditional(content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .drawBehind {
+                drawLine(
+                    color = PmmAmber,
+                    start = Offset(0f, 0f),
+                    end = Offset(0f, size.height),
+                    strokeWidth = 3.dp.toPx()
+                )
+            }
+            .padding(start = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        content = content
+    )
+}
+
+/** Tarjeta que abre una pantalla de selección. Los obligatorios vacíos dicen «Falta». */
+@Composable
+private fun PickerField(
+    label: String,
+    value: String,
+    required: Boolean,
+    missing: Boolean,
+    error: String?,
+    enabled: Boolean,
+    onOpen: () -> Unit,
+    pending: Boolean = false,
+    onClear: (() -> Unit)? = null
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        SelectionDisplayCard(
+            label = if (required) "$label *" else label,
+            value = value,
+            placeholder = "Toca para elegir",
+            error = error,
+            pending = pending,
+            missing = missing && value.isBlank(),
+            enabled = enabled,
+            onClick = onOpen,
+            onClear = if (value.isNotBlank() && onClear != null) onClear else null
+        )
+        if (error != null) ErrorText(error) else if (pending) PendingHintText()
+    }
+}
+
+@Composable
+private fun StepActionTile(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    enabled: Boolean,
+    highlighted: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    badge: String? = null
+) {
+    Surface(
+        modifier = modifier
+            .heightIn(min = 64.dp)
+            .clickable(enabled = enabled, onClick = onClick),
+        color = Color.White,
+        shape = RoundedCornerShape(16.dp),
+        shadowElevation = 2.dp,
+        border = if (highlighted) null else BorderStroke(1.dp, PmmNavyBorder)
+    ) {
+        Row(
+            modifier = Modifier
+                .then(
+                    if (highlighted) {
+                        Modifier.background(Brush.linearGradient(listOf(Color(0xFFE2ECFB), Color(0xFFFFFBEB))))
+                    } else {
+                        Modifier
+                    }
+                )
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .background(if (highlighted) PmmBlueDeep else Color(0xFF0284C7), RoundedCornerShape(11.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = title,
+                        color = if (enabled) PmmTextPrimary else PmmTextMuted,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (badge != null) {
+                        Surface(color = Color(0xFFFDE047), shape = RoundedCornerShape(4.dp)) {
+                            Text(
+                                text = badge,
+                                color = Color(0xFF854D0E),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Black,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+                Text(
+                    text = subtitle,
+                    color = PmmTextSecondary,
+                    fontSize = 11.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+/** Paso 1: lo que el guardia ve en la puerta. */
+@Composable
+private fun CasetaStepCamion(
+    state: CasetaEntradaUiState,
+    viewModel: CasetaEntradaViewModel,
+    editable: Boolean,
+    editMode: Boolean,
+    wide: Boolean,
+    focusChain: CasetaFormFocusChain,
+    focusManager: FocusManager,
+    onOpenSmartCapture: () -> Unit,
+    onScan: () -> Unit,
+    onOpenHistory: () -> Unit,
+    onOpenPicker: (CasetaPicker) -> Unit
+) {
+    val form = state.form
+    val tr = form.esTractocamion
+    val errors = remember(form) { CasetaEntradaRules.validate(form) }
+
+    if (!editable) {
+        CasetaEntradaPermissionNotice(
+            message = "Tienes acceso de lectura. Los campos y acciones que guardan cambios están deshabilitados.",
+            enabled = false
+        )
+    }
+    if (editMode) EditModeNotice()
+    if (form.origenPreRegistro) {
+        PreregistroFolioStatusRow(folio = state.preregistroFolio, confirmadas = state.preregistroPlacasConfirmadas)
+    }
+
+    val boxField: @Composable () -> Unit = {
+        CasetaTextField(
+            value = form.boxNumber,
+            onValueChange = { viewModel.updateText("boxNumber", it) },
+            enabled = editable,
+            label = { Text("Número de caja *") },
+            placeholder = { Text("Escríbelo o léelo con la cámara") },
+            singleLine = true,
+            isError = state.fieldErrors.containsKey("boxNumber"),
+            supportingText = errorText(state.fieldErrors["boxNumber"]),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+            keyboardActions = KeyboardActions(onNext = {
+                focusChain.next(CasetaStep.Camion, state, focusChain.boxNumber, focusManager)
+            }),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusChain.boxNumber)
+        )
+    }
+    val platesField: @Composable () -> Unit = {
+        CasetaTextField(
+            value = form.plates,
+            onValueChange = { viewModel.updateText("plates", it) },
+            enabled = editable,
+            label = { Text(if (state.requiresCountry) "Placas *" else "Placas") },
+            resaltado = true,
+            singleLine = true,
+            isError = state.fieldErrors.containsKey("plates"),
+            supportingText = errorText(state.fieldErrors["plates"]),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+            keyboardActions = KeyboardActions(onNext = {
+                focusChain.next(CasetaStep.Camion, state, focusChain.plates, focusManager)
+            }),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusChain.plates)
+        )
+    }
+    val truckField: @Composable () -> Unit = {
+        CasetaTextField(
+            value = form.truckNumber,
+            onValueChange = { viewModel.updateText("truckNumber", it) },
+            enabled = editable,
+            label = { Text("No. de camión") },
+            resaltado = true,
+            singleLine = true,
+            pending = "truckNumber" in state.pendingTruckFields,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+            keyboardActions = KeyboardActions(onNext = {
+                focusChain.next(CasetaStep.Camion, state, focusChain.truckNumber, focusManager)
+            }),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusChain.truckNumber)
+        )
+    }
+    val operatorField: @Composable () -> Unit = {
+        CasetaTextField(
+            value = form.operatorName,
+            onValueChange = { viewModel.updateText("operatorName", it) },
+            enabled = editable,
+            label = { Text("Operador") },
+            resaltado = true,
+            singleLine = true,
+            pending = "operatorName" in state.pendingTruckFields,
+            keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.Words,
+                imeAction = ImeAction.Next
+            ),
+            keyboardActions = KeyboardActions(onNext = {
+                focusChain.next(CasetaStep.Camion, state, focusChain.operatorName, focusManager)
+            }),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusChain.operatorName)
+        )
+    }
+    val sealsField: @Composable () -> Unit = {
+        CasetaTextField(
+            value = form.seals,
+            onValueChange = { viewModel.updateText("seals", it) },
+            enabled = editable,
+            label = { Text("Sellos") },
+            resaltado = true,
+            singleLine = true,
+            pending = "seals" in state.pendingTruckFields,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+            keyboardActions = KeyboardActions(onNext = {
+                focusChain.next(CasetaStep.Camion, state, focusChain.seals, focusManager)
+            }),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusChain.seals)
+        )
+    }
+
+    StepPanes(
+        wide = wide,
+        left = {
+            StepLabel("¿Qué registras?")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                TipoRegistroCard(
+                    iconRes = R.drawable.ic_caseta_con_caja,
+                    title = "Con caja",
+                    subtitle = "Camión + caja/remolque",
+                    selected = !tr,
+                    onClick = { viewModel.setTipoRegistro(TipoRegistro.CAJA) },
+                    enabled = editable,
+                    modifier = Modifier.weight(1f)
+                )
+                // Desactivado a propósito: un tractocamión sin caja solo entra hoy por un pre-registro con QR, que
+                // pone este modo por su cuenta (y entonces la tarjeta se ve elegida pero sin poder tocarse).
+                TipoRegistroCard(
+                    iconRes = R.drawable.ic_caseta_tractocamion,
+                    title = "Solo tractocamión",
+                    subtitle = "Sin caja, viene a recoger",
+                    selected = tr,
+                    onClick = {},
+                    enabled = false,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            if (!editMode) {
+                val historyCount = state.historySuggestions.size
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    if (tr) {
+                        StepActionTile(
+                            icon = Icons.Default.QrCodeScanner,
+                            title = "Leer QR",
+                            subtitle = "Pre-registro del chofer",
+                            enabled = state.puedeAgregar && !state.isSaving,
+                            highlighted = true,
+                            onClick = onScan,
+                            modifier = Modifier.weight(1f)
+                        )
+                    } else {
+                        StepActionTile(
+                            icon = Icons.Default.Camera,
+                            title = "Cámara",
+                            subtitle = "Lee caja y placa",
+                            enabled = state.puedeAgregar && form.photoCount < 15 && !state.isSaving,
+                            highlighted = true,
+                            badge = "IA",
+                            onClick = onOpenSmartCapture,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    StepActionTile(
+                        icon = Icons.Default.History,
+                        title = "Reusar anterior",
+                        subtitle = when {
+                            historyCount > 0 -> "Reusar ($historyCount)"
+                            tr -> "Reusar datos"
+                            else -> "Llena la caja y la línea"
+                        },
+                        enabled = !state.isSaving,
+                        highlighted = false,
+                        onClick = onOpenHistory,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                // En pantalla ancha el avance de la lectura con IA sigue a la vista, como en la mesa de captura de antes.
+                if (wide) {
+                    AnimatedVisibility(visible = state.capture.phase != CasetaEntradaOcrPhase.Idle) {
+                        SmartCaptureCard(
+                            state = state.capture,
+                            onApply = viewModel::applyCaptureCandidate,
+                            onRetry = viewModel::retryCapture,
+                            onDismiss = viewModel::dismissCapture
+                        )
+                    }
+                }
+            }
+        },
+        right = {
+            PickerField(
+                label = "Línea de camión",
+                value = form.truckLineLabel,
+                required = true,
+                missing = errors.containsKey("truckLine"),
+                error = state.fieldErrors["truckLine"],
+                pending = "truckLine" in state.pendingTruckFields,
+                enabled = editable,
+                onOpen = { onOpenPicker(CasetaPicker.TruckLine) },
+                onClear = { viewModel.clearSelection(CasetaEntradaLookupType.TruckLine) }
+            )
+            if (!tr) boxField()
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                if (maxWidth >= 400.dp) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Box(modifier = Modifier.weight(1f)) { platesField() }
+                            Box(modifier = Modifier.weight(1f)) { truckField() }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Box(modifier = Modifier.weight(1f)) { operatorField() }
+                            Box(modifier = Modifier.weight(1f)) { sealsField() }
+                        }
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        platesField()
+                        truckField()
+                        operatorField()
+                        sealsField()
+                    }
+                }
+            }
+            if (tr) {
+                Text(
+                    "Un tractocamión sin caja no lleva cliente, caja ni tipo de caja.",
+                    color = PmmTextSecondary,
+                    fontSize = 12.sp
+                )
+            }
+        }
+    )
+}
+
+/** Paso 2: lo que dice el papel. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CasetaStepCaja(
+    state: CasetaEntradaUiState,
+    viewModel: CasetaEntradaViewModel,
+    editable: Boolean,
+    wide: Boolean,
+    focusChain: CasetaFormFocusChain,
+    focusManager: FocusManager,
+    onOpenPicker: (CasetaPicker) -> Unit
+) {
+    val form = state.form
+    val tr = form.esTractocamion
+    val errors = remember(form) { CasetaEntradaRules.validate(form) }
+
+    StepPanes(
+        wide = wide,
+        left = {
+            StepLabel("Operación")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                listOf(CasetaEntradaRules.OP_IMPORT, CasetaEntradaRules.OP_EXPORT).forEach { op ->
+                    DecisionCard(
+                        title = op,
+                        subtitle = null,
+                        selected = form.operation == op,
+                        onClick = { viewModel.updateOperation(op) },
+                        enabled = editable,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+            state.fieldErrors["operation"]?.let { ErrorText(it) }
+
+            if (form.operation.isNotBlank()) {
+                StepLabel("Movimiento")
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    state.availableMovements.forEach { movement ->
+                        DecisionCard(
+                            title = movement,
+                            subtitle = null,
+                            selected = form.movement == movement,
+                            onClick = { viewModel.updateMovement(movement) },
+                            enabled = editable
+                        )
+                    }
+                }
+                state.fieldErrors["movement"]?.let { ErrorText(it) }
+            }
+
+            val showPedimento = form.operation == CasetaEntradaRules.OP_EXPORT
+            if (state.requiresCountry || state.requiresGuide || showPedimento) {
+                StepConditional {
+                    if (state.requiresCountry) {
+                        StepHint("Por ${form.movement} se piden placas (en Camión) y país de origen.")
+                        PickerField(
+                            label = "País de origen",
+                            value = form.countryLabel,
+                            required = true,
+                            missing = errors.containsKey("idCountry"),
+                            error = state.fieldErrors["idCountry"],
+                            enabled = editable,
+                            onOpen = { onOpenPicker(CasetaPicker.Country) }
+                        )
+                    }
+                    if (state.requiresGuide) {
+                        StepHint("Por ${form.movement} se pide la cantidad de guías.")
+                        CasetaTextField(
+                            value = form.guideCount,
+                            onValueChange = { viewModel.updateText("guideCount", it) },
+                            enabled = editable,
+                            label = { Text("Cantidad de guías *") },
+                            singleLine = true,
+                            isError = state.fieldErrors.containsKey("guideCount"),
+                            supportingText = errorText(state.fieldErrors["guideCount"]),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                            keyboardActions = KeyboardActions(onNext = {
+                                focusChain.next(CasetaStep.Caja, state, focusChain.guideCount, focusManager)
+                            }),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(focusChain.guideCount)
+                        )
+                    }
+                    if (showPedimento) {
+                        CasetaTextField(
+                            value = form.pedimento,
+                            onValueChange = { viewModel.updateText("pedimento", it) },
+                            enabled = editable,
+                            label = { Text("Pedimento (solo exportación)") },
+                            placeholder = { Text("7 dígitos si aplica") },
+                            singleLine = true,
+                            isError = state.fieldErrors.containsKey("pedimento"),
+                            supportingText = errorText(state.fieldErrors["pedimento"]),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                            keyboardActions = KeyboardActions(onNext = {
+                                focusChain.next(CasetaStep.Caja, state, focusChain.pedimento, focusManager)
+                            }),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(focusChain.pedimento)
+                        )
+                    }
+                }
+            }
+        },
+        right = {
+            if (!tr) {
+                PickerField(
+                    label = "Cliente",
+                    value = form.customerLabel,
+                    required = true,
+                    missing = errors.containsKey("customer"),
+                    error = state.fieldErrors["customer"],
+                    enabled = editable,
+                    onOpen = { onOpenPicker(CasetaPicker.Customer) },
+                    onClear = { viewModel.clearSelection(CasetaEntradaLookupType.Customer) }
+                )
+                if (state.boxTypes.isNotEmpty()) {
+                    PickerField(
+                        label = "Tipo de caja",
+                        value = form.boxTypeDescription,
+                        required = true,
+                        missing = errors.containsKey("idBoxType"),
+                        error = state.fieldErrors["idBoxType"],
+                        enabled = editable,
+                        onOpen = { onOpenPicker(CasetaPicker.BoxType) }
+                    )
+                } else {
+                    BoxTypesUnavailable(
+                        selectedLabel = form.boxTypeDescription,
+                        loading = state.isLoadingBoxTypes || state.isLoadingCatalogs,
+                        error = state.fieldErrors["idBoxType"],
+                        onRetry = viewModel::loadBoxTypes
+                    )
+                }
+                if (state.isRefrigerated) {
+                    StepConditional {
+                        StepHint("Por ${form.boxTypeDescription} se piden temperatura y combustible.")
+                        CasetaTextField(
+                            value = form.temperature,
+                            onValueChange = { viewModel.updateText("temperature", it) },
+                            enabled = editable,
+                            label = { Text("Temperatura *") },
+                            singleLine = true,
+                            isError = state.fieldErrors.containsKey("temperature"),
+                            supportingText = errorText(state.fieldErrors["temperature"]),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                            keyboardActions = KeyboardActions(onNext = {
+                                focusChain.next(CasetaStep.Caja, state, focusChain.temperature, focusManager)
+                            }),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(focusChain.temperature)
+                        )
+                        CasetaTextField(
+                            value = form.fuel,
+                            onValueChange = { viewModel.updateText("fuel", it) },
+                            enabled = editable,
+                            label = { Text("Combustible *") },
+                            singleLine = true,
+                            isError = state.fieldErrors.containsKey("fuel"),
+                            supportingText = errorText(state.fieldErrors["fuel"]),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                            keyboardActions = KeyboardActions(onNext = {
+                                focusChain.next(CasetaStep.Caja, state, focusChain.fuel, focusManager)
+                            }),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(focusChain.fuel)
+                        )
+                    }
+                }
+                PickerField(
+                    label = "Línea de caja",
+                    value = form.boxLineLabel,
+                    required = true,
+                    missing = errors.containsKey("boxLine"),
+                    error = state.fieldErrors["boxLine"],
+                    enabled = editable,
+                    onOpen = { onOpenPicker(CasetaPicker.BoxLine) },
+                    onClear = { viewModel.clearSelection(CasetaEntradaLookupType.BoxLine) }
+                )
+            } else {
+                Text(
+                    "Un tractocamión sin caja no lleva cliente, caja ni tipo de caja.",
+                    color = PmmTextSecondary,
+                    fontSize = 12.sp
+                )
+            }
+        }
+    )
+}
+
+/** Paso 3: fotos y observaciones (opcional). */
+@Composable
+private fun CasetaStepEvidencia(
+    state: CasetaEntradaUiState,
+    viewModel: CasetaEntradaViewModel,
+    editable: Boolean,
+    wide: Boolean,
+    focusChain: CasetaFormFocusChain,
+    focusManager: FocusManager,
+    onTakePhoto: () -> Unit,
+    onPreviewPhoto: (CasetaEntradaPreviewPhoto) -> Unit,
+    onDeletePhoto: (CasetaEntradaPreviewPhoto) -> Unit
+) {
+    StepPanes(
+        wide = wide,
+        left = {
+            PhotosSection(
+                state = state,
+                viewModel = viewModel,
+                onTakePhoto = onTakePhoto,
+                onPreviewPhoto = onPreviewPhoto,
+                onDeletePhoto = onDeletePhoto,
+                canAdd = state.puedeAgregar,
+                canDelete = state.puedeBorrar
+            )
+        },
+        right = {
+            ObservationsSection(
+                state = state,
+                viewModel = viewModel,
+                focusChain = focusChain,
+                focusManager = focusManager,
+                enabled = editable
+            )
+        }
+    )
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Pantallas de selección y hojas de búsqueda
+//
+// Van DENTRO de la ventana de la pantalla (no en un Dialog) y suben desde arriba, o se levantan sobre el teclado:
+// con el teclado abierto la lista se encoge en vez de quedar tapada. En un Dialog la ventana es otra y el teclado no
+// le avisa a la lista, que era justo lo que pasaba con la hoja pegada abajo.
+// ───────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun CasetaOverlayHost(
+    onDismiss: () -> Unit,
+    top: Boolean,
+    modifier: Modifier = Modifier,
+    maxHeight: Dp = 760.dp,
+    overlay: (@Composable BoxScope.() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    BackHandler(onBack = onDismiss)
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.45f))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onDismiss
+            )
+            .statusBarsPadding()
+            .then(
+                if (top) {
+                    Modifier.imePadding()
+                } else {
+                    Modifier.windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))
+                }
+            ),
+        contentAlignment = if (top) Alignment.TopCenter else Alignment.BottomCenter
+    ) {
+        Surface(
+            modifier = Modifier
+                .widthIn(max = 720.dp)
+                .fillMaxWidth()
+                .heightIn(max = maxHeight)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {} // Los toques dentro del panel no lo cierran
+                ),
+            color = PmmBgSurface,
+            shape = if (top) {
+                RoundedCornerShape(bottomStart = 22.dp, bottomEnd = 22.dp)
+            } else {
+                RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp)
+            },
+            shadowElevation = 16.dp
+        ) {
+            Column(modifier = Modifier.fillMaxWidth(), content = content)
+        }
+        overlay?.invoke(this)
+    }
+}
+
+@Composable
+private fun CasetaPickerPanel(
+    kind: CasetaPicker,
+    state: CasetaEntradaUiState,
+    viewModel: CasetaEntradaViewModel,
+    onDismiss: () -> Unit
+) {
+    val form = state.form
+    when (kind) {
+        CasetaPicker.Customer -> CatalogSearchPanel(
+            title = "Cliente",
+            placeholder = "Buscar cliente",
+            type = CasetaEntradaLookupType.Customer,
+            results = state.customerResults,
+            frequentItems = state.frequentCustomers,
+            isSearching = state.isSearching,
+            selectedId = form.idCustomer,
+            onSearch = viewModel::searchLookup,
+            onDismiss = onDismiss,
+            onSelect = {
+                viewModel.selectCustomer(it)
+                onDismiss()
+            }
+        )
+        CasetaPicker.TruckLine -> CatalogSearchPanel(
+            title = "Línea de camión",
+            placeholder = "Buscar línea de camión",
+            type = CasetaEntradaLookupType.TruckLine,
+            results = state.truckLineResults,
+            frequentItems = state.frequentTruckLines,
+            isSearching = state.isSearching,
+            selectedId = form.idTruckLine,
+            onSearch = viewModel::searchLookup,
+            onDismiss = onDismiss,
+            onSelect = {
+                viewModel.selectTruckLine(it)
+                onDismiss()
+            }
+        )
+        CasetaPicker.BoxLine -> CatalogSearchPanel(
+            title = "Línea de caja",
+            placeholder = "Buscar línea de caja",
+            type = CasetaEntradaLookupType.BoxLine,
+            results = state.boxLineResults,
+            frequentItems = state.frequentBoxLines,
+            isSearching = state.isSearching,
+            selectedId = form.idBoxLine,
+            onSearch = viewModel::searchLookup,
+            onDismiss = onDismiss,
+            onSelect = {
+                viewModel.selectBoxLine(it)
+                onDismiss()
+            }
+        )
+        CasetaPicker.BoxType -> CatalogChoicePanel(
+            title = "Tipo de caja",
+            items = state.boxTypes,
+            selectedId = form.idBoxType,
+            onDismiss = onDismiss,
+            onSelect = {
+                viewModel.selectBoxType(it)
+                onDismiss()
+            }
+        )
+        CasetaPicker.Country -> CatalogChoicePanel(
+            title = "País de origen",
+            items = state.countries,
+            selectedId = form.idCountry,
+            onDismiss = onDismiss,
+            onSelect = {
+                viewModel.selectCountry(it)
+                onDismiss()
+            }
+        )
+    }
+}
+
+@Composable
+private fun CasetaPanelHeader(title: String, trailing: String?, onDismiss: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 8.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(onClick = onDismiss) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver", tint = PmmTextSecondary)
+        }
+        Text(
+            text = title,
+            color = PmmTextPrimary,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.weight(1f)
+        )
+        if (trailing != null) {
+            Text(trailing, color = PmmTextSecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+/** Búsqueda en catálogo grande (clientes, líneas): campo arriba, frecuentes en una fila y los resultados debajo. */
+@Composable
+private fun CatalogSearchPanel(
+    title: String,
+    placeholder: String,
+    type: CasetaEntradaLookupType,
+    results: List<CasetaEntradaCatalogItem>,
+    frequentItems: List<CasetaEntradaFrequentItem>,
+    isSearching: Boolean,
+    selectedId: String,
+    onSearch: (CasetaEntradaLookupType, String) -> Unit,
+    onDismiss: () -> Unit,
+    onSelect: (CasetaEntradaCatalogItem) -> Unit
+) {
+    var query by remember(type) { mutableStateOf("") }
+
+    LaunchedEffect(type, query) {
+        delay(280)
+        onSearch(type, query)
+    }
+
+    // Al desplazar la lista el teclado se esconde, para ver todo lo que hay sin cerrar la pantalla. Una lista nueva
+    // por cada búsqueda: así cada búsqueda arranca arriba sin mover nada por código (eso también cuenta como scroll).
+    val listState = remember(query) { LazyListState() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focus = LocalFocusManager.current
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress }.collect { scrolling ->
+            if (scrolling) {
+                keyboard?.hide()
+                focus.clearFocus()
+            }
+        }
+    }
+
+    CasetaOverlayHost(onDismiss = onDismiss, top = true) {
+        CasetaPanelHeader(
+            title = title,
+            trailing = if (query.isNotBlank() && !isSearching) "${results.size} resultados" else null,
+            onDismiss = onDismiss
+        )
+        CasetaTextField(
+            value = query,
+            onValueChange = { query = it },
+            placeholder = { Text(placeholder) },
+            singleLine = true,
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = PmmTextMuted) },
+            trailingIcon = {
+                if (isSearching) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = PmmBlueDeep)
+                } else if (query.isNotBlank()) {
+                    IconButton(onClick = { query = "" }) {
+                        Icon(Icons.Default.Close, contentDescription = "Limpiar búsqueda", tint = PmmTextSecondary)
+                    }
+                }
+            },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = {
+                onSearch(type, query)
+                keyboard?.hide()
+            }),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 4.dp)
+        )
+        if (frequentItems.isNotEmpty() && query.isBlank()) {
+            Text(
+                "Frecuentes",
+                color = PmmTextSecondary,
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp)
+            )
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                items(frequentItems) { frequent ->
+                    Surface(
+                        color = Color(0xFFEFF6FF),
+                        shape = RoundedCornerShape(999.dp),
+                        border = BorderStroke(1.dp, Color(0xFFBFDBFE)),
+                        modifier = Modifier
+                            .heightIn(min = 40.dp)
+                            .clickable { onSelect(frequent.catalogItem) }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                frequent.nombre.take(26),
+                                color = Color(0xFF1E3A8A),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
+                            )
+                            Text("${frequent.uso}", color = PmmTextSecondary, fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+        }
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.weight(1f, fill = false),
+            contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            item {
+                Text(
+                    if (query.isBlank()) "Todos" else "Resultados",
+                    color = PmmTextSecondary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
+                )
+            }
+            if (results.isEmpty() && !isSearching) {
+                item { EmptyLookupState() }
+            } else {
+                itemsIndexed(results) { _, item ->
+                    CatalogResultRow(
+                        item = item,
+                        query = query,
+                        selected = selectedId.isNotBlank() && item.id == selectedId,
+                        onClick = { onSelect(item) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Catálogo corto (tipos de caja, países): toda la lista a la vista, sin campo de búsqueda ni teclado. */
+@Composable
+private fun CatalogChoicePanel(
+    title: String,
+    items: List<CasetaEntradaCatalogItem>,
+    selectedId: String,
+    onDismiss: () -> Unit,
+    onSelect: (CasetaEntradaCatalogItem) -> Unit
+) {
+    CasetaOverlayHost(onDismiss = onDismiss, top = true) {
+        CasetaPanelHeader(title = title, trailing = null, onDismiss = onDismiss)
+        LazyColumn(
+            modifier = Modifier.weight(1f, fill = false),
+            contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            itemsIndexed(items) { _, item ->
+                CatalogResultRow(
+                    item = item,
+                    query = "",
+                    selected = selectedId.isNotBlank() && item.id == selectedId,
+                    onClick = { onSelect(item) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CatalogResultRow(
+    item: CasetaEntradaCatalogItem,
+    query: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val name = item.nombre.ifBlank { item.label.ifBlank { "Sin nombre" } }
+    val initials = name.split(" ")
+        .filter { it.isNotBlank() }
+        .map { it.first() }
+        .take(2)
+        .joinToString("")
+        .uppercase()
+        .ifBlank { "CS" }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 60.dp)
+            .clickable(onClick = onClick),
+        color = if (selected) Color(0xFFEEF3FF) else Color.White,
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, if (selected) PmmBlueDeep else PmmNavyBorder)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .background(Color(0xFFEEF3FF), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(initials, color = PmmBlueDeep, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = highlightedName(name, query),
+                    color = PmmTextPrimary,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = item.id.ifBlank { "SIN ID" },
+                    color = PmmTextSecondary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+            if (selected) {
+                Icon(Icons.Default.Check, contentDescription = "Elegido", tint = PmmBlueDeep, modifier = Modifier.size(20.dp))
+            }
+        }
+    }
+}
+
+/** El nombre con lo que se escribió resaltado, para ver de un vistazo por qué salió ese resultado. */
+private fun highlightedName(name: String, query: String): AnnotatedString {
+    val q = query.trim()
+    if (q.isEmpty()) return AnnotatedString(name)
+    val start = name.indexOf(q, ignoreCase = true)
+    if (start < 0) return AnnotatedString(name)
+    return buildAnnotatedString {
+        append(name.substring(0, start))
+        withStyle(SpanStyle(background = Color(0xFFFDE68A))) {
+            append(name.substring(start, start + q.length))
+        }
+        append(name.substring(start + q.length))
     }
 }

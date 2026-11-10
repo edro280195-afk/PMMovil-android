@@ -919,7 +919,8 @@ class CasetaEntradaViewModel @Inject constructor(
             val form = when (field) {
                 "truckNumber" -> state.form.copy(truckNumber = value.uppercase())
                 "boxNumber" -> state.form.copy(boxNumber = value.uppercase())
-                "operatorName" -> state.form.copy(operatorName = value.uppercase())
+                // El nombre del operador se queda como lo escribió el guardia (los demás datos de la unidad sí van en mayúsculas).
+                "operatorName" -> state.form.copy(operatorName = value)
                 "plates" -> state.form.copy(plates = value.uppercase())
                 "seals" -> state.form.copy(seals = value.uppercase())
                 "observations" -> state.form.copy(observations = value)
