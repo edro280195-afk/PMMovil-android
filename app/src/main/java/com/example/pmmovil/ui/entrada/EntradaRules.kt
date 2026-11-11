@@ -28,8 +28,9 @@ object EntradaRules {
         if (form.ref4.isBlank()) add(
             EntradaValidation("ref4", "Genera o captura la entrada primero.", EntradaSection.REFERENCE)
         )
+        // La fecha se captura en «Contexto de captura», dentro de Referencia: ahí es donde hay que llevar a quien falte.
         if (form.fecha.isBlank()) add(
-            EntradaValidation("fecha", "La fecha de arribo es obligatoria.", EntradaSection.ARRIVAL)
+            EntradaValidation("fecha", "La fecha de arribo es obligatoria.", EntradaSection.REFERENCE)
         )
         if (form.codCliente.isBlank() && form.nomCliente.isBlank()) add(
             EntradaValidation("cliente", "El cliente es obligatorio.", EntradaSection.ARRIVAL)

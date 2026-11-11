@@ -25,6 +25,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -50,6 +52,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CameraAlt
@@ -105,6 +108,9 @@ import androidx.compose.material3.TimePicker
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -112,10 +118,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import kotlinx.coroutines.launch
@@ -204,6 +214,10 @@ fun EntradaScreen(
     val shareContext = androidx.compose.ui.platform.LocalContext.current
     var showCamera by remember { mutableStateOf(false) }
     var showDamageCamera by remember { mutableStateOf(false) }
+    // Panel para elegir cliente, transporte, bodega, etc. Se dibuja en esta misma ventana (no en un Dialog) para que
+    // respete el teclado; los campos del formulario solo avisan qué quieren elegir.
+    var picker by remember { mutableStateOf<EntradaPickerRequest?>(null) }
+    val pickerHost = remember { EntradaPickerHost { picker = it } }
     // Confirmaciones cuando hay algo capturado que todavía no se guarda: al volver atrás o al empezar otra entrada.
     var showExitConfirm by rememberSaveable { mutableStateOf(false) }
     var showNewEntryConfirm by rememberSaveable { mutableStateOf(false) }
@@ -328,6 +342,14 @@ fun EntradaScreen(
         )
     }
 
+    // Estado de cada paso y qué hace el botón principal de abajo. Las fotos del daño ya subidas también cuentan.
+    val damagePhotoCount = state.form.localDamagePhotoPaths.size +
+        state.remoteDamagePhotos.size +
+        state.queuedDamagePhotos.size
+    val stepStatuses = EntradaSteps.statuses(state.form, damagePhotoCount)
+    val isNewEntry = !state.form.isExisting && !state.isEditMode
+    val stepAction = EntradaSteps.primaryAction(state.form, state.section, isNewEntry, damagePhotoCount)
+
     // Atrás (gesto, botón o flecha) no tira lo capturado: si hay cambios sin guardar, pregunta primero.
     BackHandler(onBack = requestExit)
 
@@ -395,8 +417,15 @@ fun EntradaScreen(
             if (state.workflowStage == null) {
                 EntradaBottomBar(
                     state = state,
+                    stepAction = stepAction,
                     onPrimary = viewModel::executePrimaryAction,
                     onPrint = viewModel::requestPrint,
+                    onGoToSection = viewModel::setSection,
+                    onBack = if (isNewEntry && state.section.ordinal > 0) {
+                        { viewModel.setSection(EntradaSection.entries[state.section.ordinal - 1]) }
+                    } else {
+                        null
+                    },
                     onOpenPhotos = if (EntradaPhotoPolicy.showEvidenceCardInForm(state.form.isExisting, state.isEditMode)) {
                         { viewModel.setSection(EntradaSection.CLOSE) }
                     } else {
@@ -419,57 +448,72 @@ fun EntradaScreen(
         },
         snackbarHost = { PmmSnackbarHost(snackbar) }
     ) { padding ->
-        BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                // El Scaffold ya reservó la barra de abajo en `padding`. Sin esto, el imePadding del formulario
-                // vuelve a sumarla encima del teclado y queda un bloque en blanco tapando parte de la pantalla.
-                .consumeWindowInsets(padding)
-        ) {
-            if (state.workflowStage != null) {
-                EntradaWorkflowContent(
-                    state = state,
-                    viewModel = viewModel,
-                    onTakePhoto = { showCamera = true },
-                    onTakeDamagePhoto = { showDamageCamera = true },
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else if (maxWidth >= 840.dp) {
-                Row(Modifier.fillMaxSize()) {
-                    EntradaSidePanel(
+        CompositionLocalProvider(LocalEntradaPickerHost provides pickerHost) {
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    // El Scaffold ya reservó la barra de abajo en `padding`. Sin esto, el imePadding del formulario
+                    // vuelve a sumarla encima del teclado y queda un bloque en blanco tapando parte de la pantalla.
+                    .consumeWindowInsets(padding)
+            ) {
+                if (state.workflowStage != null) {
+                    EntradaWorkflowContent(
                         state = state,
-                        isNewEntryFlow = isNewEntryFlow,
-                        onScanCamera = onNavigateToScanner,
-                        onSelectSection = viewModel::setSection,
-                        modifier = Modifier
-                            .width(320.dp)
-                            .fillMaxHeight()
+                        viewModel = viewModel,
+                        onTakePhoto = { showCamera = true },
+                        onTakeDamagePhoto = { showDamageCamera = true },
+                        modifier = Modifier.fillMaxSize()
                     )
+                } else if (maxWidth >= 840.dp) {
+                    Row(Modifier.fillMaxSize()) {
+                        EntradaSidePanel(
+                            state = state,
+                            isNewEntryFlow = isNewEntryFlow,
+                            onScanCamera = onNavigateToScanner,
+                            onSelectSection = viewModel::setSection,
+                            modifier = Modifier
+                                .width(320.dp)
+                                .fillMaxHeight()
+                        )
+                        EntradaFormContent(
+                            state = state,
+                            viewModel = viewModel,
+                            statuses = stepStatuses,
+                            showScanHeader = false,
+                            // El panel lateral ya lista los pasos con sus palomitas: no se repite la barra de pasos.
+                            showStepBar = false,
+                            isNewEntryFlow = isNewEntryFlow,
+                            onScanCamera = onNavigateToScanner,
+                            onTakePhoto = { showCamera = true },
+                            onTakeDamagePhoto = { showDamageCamera = true },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                } else {
                     EntradaFormContent(
                         state = state,
                         viewModel = viewModel,
-                        showScanHeader = false,
-                        // El panel lateral ya lista los pasos con sus palomitas: no se repite la barra de pasos.
-                        showStepBar = false,
+                        statuses = stepStatuses,
+                        showScanHeader = true,
                         isNewEntryFlow = isNewEntryFlow,
                         onScanCamera = onNavigateToScanner,
                         onTakePhoto = { showCamera = true },
                         onTakeDamagePhoto = { showDamageCamera = true },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.fillMaxSize()
                     )
                 }
-            } else {
-                EntradaFormContent(
-                    state = state,
-                    viewModel = viewModel,
-                    showScanHeader = true,
-                    isNewEntryFlow = isNewEntryFlow,
-                    onScanCamera = onNavigateToScanner,
-                    onTakePhoto = { showCamera = true },
-                    onTakeDamagePhoto = { showDamageCamera = true },
-                    modifier = Modifier.fillMaxSize()
-                )
+                // Panel de selección: dentro de esta misma ventana, para que la lista se encoja con el teclado.
+                if (state.workflowStage == null) {
+                    picker?.let { request ->
+                        EntradaPickerOverlay(
+                            request = request,
+                            state = state,
+                            viewModel = viewModel,
+                            onDismiss = { picker = null }
+                        )
+                    }
+                }
             }
         }
     }
@@ -997,6 +1041,7 @@ private fun FlowOverviewItem(
 private fun EntradaFormContent(
     state: EntradaUiState,
     viewModel: EntradaViewModel,
+    statuses: List<EntradaStepStatus>,
     showScanHeader: Boolean,
     isNewEntryFlow: Boolean,
     onScanCamera: () -> Unit,
@@ -1010,86 +1055,70 @@ private fun EntradaFormContent(
     } else {
         state.puedeAgregar
     }
-    val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
     // El talón/chip de caseta solo aplica al capturar una entrada nueva (no en edición/existente).
     val showHeaderItem = showScanHeader && isNewEntryFlow
-    val headerOffset = if (showHeaderItem) 1 else 0
-    // La primera sección se muestra desde arriba del todo, con el talón/chip de caseta a la vista: antes se
-    // saltaba directo a la sección y el chip quedaba cortado bajo la barra.
-    fun listIndexOf(section: EntradaSection) = if (section.ordinal == 0) 0 else section.ordinal + headerOffset
-    LaunchedEffect(state.section, state.sectionScrollNonce, showHeaderItem) {
-        listState.animateScrollToItem(listIndexOf(state.section))
-    }
-    // La sección que se está viendo, para resaltarla en la barra de pasos.
-    val currentSection by remember {
-        derivedStateOf {
-            if (!listState.canScrollForward) {
-                EntradaSection.entries.last()
-            } else {
-                val index = (listState.firstVisibleItemIndex - headerOffset).coerceIn(0, EntradaSection.entries.lastIndex)
-                EntradaSection.entries[index]
-            }
-        }
-    }
+    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    // Cada paso guarda lo que tiene escrito sin confirmar (por ejemplo, el concepto a medio capturar en Mercancía) al
+    // cambiar de paso y lo recupera al volver: antes lo conservaba la lista larga, que no desechaba sus renglones.
+    val stepStateHolder = rememberSaveableStateHolder()
 
-    Column(modifier = modifier.fillMaxSize()) {
-        if (showStepBar) {
-            EntradaStepBar(
-                form = state.form,
-                current = currentSection,
-                onSelect = { section ->
-                    viewModel.setSection(section)
-                    scope.launch { listState.animateScrollToItem(listIndexOf(section)) }
-                }
-            )
-        }
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-        ) {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .imePadding(),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                if (showHeaderItem) {
-                    item(key = "gate-status") {
-                        if (state.form.casetaId != null) {
-                            GateLoadedTicket(state = state, onRescan = onScanCamera)
-                        } else {
-                            GateScanChip(state = state, onScan = onScanCamera)
-                        }
-                    }
-                }
-                items(EntradaSection.entries, key = { it.name }) { section ->
-                    FlowSection(
-                        section = section,
-                        complete = sectionComplete(section, state.form),
-                        last = section == EntradaSection.CLOSE
-                    ) {
-                        when (section) {
-                            EntradaSection.REFERENCE -> ReferenceSection(state, viewModel, formEditable)
-                            EntradaSection.ARRIVAL -> ArrivalSection(state, viewModel, onTakeDamagePhoto, formEditable)
-                            EntradaSection.MERCHANDISE -> MerchandiseSection(state, viewModel, formEditable)
-                            EntradaSection.CLOSE -> CloseSection(state, viewModel, onTakePhoto, formEditable)
-                        }
-                    }
-                }
-                item { Spacer(Modifier.height(20.dp)) }
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        // En una tableta de pie los campos van de dos en dos; en teléfono, uno por renglón.
+        val twoColumns = maxWidth >= 560.dp
+        val shortScreen = maxHeight < 700.dp
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Con el teclado abierto en una pantalla baja la barra de pasos sobra: se esconde para darle el alto al formulario.
+            if (showStepBar && !(imeVisible && shortScreen)) {
+                EntradaStepBar(
+                    statuses = statuses,
+                    current = state.section,
+                    onSelect = viewModel::setSection
+                )
             }
-            if (state.isLoading || state.isBusy) {
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .background(Color.White.copy(alpha = 0.58f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    BusyOverlayContent(state.printProgress)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
+                CompositionLocalProvider(LocalEntradaTwoColumns provides twoColumns) {
+                    // Un paso a la vez. La clave reinicia el scroll al cambiar de paso (o al tocar otra vez el mismo).
+                    key(state.section, state.sectionScrollNonce) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .imePadding()
+                                .verticalScroll(rememberScrollState())
+                                .padding(horizontal = 16.dp, vertical = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            stepStateHolder.SaveableStateProvider(state.section.name) {
+                                if (showHeaderItem && state.section == EntradaSection.REFERENCE) {
+                                    if (state.form.casetaId != null) {
+                                        GateLoadedTicket(state = state, onRescan = onScanCamera)
+                                    } else {
+                                        GateScanChip(state = state, onScan = onScanCamera)
+                                    }
+                                }
+                                when (state.section) {
+                                    EntradaSection.REFERENCE -> ReferenceSection(state, viewModel, formEditable)
+                                    EntradaSection.ARRIVAL -> ArrivalSection(state, viewModel, onTakeDamagePhoto, formEditable)
+                                    EntradaSection.MERCHANDISE -> MerchandiseSection(state, viewModel, formEditable)
+                                    EntradaSection.CLOSE -> CloseSection(state, viewModel, onTakePhoto, formEditable)
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                        }
+                    }
+                }
+                if (state.isLoading || state.isBusy) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .background(Color.White.copy(alpha = 0.58f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        BusyOverlayContent(state.printProgress)
+                    }
                 }
             }
         }
@@ -1098,12 +1127,12 @@ private fun EntradaFormContent(
 
 /**
  * Barra de pasos fija arriba del formulario (teléfono y tableta de pie): los cuatro pasos de la captura en una sola
- * fila, con palomita verde en los completos y el actual resaltado; tocar uno salta a esa sección. Sustituye al hilo
- * azul que corría por la izquierda del formulario y le quitaba ancho al contenido.
+ * fila, con el estado de cada uno debajo («Listo», «Falta 1», «Opcional»), palomita verde en los completos y el
+ * actual resaltado. Tocar uno cambia a ese paso: el formulario muestra un solo paso a la vez.
  */
 @Composable
 private fun EntradaStepBar(
-    form: EntradaFormSnapshot,
+    statuses: List<EntradaStepStatus>,
     current: EntradaSection,
     onSelect: (EntradaSection) -> Unit
 ) {
@@ -1114,8 +1143,8 @@ private fun EntradaStepBar(
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp, vertical = 6.dp)
         ) {
-            EntradaSection.entries.forEachIndexed { index, section ->
-                val complete = sectionComplete(section, form)
+            statuses.forEachIndexed { index, status ->
+                val section = status.section
                 val isCurrent = section == current
                 Column(
                     modifier = Modifier
@@ -1140,13 +1169,24 @@ private fun EntradaStepBar(
                             },
                         contentAlignment = Alignment.Center
                     ) {
-                        StepBadge(number = section.ordinal + 1, complete = complete, highlighted = isCurrent, size = 28.dp)
+                        StepBadge(number = section.ordinal + 1, complete = status.complete, highlighted = isCurrent, size = 28.dp)
                     }
                     Text(
                         section.label,
                         color = if (isCurrent) PmmBlueDeep else PmmTextSecondary,
                         fontSize = 11.sp,
                         fontWeight = if (isCurrent) FontWeight.Black else FontWeight.SemiBold,
+                        maxLines = 1
+                    )
+                    Text(
+                        status.text,
+                        color = when (status.tone) {
+                            EntradaStepTone.Done -> PmmGreenDark
+                            EntradaStepTone.Missing -> Color(0xFFB45309)
+                            EntradaStepTone.Neutral -> PmmTextMuted
+                        },
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
                         maxLines = 1
                     )
                 }
@@ -1179,51 +1219,33 @@ private fun StepBadge(number: Int, complete: Boolean, size: Dp, highlighted: Boo
     }
 }
 
-@Composable
-private fun FlowSection(
-    section: EntradaSection,
-    complete: Boolean,
-    last: Boolean,
-    content: @Composable ColumnScope.() -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = if (last) 0.dp else 20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        // El número (o la palomita) va en línea con el título: ya no hay un riel a la izquierda que le reste ancho
-        // al contenido. La barra de pasos de arriba (o el panel lateral) da la vista de conjunto.
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            StepBadge(number = section.ordinal + 1, complete = complete, size = 32.dp, highlighted = true)
-            Spacer(Modifier.width(12.dp))
-            Column {
-                Text(
-                    section.label,
-                    color = PmmTextPrimary,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Black
-                )
-                Text(
-                    sectionSubtitle(section),
-                    color = PmmTextSecondary,
-                    fontSize = 13.sp
-                )
-            }
-        }
-        content()
-    }
-}
-
 /** «01-C-26-····-00-00»: los seis tramos de la referencia, con puntos donde falta el consecutivo. */
 private fun referencePreview(form: EntradaFormSnapshot): String =
     listOf(form.ref1, form.ref2, form.ref3, form.ref4.ifBlank { "····" }, form.ref5, form.ref6).joinToString("-")
 
-private fun sectionSubtitle(section: EntradaSection): String = when (section) {
-    EntradaSection.REFERENCE -> "Genera la referencia de la nueva entrada."
-    EntradaSection.ARRIVAL -> "Identifica cliente, transporte y condiciones de arribo."
-    EntradaSection.MERCHANDISE -> "Captura cada concepto sin abandonar este flujo."
-    EntradaSection.CLOSE -> "Confirma pesos, madera y evidencia fotográfica."
+/** En una tableta de pie los campos van de dos en dos; en teléfono, uno por renglón. */
+private val LocalEntradaTwoColumns = compositionLocalOf { false }
+
+@Composable
+private fun FieldPair(
+    first: @Composable ColumnScope.() -> Unit,
+    second: @Composable ColumnScope.() -> Unit
+) {
+    if (LocalEntradaTwoColumns.current) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp), content = first)
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp), content = second)
+        }
+    } else {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            first()
+            second()
+        }
+    }
 }
 
 @Composable
@@ -1491,60 +1513,64 @@ private fun ArrivalSection(
             code = state.form.codCliente,
             name = state.form.nomCliente,
             error = "cliente" in state.invalidFields,
-            state = state,
             enabled = enabled,
-            frequentItems = state.frequentCustomers,
             onSearch = viewModel::searchLookup,
-            onSelect = viewModel::selectLookup,
             onClear = viewModel::clearLookupSelection,
             captureStatus = guide.status(CaptureField.CLIENTE)
         )
-        EntradaEntitySearchField(
-            type = EntradaLookupType.TRANSPORT,
-            label = "Transporte",
-            placeholder = "Buscar por código o nombre",
-            code = state.form.codTransporte,
-            name = state.form.nomTransporte,
-            state = state,
-            enabled = enabled,
-            frequentItems = state.frequentTransports,
-            onSearch = viewModel::searchLookup,
-            onSelect = viewModel::selectLookup,
-            onClear = viewModel::clearLookupSelection,
-            captureStatus = guide.status(CaptureField.TRANSPORTE)
+        FieldPair(
+            first = {
+                EntradaEntitySearchField(
+                    type = EntradaLookupType.TRANSPORT,
+                    label = "Transporte",
+                    placeholder = "Buscar por código o nombre",
+                    code = state.form.codTransporte,
+                    name = state.form.nomTransporte,
+                    enabled = enabled,
+                    onSearch = viewModel::searchLookup,
+                    onClear = viewModel::clearLookupSelection,
+                    captureStatus = guide.status(CaptureField.TRANSPORTE)
+                )
+            },
+            second = {
+                EntradaEntitySearchField(
+                    type = EntradaLookupType.BOX,
+                    label = "Caja de arribo",
+                    placeholder = "Buscar caja disponible",
+                    code = state.form.cajaArribo,
+                    name = "",
+                    enabled = enabled,
+                    onSearch = viewModel::searchLookup,
+                    onClear = viewModel::clearLookupSelection,
+                    captureStatus = guide.status(CaptureField.CAJA)
+                )
+            }
         )
-        EntradaEntitySearchField(
-            type = EntradaLookupType.BOX,
-            label = "Caja de arribo",
-            placeholder = "Buscar caja disponible",
-            code = state.form.cajaArribo,
-            name = "",
-            state = state,
-            enabled = enabled,
-            onSearch = viewModel::searchLookup,
-            onSelect = viewModel::selectLookup,
-            onClear = viewModel::clearLookupSelection,
-            captureStatus = guide.status(CaptureField.CAJA)
-        )
-        EntradaCatalogPickerField(
-            label = "Tipo de manejo",
-            value = state.form.manejo,
-            items = state.catalogs.manejos,
-            error = "manejo" in state.invalidFields,
-            enabled = enabled,
-            captureStatus = guide.status(CaptureField.MANEJO),
-            onSelect = { item -> viewModel.updateForm { it.copy(manejo = item.value) } }
-        )
-        OutlinedTextField(
-            value = state.form.guia,
-            enabled = enabled,
-            onValueChange = { value -> viewModel.updateForm { it.copy(guia = value) } },
-            colors = captureTextFieldColors(guide.status(CaptureField.GUIA)),
-            label = { Text("Guía / B.L.") },
-            singleLine = true,
-            modifier = Modifier
-                .fillMaxWidth()
-                .captureGlow(guide.status(CaptureField.GUIA), cornerRadius = 4.dp)
+        FieldPair(
+            first = {
+                EntradaCatalogPickerField(
+                    label = "Tipo de manejo",
+                    value = state.form.manejo,
+                    items = state.catalogs.manejos,
+                    error = "manejo" in state.invalidFields,
+                    enabled = enabled,
+                    captureStatus = guide.status(CaptureField.MANEJO),
+                    onSelect = { item -> viewModel.updateForm { it.copy(manejo = item.value) } }
+                )
+            },
+            second = {
+                OutlinedTextField(
+                    value = state.form.guia,
+                    enabled = enabled,
+                    onValueChange = { value -> viewModel.updateForm { it.copy(guia = value) } },
+                    colors = captureTextFieldColors(guide.status(CaptureField.GUIA)),
+                    label = { Text("Guía / B.L.") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .captureGlow(guide.status(CaptureField.GUIA), cornerRadius = 4.dp)
+                )
+            }
         )
     }
     FormCard(title = "Condiciones especiales", icon = Icons.Default.Warning) {
@@ -1795,6 +1821,7 @@ private fun MerchandiseSection(state: EntradaUiState, viewModel: EntradaViewMode
     var bundles by rememberSaveable { mutableStateOf("") }
     var location by rememberSaveable { mutableStateOf("") }
     var showMap by rememberSaveable { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
 
     fun clearEditor() {
         editingIndex = null
@@ -1803,6 +1830,18 @@ private fun MerchandiseSection(state: EntradaUiState, viewModel: EntradaViewMode
         detailClass = ""
         bundles = ""
         location = ""
+    }
+
+    // Suma el concepto del editor. Lo usan el botón «Agregar» y la última tecla del teclado (en «Atados»).
+    fun submitDetail() {
+        val detail = EntradaDetail(
+            cantidad = quantity.replace(",", "").toDoubleOrNull() ?: 0.0,
+            clase = detailClass,
+            descripcion = description.trim(),
+            atados = bundles.trim(),
+            ubicacion = location
+        )
+        if (viewModel.addDetail(detail, editingIndex)) clearEditor()
     }
 
     // Guía de captura: mientras no haya ningún concepto, cantidad y descripción son lo que sigue (en ese orden) y el
@@ -1867,7 +1906,9 @@ private fun MerchandiseSection(state: EntradaUiState, viewModel: EntradaViewMode
                 onValueChange = { quantity = it },
                 colors = captureTextFieldColors(quantityStatus),
                 label = { Text("Cantidad") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                // «Sig.» salta a la descripción; así se captura un concepto sin tocar la pantalla entre campos.
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                 singleLine = true,
                 modifier = Modifier
                     .weight(0.8f)
@@ -1891,6 +1932,8 @@ private fun MerchandiseSection(state: EntradaUiState, viewModel: EntradaViewMode
             colors = captureTextFieldColors(descriptionStatus),
             label = { Text("Descripción de mercancía") },
             minLines = 2,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
             modifier = Modifier
                 .fillMaxWidth()
                 .captureGlow(descriptionStatus, cornerRadius = 4.dp)
@@ -1905,6 +1948,12 @@ private fun MerchandiseSection(state: EntradaUiState, viewModel: EntradaViewMode
                 ),
                 label = { Text("Atados / observación") },
                 singleLine = true,
+                // La última tecla suma el concepto y baja el teclado: el botón «Agregar» queda bajo el teclado mientras se escribe.
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = {
+                    submitDetail()
+                    focusManager.clearFocus()
+                }),
                 modifier = Modifier.weight(1f)
             )
             Box(Modifier.weight(1f)) {
@@ -1918,14 +1967,61 @@ private fun MerchandiseSection(state: EntradaUiState, viewModel: EntradaViewMode
                 )
             }
         }
-        OutlinedButton(
-            onClick = { showMap = true },
-            enabled = enabled,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(Icons.Default.Map, contentDescription = null)
-            Spacer(Modifier.width(6.dp))
-            Text("Ver mapa de bodega", fontWeight = FontWeight.Black)
+        val twoColumns = LocalEntradaTwoColumns.current
+        val mapButton: @Composable (Modifier) -> Unit = { buttonModifier ->
+            OutlinedButton(
+                onClick = { showMap = true },
+                enabled = enabled,
+                modifier = buttonModifier
+            ) {
+                Icon(Icons.Default.Map, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text("Ver mapa de bodega", fontWeight = FontWeight.Black)
+            }
+        }
+        val addButton: @Composable (Modifier) -> Unit = { buttonModifier ->
+            Button(
+                onClick = { submitDetail() },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = PmmBlueDeep,
+                    contentColor = Color.White
+                ),
+                enabled = enabled,
+                modifier = buttonModifier.captureGlow(addButtonStatus, cornerRadius = 20.dp)
+            ) {
+                Icon(if (editingIndex == null) Icons.Default.Add else Icons.Default.Check, null)
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    if (editingIndex == null) "Agregar mercancía" else "Actualizar mercancía",
+                    fontWeight = FontWeight.Black
+                )
+            }
+        }
+        val cancelButton: @Composable () -> Unit = {
+            if (editingIndex != null) {
+                OutlinedButton(onClick = ::clearEditor, enabled = enabled) {
+                    Icon(Icons.Default.Close, null)
+                    Spacer(Modifier.width(5.dp))
+                    Text("Cancelar")
+                }
+            }
+        }
+        if (twoColumns) {
+            // En una tableta de pie caben lado a lado: un renglón menos entre el teclado y el botón.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                mapButton(Modifier.weight(1f))
+                addButton(Modifier.weight(1f))
+                cancelButton()
+            }
+        } else {
+            mapButton(Modifier.fillMaxWidth())
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                addButton(Modifier.weight(1f))
+                cancelButton()
+            }
         }
         if (showMap) {
             WarehouseMapPickerSheet(
@@ -1936,42 +2032,6 @@ private fun MerchandiseSection(state: EntradaUiState, viewModel: EntradaViewMode
                     showMap = false
                 }
             )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Button(
-                onClick = {
-                    val detail = EntradaDetail(
-                        cantidad = quantity.replace(",", "").toDoubleOrNull() ?: 0.0,
-                        clase = detailClass,
-                        descripcion = description.trim(),
-                        atados = bundles.trim(),
-                        ubicacion = location
-                    )
-                    if (viewModel.addDetail(detail, editingIndex)) clearEditor()
-                },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = PmmBlueDeep,
-                    contentColor = Color.White
-                ),
-                enabled = enabled,
-                modifier = Modifier
-                    .weight(1f)
-                    .captureGlow(addButtonStatus, cornerRadius = 20.dp)
-            ) {
-                Icon(if (editingIndex == null) Icons.Default.Add else Icons.Default.Check, null)
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    if (editingIndex == null) "Agregar mercancía" else "Actualizar mercancía",
-                    fontWeight = FontWeight.Black
-                )
-            }
-            if (editingIndex != null) {
-                OutlinedButton(onClick = ::clearEditor, enabled = enabled) {
-                    Icon(Icons.Default.Close, null)
-                    Spacer(Modifier.width(5.dp))
-                    Text("Cancelar")
-                }
-            }
         }
         if ("detalles" in state.invalidFields) {
             Text(
@@ -2072,17 +2132,40 @@ private fun CloseSection(
         )
     }
     FormCard(title = "Control de madera", icon = Icons.Default.Inventory2) {
-        WoodCounter("Madera con sello", state.form.maderaSello, state.form.maderaSelloCant, enabled) { enabled, count ->
-            viewModel.updateForm { it.copy(maderaSello = enabled, maderaSelloCant = count) }
-        }
-        WoodCounter("Madera sin sello", state.form.maderaSinSello, state.form.maderaSinSelloCant, enabled) { enabled, count ->
-            viewModel.updateForm { it.copy(maderaSinSello = enabled, maderaSinSelloCant = count) }
-        }
-        WoodCounter("Aserrín", state.form.aserrin, state.form.aserrinCant, enabled) { enabled, count ->
-            viewModel.updateForm { it.copy(aserrin = enabled, aserrinCant = count) }
-        }
-        WoodCounter("No requiere sello", state.form.noSello, state.form.noSelloCant, enabled) { enabled, count ->
-            viewModel.updateForm { it.copy(noSello = enabled, noSelloCant = count) }
+        val counters: List<@Composable () -> Unit> = listOf(
+            {
+                WoodCounter("Madera con sello", state.form.maderaSello, state.form.maderaSelloCant, enabled) { checked, count ->
+                    viewModel.updateForm { it.copy(maderaSello = checked, maderaSelloCant = count) }
+                }
+            },
+            {
+                WoodCounter("Madera sin sello", state.form.maderaSinSello, state.form.maderaSinSelloCant, enabled) { checked, count ->
+                    viewModel.updateForm { it.copy(maderaSinSello = checked, maderaSinSelloCant = count) }
+                }
+            },
+            {
+                WoodCounter("Aserrín", state.form.aserrin, state.form.aserrinCant, enabled) { checked, count ->
+                    viewModel.updateForm { it.copy(aserrin = checked, aserrinCant = count) }
+                }
+            },
+            {
+                WoodCounter("No requiere sello", state.form.noSello, state.form.noSelloCant, enabled) { checked, count ->
+                    viewModel.updateForm { it.copy(noSello = checked, noSelloCant = count) }
+                }
+            }
+        )
+        if (LocalEntradaTwoColumns.current) {
+            counters.chunked(2).forEach { pair ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    pair.forEach { counter -> Box(modifier = Modifier.weight(1f)) { counter() } }
+                }
+            }
+        } else {
+            counters.forEach { counter -> counter() }
         }
     }
 }
@@ -2535,8 +2618,11 @@ private fun ZoomableImage(model: Any, modifier: Modifier = Modifier) {
 @Composable
 private fun EntradaBottomBar(
     state: EntradaUiState,
+    stepAction: EntradaStepAction,
     onPrimary: () -> Unit,
     onPrint: () -> Unit,
+    onGoToSection: (EntradaSection) -> Unit,
+    onBack: (() -> Unit)?,
     onOpenPhotos: (() -> Unit)? = null
 ) {
     val form = state.form
@@ -2558,6 +2644,23 @@ private fun EntradaBottomBar(
             form.isExisting -> state.puedeModificar
             else -> state.puedeAgregar
         }
+    // En una entrada nueva el botón camina por los pasos: genera la entrada, propone el paso que sigue o, cuando ya no
+    // falta nada obligatorio, hace la acción final de siempre (guardar). Nunca bloquea: solo lleva a lo que falta.
+    val stepLabel = when (stepAction) {
+        is EntradaStepAction.Next -> "Siguiente: ${stepAction.target.label}"
+        is EntradaStepAction.GoTo -> "Faltan ${stepAction.missing} · ir a ${stepAction.target.label}"
+        else -> null
+    }
+    val primaryLabel = stepLabel ?: label
+    val primaryEnabled = if (stepLabel != null) !state.isBusy else canExecutePrimary
+    val primaryIcon = if (stepLabel != null) Icons.AutoMirrored.Filled.ArrowForward else Icons.Default.CheckCircle
+    val primaryClick: () -> Unit = {
+        when (stepAction) {
+            is EntradaStepAction.Next -> onGoToSection(stepAction.target)
+            is EntradaStepAction.GoTo -> onGoToSection(stepAction.target)
+            else -> onPrimary()
+        }
+    }
     Surface(
         color = PmmBgSurface,
         shadowElevation = 8.dp,
@@ -2603,6 +2706,18 @@ private fun EntradaBottomBar(
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (onBack != null) {
+                            OutlinedButton(
+                                onClick = onBack,
+                                enabled = !state.isBusy,
+                                modifier = Modifier.heightIn(min = 48.dp),
+                                shape = RoundedCornerShape(13.dp)
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                                Spacer(Modifier.width(7.dp))
+                                Text("Atrás", fontWeight = FontWeight.Black)
+                            }
+                        }
                         if (showPrintButton) {
                             OutlinedButton(
                                 onClick = onPrint,
@@ -2616,10 +2731,11 @@ private fun EntradaBottomBar(
                             }
                         }
                         EntradaPrimaryActionButton(
-                            label = label,
-                            enabled = canExecutePrimary,
+                            label = primaryLabel,
+                            enabled = primaryEnabled,
                             isBusy = state.isBusy,
-                            onClick = onPrimary,
+                            onClick = primaryClick,
+                            icon = primaryIcon,
                             modifier = Modifier.heightIn(min = 48.dp)
                         )
                     }
@@ -2664,6 +2780,28 @@ private fun EntradaBottomBar(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        if (onBack != null) {
+                            if (compactPhone) {
+                                IconButton(
+                                    onClick = onBack,
+                                    enabled = !state.isBusy,
+                                    modifier = Modifier.size(48.dp)
+                                ) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Paso anterior")
+                                }
+                            } else {
+                                OutlinedButton(
+                                    onClick = onBack,
+                                    enabled = !state.isBusy,
+                                    modifier = Modifier.heightIn(min = 48.dp),
+                                    shape = RoundedCornerShape(13.dp)
+                                ) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Atrás", fontWeight = FontWeight.Black, maxLines = 1)
+                                }
+                            }
+                        }
                         if (showPrintButton && compactPhone) {
                             IconButton(
                                 onClick = onPrint,
@@ -2687,12 +2825,13 @@ private fun EntradaBottomBar(
                             }
                         }
                         EntradaPrimaryActionButton(
-                            label = label,
-                            enabled = canExecutePrimary,
+                            label = primaryLabel,
+                            enabled = primaryEnabled,
                             isBusy = state.isBusy,
-                            onClick = onPrimary,
+                            onClick = primaryClick,
+                            icon = primaryIcon,
                             modifier = Modifier
-                                .weight(if (showPrintButton && compactPhone) 1.0f else 1.2f)
+                                .weight(if ((showPrintButton || onBack != null) && compactPhone) 1.0f else 1.2f)
                                 .heightIn(min = 48.dp)
                         )
                     }
@@ -2708,7 +2847,8 @@ private fun EntradaPrimaryActionButton(
     enabled: Boolean,
     isBusy: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    icon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Default.CheckCircle
 ) {
     Button(
         onClick = onClick,
@@ -2727,7 +2867,7 @@ private fun EntradaPrimaryActionButton(
                 color = PmmNavyDark
             )
         } else {
-            Icon(Icons.Default.CheckCircle, contentDescription = null)
+            Icon(icon, contentDescription = null)
         }
         Spacer(Modifier.width(7.dp))
         Text(
@@ -3193,12 +3333,12 @@ private fun FormCard(
     }
 }
 
-// ─── Selectores grandes sin dropdown (portados de CasetaEntradaScreen) ──────────────
-// Un solo patrón de interacción en toda la pantalla: se toca una tarjeta grande
-// (SelectionDisplayCard) y se abre una hoja inferior con opciones grandes y tocables.
-// Para catálogos con búsqueda en servidor (Cliente/Transporte/Caja) la hoja muestra
-// "Frecuentes" + resultados; para catálogos chicos y estáticos (Bodega, Manejo, etc.)
-// la hoja muestra una grilla de tarjetas de selección.
+// ─── Selectores grandes sin dropdown ────────────────────────────────────────────────
+// Un solo patrón de interacción en toda la pantalla: se toca una tarjeta grande (SelectionDisplayCard) y se abre
+// un panel con opciones grandes y tocables. El panel (EntradaPickerPanel) se dibuja en la ventana de la pantalla,
+// no en un Dialog, para que la lista se encoja con el teclado en vez de quedar tapada. Para catálogos con búsqueda
+// en servidor (Cliente/Transporte/Caja) muestra «Frecuentes» y resultados; para catálogos chicos y estáticos
+// (Bodega, Manejo, etc.) muestra la lista completa, con buscador solo si hay más de 8 opciones.
 
 @Composable
 private fun EntradaEntitySearchField(
@@ -3208,15 +3348,12 @@ private fun EntradaEntitySearchField(
     code: String,
     name: String,
     error: Boolean = false,
-    state: EntradaUiState,
     enabled: Boolean = true,
-    frequentItems: List<EntradaFrequentItem> = emptyList(),
     onSearch: (EntradaLookupType, String) -> Unit,
-    onSelect: (EntradaLookupItem) -> Unit,
     onClear: (EntradaLookupType) -> Unit,
     captureStatus: CaptureStatus = CaptureStatus.NONE
 ) {
-    var openSearch by remember(type) { mutableStateOf(false) }
+    val picker = LocalEntradaPickerHost.current
     val selectedLabel = listOf(code, name).filter(String::isNotBlank).joinToString(" · ")
 
     SelectionDisplayCard(
@@ -3226,29 +3363,19 @@ private fun EntradaEntitySearchField(
         error = if (error) "Selecciona un resultado válido." else null,
         enabled = enabled,
         onClick = {
-            openSearch = true
             onSearch(type, "")
+            picker.open(
+                EntradaPickerRequest.Lookup(
+                    type = type,
+                    title = label,
+                    placeholder = placeholder,
+                    selectedCode = code
+                )
+            )
         },
         onClear = if (enabled && selectedLabel.isNotBlank()) ({ onClear(type) }) else null,
         status = captureStatus
     )
-
-    if (openSearch) {
-        EntradaCatalogSearchDialog(
-            title = label,
-            placeholder = placeholder,
-            type = type,
-            results = if (state.lookupType == type) state.lookupItems else emptyList(),
-            frequentItems = frequentItems,
-            isSearching = state.isLookupLoading && state.lookupType == type,
-            onSearch = onSearch,
-            onDismiss = { openSearch = false },
-            onSelect = {
-                onSelect(it)
-                openSearch = false
-            }
-        )
-    }
 }
 
 @Composable
@@ -3311,226 +3438,7 @@ private fun SelectionDisplayCard(
     }
 }
 
-@Composable
-private fun EntradaCatalogSearchDialog(
-    title: String,
-    placeholder: String,
-    type: EntradaLookupType,
-    results: List<EntradaLookupItem>,
-    frequentItems: List<EntradaFrequentItem>,
-    isSearching: Boolean,
-    onSearch: (EntradaLookupType, String) -> Unit,
-    onDismiss: () -> Unit,
-    onSelect: (EntradaLookupItem) -> Unit
-) {
-    var query by remember(type) { mutableStateOf("") }
-
-    LaunchedEffect(type, query) {
-        delay(280)
-        onSearch(type, query)
-    }
-
-    BackHandler(onBack = onDismiss)
-
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.45f))
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onDismiss
-                ),
-            contentAlignment = Alignment.BottomCenter
-        ) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 580.dp)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = {}
-                    ),
-                color = PmmBgSurface,
-                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-                shadowElevation = 16.dp
-            ) {
-                Column(
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    DialogDragHandle()
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column {
-                            Text(title, color = PmmTextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                            Text("Frecuentes y catálogo", color = PmmTextSecondary, fontSize = 12.sp)
-                        }
-                        DialogCloseButton(onDismiss)
-                    }
-                    OutlinedTextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        placeholder = { Text(placeholder) },
-                        singleLine = true,
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = PmmTextMuted) },
-                        trailingIcon = {
-                            if (isSearching) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = PmmBlueDeep)
-                            } else if (query.isNotBlank()) {
-                                IconButton(onClick = { query = "" }) {
-                                    Icon(Icons.Default.Close, contentDescription = "Limpiar búsqueda", tint = PmmTextSecondary)
-                                }
-                            }
-                        },
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = KeyboardActions(onSearch = { onSearch(type, query) }),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    val scroll = rememberScrollState()
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .verticalScroll(scroll),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        if (frequentItems.isNotEmpty() && query.isBlank()) {
-                            Text("Frecuentes", color = PmmTextSecondary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            EntradaResultGrid { columns ->
-                                frequentItems.chunked(columns).forEach { rowItems ->
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                                        rowItems.forEach { item ->
-                                            EntradaCatalogResultCard(
-                                                item = item.lookupItem,
-                                                usage = item.uso,
-                                                onClick = { onSelect(item.lookupItem) },
-                                                modifier = Modifier.weight(1f)
-                                            )
-                                        }
-                                        repeat(columns - rowItems.size) { Spacer(modifier = Modifier.weight(1f)) }
-                                    }
-                                }
-                            }
-                        }
-
-                        Text("Resultados", color = PmmTextSecondary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        if (results.isEmpty() && !isSearching) {
-                            EntradaEmptyLookupState()
-                        } else {
-                            EntradaResultGrid { columns ->
-                                results.chunked(columns).forEach { rowItems ->
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                                        rowItems.forEach { item ->
-                                            EntradaCatalogResultCard(
-                                                item = item,
-                                                usage = null,
-                                                onClick = { onSelect(item) },
-                                                modifier = Modifier.weight(1f)
-                                            )
-                                        }
-                                        repeat(columns - rowItems.size) { Spacer(modifier = Modifier.weight(1f)) }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun EntradaResultGrid(content: @Composable (columns: Int) -> Unit) {
-    BoxWithConstraints {
-        val columns = if (maxWidth >= 620.dp) 2 else 1
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { content(columns) }
-    }
-}
-
-@Composable
-private fun EntradaCatalogResultCard(
-    item: EntradaLookupItem,
-    usage: Int?,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val name = item.nombre.ifBlank { "Sin nombre" }
-    val initials = name.split(" ")
-        .filter { it.isNotBlank() }
-        .map { it.first() }
-        .take(2)
-        .joinToString("")
-        .uppercase()
-        .ifBlank { "•" }
-
-    Surface(
-        modifier = modifier
-            .heightIn(min = 68.dp)
-            .clickable(onClick = onClick),
-        color = Color.White,
-        shape = RoundedCornerShape(14.dp),
-        shadowElevation = 2.dp
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Box(
-                modifier = Modifier.size(42.dp).background(PmmNavyVariant, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(text = initials, color = PmmBlueDeep, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = name,
-                    color = PmmTextPrimary,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                val subtitle = listOf(item.id, item.extra).filter(String::isNotBlank).joinToString(" · ")
-                if (subtitle.isNotBlank()) {
-                    Text(subtitle, color = PmmTextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                }
-            }
-            usage?.let {
-                Text("$it usos", color = PmmTextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            }
-        }
-    }
-}
-
-@Composable
-private fun EntradaEmptyLookupState() {
-    Surface(
-        color = PmmBgCard,
-        shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, PmmNavyBorder),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Icon(Icons.Default.Search, contentDescription = null, tint = PmmTextMuted)
-            Text("Sin resultados. Prueba con otro código o nombre.", color = PmmTextSecondary)
-        }
-    }
-}
-
-/** Catálogo chico y estático (Bodega, Manejo, Clase, Ubicación...): tarjetas grandes, sin escribir. */
+/** Catálogo chico y estático (Bodega, Manejo, Clase, Ubicación...): una tarjeta que abre su lista. */
 @Composable
 private fun EntradaCatalogPickerField(
     label: String,
@@ -3542,7 +3450,7 @@ private fun EntradaCatalogPickerField(
     captureStatus: CaptureStatus = CaptureStatus.NONE,
     onSelect: (EntradaCatalogItem) -> Unit
 ) {
-    var open by remember { mutableStateOf(false) }
+    val picker = LocalEntradaPickerHost.current
     val selected = items.firstOrNull { it.value == value }
     val displayValue = selected?.let { "${it.value} · ${it.text}" } ?: value
 
@@ -3552,203 +3460,19 @@ private fun EntradaCatalogPickerField(
         placeholder = placeholder,
         error = if (error) "Selecciona una opción." else null,
         enabled = enabled,
-        onClick = { open = true },
+        onClick = {
+            picker.open(
+                EntradaPickerRequest.Catalog(
+                    title = label,
+                    items = items,
+                    selectedValue = value,
+                    onSelect = onSelect
+                )
+            )
+        },
         onClear = null,
         status = captureStatus
     )
-
-    if (open) {
-        EntradaCatalogPickerDialog(
-            title = label,
-            items = items,
-            selectedValue = value,
-            onDismiss = { open = false },
-            onSelect = { item ->
-                onSelect(item)
-                open = false
-            }
-        )
-    }
-}
-
-@Composable
-private fun EntradaCatalogPickerDialog(
-    title: String,
-    items: List<EntradaCatalogItem>,
-    selectedValue: String,
-    onDismiss: () -> Unit,
-    onSelect: (EntradaCatalogItem) -> Unit
-) {
-    var query by remember { mutableStateOf("") }
-    val filtered = remember(items, query) {
-        if (query.isBlank()) items
-        else items.filter { it.value.contains(query, true) || it.text.contains(query, true) }
-    }
-
-    BackHandler(onBack = onDismiss)
-
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.45f))
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onDismiss
-                ),
-            contentAlignment = Alignment.BottomCenter
-        ) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 560.dp)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = {}
-                    ),
-                color = PmmBgSurface,
-                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-                shadowElevation = 16.dp
-            ) {
-                Column(
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    DialogDragHandle()
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(title, color = PmmTextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                        DialogCloseButton(onDismiss)
-                    }
-                    if (items.size > 8) {
-                        OutlinedTextField(
-                            value = query,
-                            onValueChange = { query = it },
-                            placeholder = { Text("Buscar en $title") },
-                            singleLine = true,
-                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = PmmTextMuted) },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        if (filtered.isEmpty()) {
-                            EntradaEmptyLookupState()
-                        } else {
-                            EntradaResultGrid { columns ->
-                                filtered.chunked(columns).forEach { rowItems ->
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                                        rowItems.forEach { item ->
-                                            DecisionCard(
-                                                title = item.text.ifBlank { item.value },
-                                                subtitle = item.value,
-                                                selected = item.value == selectedValue,
-                                                onClick = { onSelect(item) },
-                                                modifier = Modifier.weight(1f)
-                                            )
-                                        }
-                                        repeat(columns - rowItems.size) { Spacer(modifier = Modifier.weight(1f)) }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DecisionCard(
-    title: String,
-    subtitle: String?,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val background by animateColorAsState(
-        targetValue = if (selected) PmmBlueDeep else PmmBgCard,
-        animationSpec = tween(durationMillis = 180),
-        label = "decision-bg"
-    )
-    val contentColor = if (selected) Color.White else PmmTextPrimary
-
-    Surface(
-        modifier = modifier
-            .heightIn(min = 56.dp)
-            .clickable(onClick = onClick),
-        color = background,
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Icon(
-                imageVector = if (selected) Icons.Default.CheckCircle else Icons.Default.Inventory2,
-                contentDescription = null,
-                tint = if (selected) Color.White else PmmBlueDeep,
-                modifier = Modifier.size(20.dp)
-            )
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = title.ifBlank { "Sin nombre" },
-                    color = contentColor,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                subtitle?.takeIf(String::isNotBlank)?.let {
-                    Text(
-                        text = it,
-                        color = if (selected) Color.White.copy(alpha = 0.86f) else PmmTextSecondary,
-                        fontSize = 11.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DialogDragHandle() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 0.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .width(40.dp)
-                .height(4.dp)
-                .background(PmmNavyBorder, RoundedCornerShape(999.dp))
-        )
-    }
-}
-
-@Composable
-private fun DialogCloseButton(onDismiss: () -> Unit) {
-    Surface(shape = CircleShape, color = PmmBgCard, modifier = Modifier.size(36.dp)) {
-        IconButton(onClick = onDismiss) {
-            Icon(Icons.Default.Close, contentDescription = "Cerrar", tint = PmmTextSecondary, modifier = Modifier.size(18.dp))
-        }
-    }
 }
 
 @Composable
@@ -4070,15 +3794,7 @@ private fun PhotoPreviewDialog(path: String, onDismiss: () -> Unit) {
 }
 
 private fun sectionComplete(section: EntradaSection, form: EntradaFormSnapshot): Boolean =
-    when (section) {
-        EntradaSection.REFERENCE -> form.ref4.isNotBlank()
-        EntradaSection.ARRIVAL ->
-            form.ref4.isNotBlank() &&
-                EntradaRules.validate(form).none { it.section == EntradaSection.ARRIVAL }
-        EntradaSection.MERCHANDISE -> form.detalles.isNotEmpty()
-        EntradaSection.CLOSE -> form.isExisting
-    }
-
+    EntradaSteps.statuses(form).first { it.section == section }.complete
 
 private fun formatNumber(value: Double): String =
     if (value % 1.0 == 0.0) value.toLong().toString()
