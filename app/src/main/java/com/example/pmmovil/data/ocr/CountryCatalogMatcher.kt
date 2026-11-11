@@ -156,7 +156,8 @@ object CountryCatalogMatcher {
         "SWEDEN" to "SWE",
         "UNITED KINGDOM" to "GBR", "GREAT BRITAIN" to "GBR", "ENGLAND" to "GBR",
         "SOUTH KOREA" to "KOR", "REPUBLIC OF KOREA" to "KOR", "KOREA" to "KOR",
-        "NETHERLANDS" to "NLD", "HOLLAND" to "NLD",
+        // Países Bajos es ZYA en el catálogo (no NLD, que es el ISO).
+        "NETHERLANDS" to "ZYA", "HOLLAND" to "ZYA",
         "SWITZERLAND" to "CHE",
         "POLAND" to "POL",
         "MALAYSIA" to "MYS",
@@ -170,7 +171,8 @@ object CountryCatalogMatcher {
         "IRELAND" to "IRL",
         "HUNGARY" to "HUN",
         "SLOVAKIA" to "SVK",
-        "ROMANIA" to "ROU",
+        // Rumania es ROM en el catálogo (no ROU, que es el ISO).
+        "ROMANIA" to "ROM",
         "ARGENTINA" to "ARG",
         "CHILE" to "CHL",
         "COLOMBIA" to "COL",
@@ -193,10 +195,11 @@ object CountryCatalogMatcher {
         "JP" to "JPN", "VN" to "VNM", "MX" to "MEX", "DE" to "DEU", "TH" to "THA",
         "TR" to "TUR", "BR" to "BRA", "BE" to "BEL", "CA" to "CAN", "ES" to "ESP",
         "FR" to "FRA", "PT" to "PRT", "CZ" to "CZE", "AT" to "AUT", "ID" to "IDN",
-        "SE" to "SWE", "GB" to "GBR", "UK" to "GBR", "KR" to "KOR", "NL" to "NLD",
+        // NL -> ZYA (Países Bajos) y RO -> ROM (Rumania): claves del catálogo, no ISO-3.
+        "SE" to "SWE", "GB" to "GBR", "UK" to "GBR", "KR" to "KOR", "NL" to "ZYA",
         "CH" to "CHE", "PL" to "POL", "MY" to "MYS", "SG" to "SGP", "PH" to "PHL",
         "IL" to "ISR", "AU" to "AUS", "DK" to "DNK", "FI" to "FIN", "NO" to "NOR",
-        "IE" to "IRL", "HU" to "HUN", "SK" to "SVK", "RO" to "ROU", "AR" to "ARG",
+        "IE" to "IRL", "HU" to "HUN", "SK" to "SVK", "RO" to "ROM", "AR" to "ARG",
         "CL" to "CHL", "CO" to "COL", "PE" to "PER", "ZA" to "ZAF", "NZ" to "NZL",
         "HK" to "HKG", "LK" to "LKA", "BD" to "BGD", "PK" to "PAK", "EG" to "EGY",
         "SA" to "SAU", "AE" to "ARE", "RU" to "RUS"

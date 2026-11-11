@@ -468,4 +468,41 @@ class LabelFieldExtractorTest {
         assertEquals("MKCX3293", fields.first { it.campo == Campo.LOTE }.valor)
         assertEquals("USA", fields.first { it.campo == Campo.PAIS_ORIGEN }.valor)
     }
+
+    @Test
+    fun `frasco TEMED de Sigma-Aldrich entrega parte lote y China con la clave del catalogo`() {
+        // Código real leído de la foto del frasco T9281-50ML (11-nov-2026).
+        val code = "(01)04061838260420(10)BCCP5095(240)T9281-50ML(422)156"
+        val fields = LabelFieldExtractor.extraer("", listOf(code))
+
+        assertEquals("T9281-50ML", fields.first { it.campo == Campo.NUMERO_PARTE }.valor)
+        assertEquals("BCCP5095", fields.first { it.campo == Campo.LOTE }.valor)
+        assertEquals("CHN", fields.first { it.campo == Campo.PAIS_ORIGEN }.valor)
+    }
+
+    @Test
+    fun `AI 422 traduce a la clave del catalogo los origenes de las facturas inter-company`() {
+        // Número ISO 3166-1 -> clave de `paises`. Países Bajos y Rumania usan ZYA y ROM en el
+        // catálogo (el ISO sería NLD y ROU), por eso no se pueden deducir del estándar.
+        val esperados = mapOf(
+            "356" to "IND", "756" to "CHE", "376" to "ISR", "380" to "ITA", "528" to "ZYA",
+            "752" to "SWE", "458" to "MYS", "040" to "AUT", "036" to "AUS", "056" to "BEL",
+            "440" to "LTU", "642" to "ROM"
+        )
+        esperados.forEach { (numero, clave) ->
+            val code = "(01)04061838260246(10)0000585854(240)T4415-1L(422)$numero"
+            val fields = LabelFieldExtractor.extraer("", listOf(code))
+            assertEquals("422=$numero", clave, fields.first { it.campo == Campo.PAIS_ORIGEN }.valor)
+        }
+    }
+
+    @Test
+    fun `AI 422 de un pais fuera de la tabla no se traduce`() {
+        // Si el catálogo no lo tiene (o no se ha agregado), el número queda crudo y
+        // CountryCatalogMatcher no lo empareja: no se captura solo.
+        val code = "(01)04061838260246(10)0000585854(240)T4415-1L(422)999"
+        val fields = LabelFieldExtractor.extraer("", listOf(code))
+
+        assertEquals("999", fields.first { it.campo == Campo.PAIS_ORIGEN }.valor)
+    }
 }

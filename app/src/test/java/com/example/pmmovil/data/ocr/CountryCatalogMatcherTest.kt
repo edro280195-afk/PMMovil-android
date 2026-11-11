@@ -31,7 +31,10 @@ class CountryCatalogMatcherTest {
         PaisCatalogo("CAN", "CANADA"),
         PaisCatalogo("ESP", "ESPAÑA (REINO DE)"),
         PaisCatalogo("GBR", "REINO UNIDO DE LA GRAN BRETAÑA E IRLANDA DEL N"),
-        PaisCatalogo("KOR", "COREA (REPUBLICA DE) (COREA DEL SUR)")
+        PaisCatalogo("KOR", "COREA (REPUBLICA DE) (COREA DEL SUR)"),
+        // Claves de aduanas que NO son el ISO-3 (ISO: NLD y ROU).
+        PaisCatalogo("ZYA", "PAISES BAJOS (REINO DE LOS) (HOLANDA)"),
+        PaisCatalogo("ROM", "RUMANIA")
     )
 
     private fun codigo(texto: String) =
@@ -110,6 +113,22 @@ class CountryCatalogMatcherTest {
         assertNull(codigo(""))
         assertNull(codigo("   "))
         assertNull(codigo("LOTE 2504298-135"))
+    }
+
+    @Test
+    fun `Paises Bajos y Rumania resuelven a la clave del catalogo, no a la del ISO`() {
+        // En el catálogo son ZYA y ROM; antes se buscaban como NLD y ROU y nunca emparejaban.
+        assertEquals("ZYA", codigo("MADE IN NETHERLANDS"))
+        assertEquals("ZYA", codigo("HOLLAND"))
+        assertEquals("ROM", codigo("PRODUCT OF ROMANIA"))
+
+        val porIso2 = CountryCatalogMatcher.emparejar("NL", catalogo)
+        assertEquals("ZYA", porIso2?.codigo)
+        assertEquals(Via.CODIGO_ISO2, porIso2?.via)
+        assertEquals("ROM", CountryCatalogMatcher.emparejar("RO", catalogo)?.codigo)
+
+        // Y la clave del propio catálogo sigue valiendo tal cual.
+        assertEquals(Via.CODIGO_ISO3, CountryCatalogMatcher.emparejar("ZYA", catalogo)?.via)
     }
 
     @Test

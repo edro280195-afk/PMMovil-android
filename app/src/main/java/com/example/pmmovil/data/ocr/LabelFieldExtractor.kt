@@ -437,20 +437,29 @@ object LabelFieldExtractor {
             (spec.fixedLength == null || value.length == spec.fixedLength) &&
             value.none(Char::isISOControl) && (!spec.numeric || value.all { it in '0'..'9' })
 
+    /**
+     * AI 422 (país de origen, ISO 3166-1 NUMÉRICO) -> **clave del catálogo `paises`**
+     * (`view_catalogo3`, tabla PAISES), que no siempre es el ISO-3 estándar: Países Bajos
+     * es `ZYA` (ISO: NLD) y Rumania es `ROM` (ISO: ROU). Lo que el catálogo no tenga, no se
+     * agrega: un número que no esté aquí no se traduce y [CountryCatalogMatcher] no lo
+     * empareja, así que no se captura solo.
+     *
+     * Cubre los 9 países de las primeras etiquetas más los orígenes de las facturas
+     * inter-company de Sigma-Aldrich (1557806, 1558038 y 1558039). Números verificados contra
+     * la tabla ISO 3166-1 publicada y claves verificadas en el catálogo de producción
+     * (11-nov-2026, 242 países).
+     */
+    private val gs1PaisNumericoACatalogo: Map<String, String> = mapOf(
+        "840" to "USA", "484" to "MEX", "276" to "DEU", "156" to "CHN", "392" to "JPN",
+        "124" to "CAN", "724" to "ESP", "250" to "FRA", "826" to "GBR",
+        "356" to "IND", "756" to "CHE", "376" to "ISR", "380" to "ITA", "528" to "ZYA",
+        "752" to "SWE", "458" to "MYS", "040" to "AUT", "036" to "AUS", "056" to "BEL",
+        "440" to "LTU", "642" to "ROM"
+    )
+
     private fun gs1Observation(field: Campo, ai: String, value: String, rawCode: String): CampoLeido {
         val finalValue = if (field == Campo.PAIS_ORIGEN && ai == "422") {
-            when (value) {
-                "840" -> "USA"
-                "484" -> "MEX"
-                "276" -> "DEU"
-                "156" -> "CHN"
-                "392" -> "JPN"
-                "124" -> "CAN"
-                "724" -> "ESP"
-                "250" -> "FRA"
-                "826" -> "GBR"
-                else -> value
-            }
+            gs1PaisNumericoACatalogo[value] ?: value
         } else value
         return CampoLeido(
             field, finalValue, Origen.GS1, "($ai)", 99, rawCode = rawCode,
