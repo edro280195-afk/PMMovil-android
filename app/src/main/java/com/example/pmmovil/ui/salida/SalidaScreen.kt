@@ -47,6 +47,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -115,6 +116,13 @@ fun SalidaScreen(
 
     // Lector físico / Bluetooth (HID) o gatillo del Honeywell/Zebra: siempre escuchando.
     HardwareScannerListener(viewModel::onScannerInput)
+
+    // Salir (flecha o gesto de atrás) también suelta la relación que esta pantalla tomó al abrirla: si no, queda a nombre
+    // del cargador y los demás la ven «OCUPADA». El ViewModel avisa cuando ya se soltó y entonces se navega hacia atrás.
+    BackHandler(onBack = viewModel::requestExit)
+    LaunchedEffect(state.salirSeq) {
+        if (state.salirSeq > 0) onNavigateBack()
+    }
 
     // Mantener pantalla encendida mientras se opera en bodega.
     val keepOn = state.stage == SalidaStage.ACTIVE || state.stage == SalidaStage.DESCARGA
@@ -229,7 +237,7 @@ fun SalidaScreen(
                     camaraActiva = camaraActiva,
                     menuAbierto = menuAbierto,
                     acciones = acciones,
-                    onBack = onNavigateBack,
+                    onBack = viewModel::requestExit,
                     onCamara = alternarCamara,
                     onMenu = { menuAbierto = it }
                 )

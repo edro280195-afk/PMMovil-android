@@ -8,7 +8,9 @@ import com.example.pmmovil.data.model.SalidaRelacion
 import com.example.pmmovil.data.repository.AuthRepository
 import com.example.pmmovil.data.repository.SalidaRepository
 import com.example.pmmovil.data.signalr.WarehouseHubService
+import com.example.pmmovil.di.ApplicationScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,7 +38,7 @@ enum class SalidaFlash { NONE, OK, ERROR }
 
 enum class SalidaConfirmKind { NEUTRAL, WARNING, DANGER }
 
-enum class SalidaConfirmAction { REQUEST_AUTH, PAUSE, CANCEL }
+enum class SalidaConfirmAction { REQUEST_AUTH, PAUSE, CANCEL, EXIT }
 
 data class SalidaBloqueo(
     val relno: String,
@@ -100,7 +102,9 @@ data class SalidaUiState(
     val escaneosLocales: List<SalidaEscaneoLocal> = emptyList(),
     /** Mensaje para snackbar; prefijos ✓ ⚠ ✗ definen el color (ver PmmSnackbarHost). */
     val message: String? = null,
-    val usuario: String = ""
+    val usuario: String = "",
+    /** Se incrementa cuando ya se puede salir de la pantalla (la relación ya se soltó); la pantalla navega hacia atrás. */
+    val salirSeq: Int = 0
 ) {
     val total: Int get() = etiquetas.size
     val escaneados: Int get() = etiquetas.count { it.escaneado }
@@ -121,7 +125,9 @@ data class SalidaUiState(
 class SalidaViewModel @Inject constructor(
     private val repository: SalidaRepository,
     private val authRepository: AuthRepository,
-    private val hubService: WarehouseHubService
+    private val hubService: WarehouseHubService,
+    // Vive más que el ViewModel: sirve para soltar la relación aunque la pantalla ya se haya destruido.
+    @ApplicationScope private val appScope: CoroutineScope
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SalidaUiState())
@@ -855,6 +861,74 @@ class SalidaViewModel @Inject constructor(
             SalidaConfirmAction.REQUEST_AUTH -> pedirAutorizacion()
             SalidaConfirmAction.PAUSE -> pausar()
             SalidaConfirmAction.CANCEL -> cancelar()
+            SalidaConfirmAction.EXIT -> liberarYSalir()
+        }
+    }
+
+    // ── Salir de la pantalla ───────────────────────────────────────────────────
+
+    /**
+     * Flecha o gesto de atrás. Al entrar a una relación el API la deja `CARGANDO` a nombre del cargador; si sale sin
+     * pausar, finalizar ni cancelar queda «OCUPADA» para todos. Por eso salir también la libera (`usucargamcia` vacío).
+     * Si hay bultos escaneados que aún no se guardan se pregunta antes: soltar la relación los pierde.
+     */
+    fun requestExit() {
+        val state = _state.value
+        val decision = SalidaSalir.decidir(
+            mode = state.mode,
+            stage = state.stage,
+            relno = state.relacion?.relno,
+            hayAvance = state.escaneosLocales.isNotEmpty() || state.descargados > 0,
+            ocupado = state.isProcessingAction || state.isLoadingRelacion
+        )
+        when (decision) {
+            SalidaAlSalir.ESPERAR -> Unit
+            SalidaAlSalir.SALIR -> salir()
+            SalidaAlSalir.LIBERAR_Y_SALIR -> liberarYSalir()
+            SalidaAlSalir.PEDIR_CONFIRMACION -> {
+                val bultos = state.escaneosLocales.size + state.descargados
+                _state.update {
+                    it.copy(
+                        confirm = SalidaConfirm(
+                            title = "Salir de la carga",
+                            message = "Llevas $bultos bulto(s) escaneado(s) sin guardar. Si sales, la relación se libera y ese " +
+                                "avance se pierde. Si quieres conservarlo, usa «Pausar».",
+                            confirmLabel = "Salir y liberar",
+                            kind = SalidaConfirmKind.DANGER,
+                            action = SalidaConfirmAction.EXIT
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    private fun salir() = _state.update { it.copy(salirSeq = it.salirSeq + 1) }
+
+    private fun liberarYSalir() {
+        val rel = _state.value.relacion
+        if (rel == null) {
+            salir()
+            return
+        }
+        _state.update { it.copy(isProcessingAction = true) }
+        viewModelScope.launch {
+            repository.cancelar(rel.relno, SalidaSalir.restaurar(rel.estatusCarga))
+                .onSuccess { res ->
+                    if (res.success) {
+                        limpiar()
+                        salir()
+                    } else {
+                        // El servidor respondió pero no soltó la relación: se queda aquí para no dejarla pegada.
+                        _state.update { it.copy(isProcessingAction = false) }
+                        toast("✗ ${res.message ?: "No se pudo liberar la relación."} Intenta salir otra vez.")
+                    }
+                }
+                .onFailure {
+                    // Sin conexión no se puede soltar: se queda en la pantalla (la relación sigue a su nombre) y se reintenta.
+                    _state.update { it.copy(isProcessingAction = false) }
+                    toast(networkMessage(it, "No se pudo liberar la relación.") + " Intenta salir otra vez.")
+                }
         }
     }
 
@@ -895,7 +969,7 @@ class SalidaViewModel @Inject constructor(
         _state.update { it.copy(isProcessingAction = true) }
         viewModelScope.launch {
             // Si la relación llegó pausada (EN ESPERA) se le devuelve ese estado, como hacía el legacy al cancelar.
-            repository.cancelar(rel.relno, rel.estatusCarga.takeIf { it == "EN ESPERA" })
+            repository.cancelar(rel.relno, SalidaSalir.restaurar(rel.estatusCarga))
                 .onSuccess {
                     _state.update { it.copy(isProcessingAction = false, message = "Operación cancelada.") }
                     limpiar()
@@ -918,7 +992,9 @@ class SalidaViewModel @Inject constructor(
             SalidaUiState(
                 mode = it.mode,
                 captureMode = it.captureMode,
-                usuario = it.usuario
+                usuario = it.usuario,
+                // El contador de salida no se reinicia: la pantalla navega cuando sube, y limpiar() corre justo antes.
+                salirSeq = it.salirSeq
             )
         }
     }
@@ -1024,6 +1100,14 @@ class SalidaViewModel @Inject constructor(
         flashJob?.cancel()
         bannerJob?.cancel()
         casetaQrTimerJob?.cancel()
+        // Red de seguridad: si la pantalla se destruye con la relación aún tomada (salió por un camino que no pasó por
+        // requestExit), se suelta igual. Va en el alcance de la aplicación porque viewModelScope ya está cancelado.
+        val state = _state.value
+        val rel = state.relacion
+        if (rel != null && SalidaSalir.tieneRelacionTomada(state.mode, state.stage, rel.relno)) {
+            val restaurar = SalidaSalir.restaurar(rel.estatusCarga)
+            appScope.launch { repository.cancelar(rel.relno, restaurar) }
+        }
         super.onCleared()
     }
 }
