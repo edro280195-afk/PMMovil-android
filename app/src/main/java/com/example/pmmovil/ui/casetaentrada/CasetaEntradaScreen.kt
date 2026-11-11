@@ -3824,7 +3824,7 @@ private fun CasetaTextField(
     maxLines: Int = Int.MAX_VALUE,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
-    /** Marco grueso para los campos que el guardia no debe pasar por alto (No camion, Operador, Sellos, Placas). */
+    /** Marco grueso para los campos que el guardia no debe pasar por alto (Numero de caja, No camion, Operador, Sellos, Placas). */
     resaltado: Boolean = false,
     modifier: Modifier = Modifier
 ) {
@@ -4714,6 +4714,7 @@ private fun CasetaStepCamion(
             enabled = editable,
             label = { Text("Número de caja *") },
             placeholder = { Text("Escríbelo o léelo con la cámara") },
+            resaltado = true,
             singleLine = true,
             isError = state.fieldErrors.containsKey("boxNumber"),
             supportingText = errorText(state.fieldErrors["boxNumber"]),
