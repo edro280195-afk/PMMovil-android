@@ -44,7 +44,7 @@ import java.util.Date
 import java.util.Locale
 
 @Composable
-fun HomeScreen(store: MapStore, onCapture: () -> Unit, onLocate: (String) -> Unit) {
+fun HomeScreen(store: MapStore, onCapture: () -> Unit, onLocate: (String) -> Unit, onAnchors: () -> Unit) {
     var maps by remember { mutableStateOf<List<MapMeta>>(emptyList()) }
     var refresh by remember { mutableIntStateOf(0) }
     var info by remember { mutableStateOf<String?>(null) }
@@ -74,7 +74,15 @@ fun HomeScreen(store: MapStore, onCapture: () -> Unit, onLocate: (String) -> Uni
                 "Después abre «Ubicar» con ese mapa para ver las tarjetas flotando.",
             color = Muted, fontSize = 13.sp
         )
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(12.dp))
+        OutlinedButton(onClick = onAnchors, modifier = Modifier.fillMaxWidth()) {
+            Text("Laboratorio de anclas (AprilTag / ArUco / QR)", fontSize = 14.sp, maxLines = 1)
+        }
+        Text(
+            "Mide a qué distancia y con qué precisión se leen los marcadores. No guarda mapas.",
+            color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp)
+        )
+        Spacer(Modifier.height(16.dp))
         Text("Mapas guardados", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
         Spacer(Modifier.height(8.dp))
 

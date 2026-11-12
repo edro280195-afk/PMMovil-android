@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.example.pmmovil.mapeador.core.MapStore
+import com.example.pmmovil.mapeador.ui.AnclasLabScreen
 import com.example.pmmovil.mapeador.ui.CaptureScreen
 import com.example.pmmovil.mapeador.ui.HomeScreen
 import com.example.pmmovil.mapeador.ui.LocateScreen
@@ -21,6 +22,9 @@ private sealed interface Screen {
     data object Home : Screen
     data object Capture : Screen
     data class Locate(val mapId: String) : Screen
+
+    /** Laboratorio de anclas (AprilTag / ArUco / QR): no guarda mapas. */
+    data object Anclas : Screen
 }
 
 class MainActivity : ComponentActivity() {
@@ -44,8 +48,10 @@ private fun MapeadorApp(store: MapStore) {
         Screen.Home -> HomeScreen(
             store = store,
             onCapture = { screen = Screen.Capture },
-            onLocate = { screen = Screen.Locate(it) }
+            onLocate = { screen = Screen.Locate(it) },
+            onAnchors = { screen = Screen.Anclas }
         )
+        Screen.Anclas -> AnclasLabScreen(onExit = { screen = Screen.Home })
         Screen.Capture -> CaptureScreen(store = store, onExit = { screen = Screen.Home })
         is Screen.Locate -> LocateScreen(store = store, mapId = s.mapId, onExit = { screen = Screen.Home })
     }

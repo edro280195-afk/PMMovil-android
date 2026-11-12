@@ -47,12 +47,14 @@ mata el proceso y se pierde el mapa en construcción.
 ## Pruebas
 
 ```bash
-./gradlew :mapeador:testDebugUnitTest                 # 93 pruebas JVM (geometría, TSDF y malla, mapa, ubicación, fusión, guardado); 6 se omiten solas sin datos reales
+./gradlew :mapeador:testDebugUnitTest                 # 108 pruebas JVM (geometría, TSDF y malla, mapa, ubicación, fusión, guardado, marcadores de anclas); 7 se omiten solas sin datos reales
 ./gradlew :mapeador:assembleDebugAndroidTest          # APK de pruebas con OpenCV real
 adb -s <serie> install -r mapeador/build/outputs/apk/androidTest/debug/mapeador-debug-androidTest.apk
 adb -s <serie> shell am instrument -w com.example.pmmovil.mapeador.test/androidx.test.runner.AndroidJUnitRunner   # 6 pruebas
 ```
 
+- **Solo el detector de anclas** (5 pruebas, OK en el Pixel el 11-nov): agrega `-e class com.example.pmmovil.mapeador.vision.MarkerDetectorInstrumentedTest` al `am instrument` de arriba.
+- **No uses `./gradlew connectedAndroidTest` en el teléfono:** suele desinstalar la app al terminar y, al desinstalarla, Android borra `files/maps` y `files/logs`. Usa `adb install -r` + `am instrument`, y respalda antes (`adb pull .../files`).
 - La prueba **`exactObservationsGiveExactPoints`** triangula con observaciones sin ruido: si los ejes de
   ARCore y OpenCV o algún signo estuvieran mal, los puntos saldrían a metros. Cuadran al milímetro.
 - La prueba **`fullPipelineLocalizesAQueryAndRecoversTheSessionOffset`** arma un mapa, ubica una cámara
@@ -129,6 +131,13 @@ Dos herramientas para medir si el enfoque aguanta una nave de 80,000 ft² (`docs
 |---|---|
 | `drift_closure.py <mapa> [--real-m N] [--recta] [--desde ID] [--hasta ID]` · `--autoprueba` | Deriva de ARCore a partir de `keyframes.json`: longitud caminada, densidad de fotogramas, **error de cierre** (se empieza y se termina en la misma marca con la misma orientación) y, con `--real-m`, el **error de escala**. El cierre **no ve** un error de escala parejo: para eso `--recta --real-m <distancia medida>`. Solo numpy. |
 | `vitals_logger.py --serial <serie> [--cada 30] [--minutos N] [--salida vitales.csv] [--una-vez] [--paquete <app>]` | Anota batería, temperatura, estado térmico, memoria de la app y si vive/está al frente, durante una sesión larga. **Solo lee** por adb (`dumpsys`, `pidof`): no manda toques, apto para un teléfono personal. Con USB y Wi-Fi a la vez hay que elegir `--serial`. |
+| `anchors_simulation.py [--rapida]` | **Techo teórico** de las anclas (L4): dibuja un AprilTag con los intrínsecos del Pixel a varias distancias, tamaños y ángulos, lo lee y compara la pose. Cámara ideal: no es una medición. Tabla en `docs/mapeador-bodega.md` §12.11. |
+| `make_anchor_sheet.py` | Genera `docs/banco-anclas.html` (AprilTag 10/20/30 cm, ArUco 20 cm, QR 10/20 cm, en SVG con su lado exacto) y, antes de escribirlo, relee cada marcador con OpenCV. |
+| `anchors_analysis.py <anclas-*.csv>` · `--autoprueba` | Resume la bitácora de `AnclasLab` por (familia, lado, distancia real, etiqueta): sesgo y error de la distancia contra la real, dispersión de la posición y ángulo, tamaño, reproyección y ambigüedad medianos. |
+
+### Laboratorio de anclas en el teléfono (`AnclasLab`, L4)
+
+Botón «Laboratorio de anclas» en el menú principal. Lee **AprilTag 36h11, ArUco 4x4 o QR** de lado conocido con el OpenCV 4.13 del APK (`vision/MarkerDetector.kt`: `ArucoDetector` con esquinas subpíxel, `QRCodeDetectorAruco` y PnP de cuadrado plano `IPPE_SQUARE`), compone la pose con la de ARCore (`core/MarkerPose.kt`) y muestra por marcador: distancia, ángulo de vista, tamaño en píxeles, error de reproyección, **ambigüedad** (qué tan parecidas son las dos poses posibles) y la dispersión de su posición en el mundo. Si se teclea la **distancia real** (medida con láser), muestra también el error. El recuadro verde sobre la cámara sale de proyectar la pose estimada: si no cae sobre el marcador real, hay un error de ejes. «Grabar» escribe `files/logs/anclas-<fecha>.csv` (formato en `core/MarkerCsv.kt`; lo lee `tools/anchors_analysis.py` por nombre de columna). **No guarda mapas ni toca nada de PMMovil.** Lee ~10 veces por segundo. Ojo con el lado: es el borde negro exterior; en QR, el cuadrado de módulos sin el margen blanco.
 
 ## Reconstruir con fotogrametría en la PC (vía 2)
 
