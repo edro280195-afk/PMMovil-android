@@ -82,6 +82,14 @@ sealed interface SearchState {
     data class Unavailable(val message: UiText) : SearchState
 }
 
+/** Otra persona ya tenía tomada la carpeta: se pregunta si se la quiere quedar (quedan registrados los dos). */
+data class TakeConflict(
+    val entry: EntradaPendienteDto,
+    val tomadaPor: String,
+    /** Cuándo la tomó (hora del servidor, sin zona). */
+    val desde: String?
+)
+
 data class AsignacionesUiState(
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
@@ -98,7 +106,10 @@ data class AsignacionesUiState(
     val selectedEntry: EntradaPendienteDto? = null,
     val desbloqueoDialog: EntradaPendienteDto? = null,
     val unlockRequests: Set<String> = emptySet(),
-    val removedAssignmentReferences: Set<String> = emptySet()
+    val removedAssignmentReferences: Set<String> = emptySet(),
+    /** Referencia de la carpeta que se está tomando o devolviendo ahora (evita el doble toque). */
+    val takingReference: String? = null,
+    val takeConflict: TakeConflict? = null
 )
 
 /**
@@ -346,6 +357,93 @@ class AsignacionesViewModel @Inject constructor(
      */
     fun refreshOnResume() {
         if (!_uiState.value.hasLoadedMine) return
+        loadData(showLoading = false)
+        val query = _uiState.value.query
+        if (isSearchable(query)) {
+            viewModelScope.launch { runSearch(query, silent = true) }
+        }
+    }
+
+    // ── Tomar carpeta ────────────────────────────────────────────────────────
+
+    /**
+     * «Tomar carpeta»: el revisador registra que agarró la carpeta física sin abrir la revisión ni arrancar el cronómetro.
+     * El Monitor de revisadores la muestra desde ese momento. Si otra persona ya la tenía, se le pregunta antes de pasarla
+     * a su nombre ([confirmar] = `true`).
+     */
+    fun takeFolder(entry: EntradaPendienteDto, confirmar: Boolean = false) {
+        if (_uiState.value.takingReference != null) return
+        _uiState.update { it.copy(takingReference = entry.crefAgrupada) }
+        viewModelScope.launch {
+            asignacionRepository.tomarCarpeta(entry.crefAgrupada, confirmar)
+                .onSuccess { respuesta ->
+                    when (val resultado = CarpetaToma.interpretar(respuesta)) {
+                        is TomaResultado.Tomada -> {
+                            _uiState.update { it.copy(takingReference = null, takeConflict = null) }
+                            showMessage(
+                                message = resultado.mensaje?.let(UiText::Raw) ?: resource(R.string.assignments_take_done),
+                                kind = PendingMessageKind.SUCCESS
+                            )
+                            refreshAfterTake()
+                        }
+
+                        is TomaResultado.Conflicto -> _uiState.update {
+                            it.copy(
+                                takingReference = null,
+                                takeConflict = TakeConflict(entry, resultado.tomadaPor, resultado.desde)
+                            )
+                        }
+
+                        is TomaResultado.NoSePuede -> {
+                            _uiState.update { it.copy(takingReference = null) }
+                            showMessage(
+                                message = resultado.mensaje?.let(UiText::Raw) ?: resource(R.string.message_operation_failed),
+                                kind = PendingMessageKind.WARNING
+                            )
+                        }
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(takingReference = null) }
+                    showMessage(networkMessage(error), PendingMessageKind.ERROR)
+                }
+        }
+    }
+
+    /** El revisador confirmó que se queda con una carpeta que otra persona había tomado. */
+    fun confirmTakeOver() {
+        val conflict = _uiState.value.takeConflict ?: return
+        _uiState.update { it.copy(takeConflict = null) }
+        takeFolder(conflict.entry, confirmar = true)
+    }
+
+    fun dismissTakeConflict() {
+        _uiState.update { it.copy(takeConflict = null) }
+    }
+
+    /** El revisador devuelve una carpeta que tomó por error (solo las suyas). */
+    fun releaseFolder(entry: EntradaPendienteDto) {
+        if (_uiState.value.takingReference != null) return
+        _uiState.update { it.copy(takingReference = entry.crefAgrupada) }
+        viewModelScope.launch {
+            asignacionRepository.soltarCarpeta(entry.crefAgrupada)
+                .onSuccess { soltada ->
+                    _uiState.update { it.copy(takingReference = null) }
+                    showMessage(
+                        message = resource(if (soltada) R.string.assignments_release_done else R.string.assignments_release_nothing),
+                        kind = if (soltada) PendingMessageKind.SUCCESS else PendingMessageKind.INFO
+                    )
+                    refreshAfterTake()
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(takingReference = null) }
+                    showMessage(networkMessage(error), PendingMessageKind.ERROR)
+                }
+        }
+    }
+
+    /** Tras tomar o devolver cambian mis pendientes y lo que dicen los resultados («tomada por…»). */
+    private fun refreshAfterTake() {
         loadData(showLoading = false)
         val query = _uiState.value.query
         if (isSearchable(query)) {

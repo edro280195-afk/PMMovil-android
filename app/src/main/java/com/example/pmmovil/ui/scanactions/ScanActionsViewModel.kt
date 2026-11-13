@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.pmmovil.data.model.TraceResultDto
 import com.example.pmmovil.data.preferences.ModePreferences
 import com.example.pmmovil.data.preferences.LastScanStore
+import com.example.pmmovil.data.repository.AsignacionRepository
 import com.example.pmmovil.data.repository.AuthRepository
 import com.example.pmmovil.data.repository.TraceOutcome
 import com.example.pmmovil.data.repository.TraceRepository
@@ -15,6 +16,8 @@ import com.example.pmmovil.data.scanner.ScanActionResolver
 import com.example.pmmovil.data.scanner.ScanActionsRoute
 import com.example.pmmovil.data.scanner.ScannedCode
 import com.example.pmmovil.data.scanner.TraceActionResolver
+import com.example.pmmovil.ui.asignaciones.CarpetaToma
+import com.example.pmmovil.ui.asignaciones.TomaResultado
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,6 +44,22 @@ sealed interface TraceUiState {
 
     /** No se pudo consultar (sin red, sin sesión, tiempo agotado): se muestra solo lo que dice el código. */
     data object Unavailable : TraceUiState
+}
+
+/** Cómo va «Tomar carpeta» desde esta pantalla. */
+sealed interface TakeUiState {
+    data object Idle : TakeUiState
+
+    data object Working : TakeUiState
+
+    /** La carpeta quedó a nombre del revisador. */
+    data class Done(val message: String?, val alreadyMine: Boolean) : TakeUiState
+
+    /** Otra persona ya la tenía: se pregunta si se la quiere quedar. */
+    data class Conflict(val reference: String, val tomadaPor: String, val desde: String?) : TakeUiState
+
+    /** No se pudo (ya revisada, la está revisando otra persona, sin red…): se dice el motivo. */
+    data class Failed(val message: String?) : TakeUiState
 }
 
 /** Lo que muestra la pantalla: qué se leyó, la ficha si ya llegó y qué puede hacer con ello el puesto del usuario. */
@@ -103,6 +122,7 @@ class ScanActionsViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val authRepository: AuthRepository,
     private val traceRepository: TraceRepository,
+    private val asignacionRepository: AsignacionRepository,
     private val lastScanStore: LastScanStore,
     private val modePreferences: ModePreferences
 ) : ViewModel() {
@@ -121,9 +141,44 @@ class ScanActionsViewModel @Inject constructor(
 
     private var loading: Job? = null
 
+    private val _take = MutableStateFlow<TakeUiState>(TakeUiState.Idle)
+    val take: StateFlow<TakeUiState> = _take.asStateFlow()
+
     init {
         if (code == ScannedCode.Gafete) savedStateHandle.remove<String>(ScanActionsRoute.ARG_CODE)
         if (hasTrace(code)) load()
+    }
+
+    /**
+     * «Tomar carpeta»: el revisador registra que agarró la carpeta física sin abrir la revisión ni arrancar el cronómetro.
+     * Es la única acción de esta pantalla que escribe, y solo la ejecuta quien la toca. Si otra persona ya la tenía, se le
+     * pregunta antes de pasarla a su nombre ([confirm] = `true`).
+     */
+    fun takeFolder(reference: String, confirm: Boolean = false) {
+        if (_take.value == TakeUiState.Working) return
+        _take.value = TakeUiState.Working
+        viewModelScope.launch {
+            asignacionRepository.tomarCarpeta(reference, confirm)
+                .onSuccess { response ->
+                    _take.value = when (val result = CarpetaToma.interpretar(response)) {
+                        is TomaResultado.Tomada -> TakeUiState.Done(result.mensaje, result.yaEraTuya)
+                        is TomaResultado.Conflicto -> TakeUiState.Conflict(reference, result.tomadaPor, result.desde)
+                        is TomaResultado.NoSePuede -> TakeUiState.Failed(result.mensaje)
+                    }
+                }
+                .onFailure { error -> _take.value = TakeUiState.Failed(error.message) }
+        }
+    }
+
+    /** El revisador confirmó que se queda con una carpeta que otra persona había tomado. */
+    fun confirmTakeOver() {
+        val conflict = _take.value as? TakeUiState.Conflict ?: return
+        _take.value = TakeUiState.Idle
+        takeFolder(conflict.reference, confirm = true)
+    }
+
+    fun dismissTake() {
+        if (_take.value != TakeUiState.Working) _take.value = TakeUiState.Idle
     }
 
     /** Vuelve a pedir la ficha cuando la anterior no se pudo consultar. */

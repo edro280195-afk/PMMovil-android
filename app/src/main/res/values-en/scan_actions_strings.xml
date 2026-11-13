@@ -52,6 +52,10 @@
     <string name="scan_action_open_entry_detail">View or edit the entry in the warehouse</string>
     <string name="scan_action_review_entry">Open the review</string>
     <string name="scan_action_review_entry_detail">View or continue the goods review</string>
+    <string name="scan_action_take_folder">Take folder</string>
+    <string name="scan_action_take_folder_detail">It is put under your name and the Monitor sees it; it does not open the review or start the clock</string>
+    <string name="scan_take_taken">Folder taken</string>
+    <string name="scan_take_working">Taking the folder…</string>
     <string name="scan_action_show_on_map">Open the map</string>
     <string name="scan_action_show_on_map_detail">Warehouse map</string>
     <string name="scan_action_register_prereg">Register the arrival</string>

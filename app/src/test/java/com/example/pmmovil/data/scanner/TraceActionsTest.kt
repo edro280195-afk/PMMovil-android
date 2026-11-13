@@ -40,6 +40,7 @@ class TraceActionsTest {
         assertEquals(ScanActionId.LoadCargo, TraceActionResolver.idOf("OPEN_LOAD"))
         assertEquals(ScanActionId.OpenEntry, TraceActionResolver.idOf("OPEN_ENTRY"))
         assertEquals(ScanActionId.ReviewEntry, TraceActionResolver.idOf("REVIEW_ENTRY"))
+        assertEquals(ScanActionId.TakeFolder, TraceActionResolver.idOf("TAKE_FOLDER"))
         assertEquals(ScanActionId.ShowOnMap, TraceActionResolver.idOf("SHOW_ON_MAP"))
         assertEquals(ScanActionId.RegisterPreRegistro, TraceActionResolver.idOf("REGISTER_PREREGISTRO"))
         assertNull(TraceActionResolver.idOf("SOMETHING_NEW"))
@@ -49,7 +50,7 @@ class TraceActionsTest {
     fun `every app action has a server name so none can be sent and lost`() {
         val mapped = listOf(
             "CREATE_ENTRY", "EXIT_GATE", "FIND_IN_YARD", "OPEN_RELATION", "OPEN_LOAD",
-            "OPEN_ENTRY", "REVIEW_ENTRY", "SHOW_ON_MAP", "REGISTER_PREREGISTRO"
+            "OPEN_ENTRY", "REVIEW_ENTRY", "TAKE_FOLDER", "SHOW_ON_MAP", "REGISTER_PREREGISTRO"
         ).mapNotNull(TraceActionResolver::idOf)
 
         assertEquals(ScanActionId.entries.toSet(), mapped.toSet())

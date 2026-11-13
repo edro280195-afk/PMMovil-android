@@ -161,6 +161,19 @@ interface PMMovilApi {
         @Path("idAsignacion") idAsignacion: Int
     ): Response<MarkAssignmentViewedResponse>
 
+    /** «Tomar carpeta»: registra que el revisador agarró la carpeta, sin abrir la revisión ni arrancar el cronómetro. */
+    @POST("Asignaciones/tomar/{crefAgrupada}")
+    suspend fun tomarCarpeta(
+        @Path("crefAgrupada") crefAgrupada: String,
+        @Query("confirmar") confirmar: Boolean
+    ): Response<TomarCarpetaResponse>
+
+    /** Devuelve una carpeta que se tomó por error. */
+    @POST("Asignaciones/soltar/{crefAgrupada}")
+    suspend fun soltarCarpeta(
+        @Path("crefAgrupada") crefAgrupada: String
+    ): Response<SoltarCarpetaResponse>
+
     // ── Entradas ──────────────────────────────────────────────────────────────
     @GET("Revision/pendientes")
     suspend fun getEntradasPendientes(@Query("filtro") filtro: String? = null): Response<EntradasPendientesResponse>

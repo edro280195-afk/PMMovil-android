@@ -26,6 +26,13 @@ enum class ScanActionId {
     /** Abrir la revisión de la entrada. */
     ReviewEntry,
 
+    /**
+     * Registrar que el revisador agarró la carpeta física: queda a su nombre y el Monitor la ve, sin abrir la revisión ni
+     * arrancar el cronómetro. A diferencia de las demás, esta acción ESCRIBE: la ejecuta quien la toca ([ScanAction.command]),
+     * no navega a ninguna pantalla.
+     */
+    TakeFolder,
+
     /** Ver dónde está la entrada en el mapa de la bodega. */
     ShowOnMap,
 
@@ -44,11 +51,14 @@ data class ScanAction(
     val route: String,
     val modules: List<Int>,
     val level: String = LEVEL_READ,
-    val primary: Boolean = false
+    val primary: Boolean = false,
+    /** La acción no navega: la pantalla la ejecuta (hoy solo «Tomar carpeta»). [route] va vacía. */
+    val command: Boolean = false
 ) {
     companion object {
         const val LEVEL_READ = "Lectura"
         const val LEVEL_ADD = "Agregar"
+        const val LEVEL_MODIFY = "Modificar"
     }
 }
 
@@ -99,6 +109,7 @@ object ScanActionResolver {
 
     private fun entryActions(reference: String): List<ScanAction> = listOf(
         build(ScanActionId.ReviewEntry, reference),
+        build(ScanActionId.TakeFolder, reference),
         build(ScanActionId.OpenEntry, reference),
         build(ScanActionId.ShowOnMap, reference)
     )
@@ -153,6 +164,15 @@ object ScanActionResolver {
             id,
             "detalle/${encode(value)}",
             listOf(MobileModuleIds.REVIEW)
+        )
+
+        // No navega: el valor es la referencia de la entrada y quien toca la acción llama a «Tomar carpeta».
+        ScanActionId.TakeFolder -> ScanAction(
+            id,
+            "",
+            listOf(MobileModuleIds.REVIEW),
+            ScanAction.LEVEL_MODIFY,
+            command = true
         )
 
         ScanActionId.ShowOnMap -> ScanAction(

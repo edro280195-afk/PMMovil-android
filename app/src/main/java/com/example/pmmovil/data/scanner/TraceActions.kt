@@ -19,6 +19,7 @@ object TraceActionResolver {
         "OPEN_LOAD" -> ScanActionId.LoadCargo
         "OPEN_ENTRY" -> ScanActionId.OpenEntry
         "REVIEW_ENTRY" -> ScanActionId.ReviewEntry
+        "TAKE_FOLDER" -> ScanActionId.TakeFolder
         "SHOW_ON_MAP" -> ScanActionId.ShowOnMap
         "REGISTER_PREREGISTRO" -> ScanActionId.RegisterPreRegistro
         else -> null
@@ -57,7 +58,7 @@ object TraceActionResolver {
             ScanActionId.CreateEntry, ScanActionId.FindInYard -> casetaId
             ScanActionId.ExitGate -> if (result.kind == TraceKind.RELACION) relno ?: casetaId else casetaId ?: relno
             ScanActionId.OpenRelation, ScanActionId.LoadCargo -> relno
-            ScanActionId.OpenEntry, ScanActionId.ReviewEntry -> result.entradas.singleOrNull()?.reference
+            ScanActionId.OpenEntry, ScanActionId.ReviewEntry, ScanActionId.TakeFolder -> result.entradas.singleOrNull()?.reference
             ScanActionId.ShowOnMap -> ""
             ScanActionId.RegisterPreRegistro -> rawCode.trim().takeIf { it.isNotEmpty() }
         }

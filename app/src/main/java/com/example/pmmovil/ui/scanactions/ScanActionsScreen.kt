@@ -19,6 +19,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -92,6 +95,7 @@ fun ScanActionsScreen(
     val code = state.code
     val trace = state.trace
     val result = (trace as? TraceUiState.Ready)?.result
+    val take by viewModel.take.collectAsState()
     var selectedReviewReference by rememberSaveable { mutableStateOf<String?>(null) }
     val etiquetaPerfilViewModel: EtiquetaPerfilViewModel = hiltViewModel()
     val grupoDeEtiquetas by etiquetaPerfilViewModel.grupo.collectAsState()
@@ -170,7 +174,10 @@ fun ScanActionsScreen(
                                 else -> null
                             },
                             onAction = { action ->
-                                if (action.id == ScanActionId.ReviewEntry) {
+                                if (action.command) {
+                                    // «Tomar carpeta» no navega: escribe, y solo cuando el revisador la toca.
+                                    reviewReferenceOf(code, result)?.let(viewModel::takeFolder)
+                                } else if (action.id == ScanActionId.ReviewEntry) {
                                     selectedReviewReference = reviewReferenceOf(code, result)
                                         ?: run { onAction(action.route); null }
                                 } else {
@@ -180,6 +187,8 @@ fun ScanActionsScreen(
                         )
                     }
                 }
+
+                TakeStatus(take = take)
 
                 if (result != null) {
                     SectionTitle(R.string.trace_section_line)
@@ -193,6 +202,45 @@ fun ScanActionsScreen(
                 }
             }
         }
+    }
+
+    // Otra persona ya tenía tomada la carpeta: se dice quién y se pregunta si se la quiere quedar.
+    (take as? TakeUiState.Conflict)?.let { conflict ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissTake,
+            containerColor = PmmBgSurface,
+            title = {
+                Text(
+                    stringResource(R.string.assignments_take_conflict_title),
+                    color = PmmTextPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.assignments_take_conflict_message,
+                        conflict.tomadaPor.ifBlank { stringResource(R.string.assignments_take_someone) },
+                        conflict.desde?.takeIf { it.isNotBlank() }?.replace('T', ' ')?.take(16) ?: "—",
+                        conflict.reference
+                    ),
+                    color = PmmTextSecondary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = viewModel::confirmTakeOver,
+                    colors = ButtonDefaults.buttonColors(containerColor = PmmBlueDeep)
+                ) {
+                    Text(stringResource(R.string.assignments_take_conflict_confirm), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissTake) {
+                    Text(stringResource(R.string.assignments_take_conflict_cancel))
+                }
+            }
+        )
     }
 
     selectedReviewReference?.let { reference ->
@@ -227,6 +275,33 @@ private fun reviewReferenceOf(code: ScannedCode, result: TraceResultDto?): Strin
             is ScannedCode.Bulto -> code.reference
             else -> null
         }
+
+/** El resultado de «Tomar carpeta» en la propia pantalla, para que el revisador vea que quedó a su nombre. */
+@Composable
+private fun TakeStatus(take: TakeUiState) {
+    val (text, color) = when (take) {
+        TakeUiState.Idle, is TakeUiState.Conflict -> return
+        TakeUiState.Working -> stringResource(R.string.scan_take_working) to PmmTextSecondary
+        is TakeUiState.Done ->
+            (take.message?.takeIf { it.isNotBlank() } ?: stringResource(R.string.assignments_take_done)) to PmmBlueDeep
+        is TakeUiState.Failed ->
+            (take.message?.takeIf { it.isNotBlank() } ?: stringResource(R.string.message_operation_failed)) to PmmTextPrimary
+    }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = Color.White,
+        border = BorderStroke(1.dp, PmmNavyBorder)
+    ) {
+        Text(
+            text = text,
+            color = color,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)
+        )
+    }
+}
 
 @Composable
 private fun CodeLabel(code: ScannedCode, trace: TraceUiState) {
@@ -401,6 +476,7 @@ private fun actionTitle(id: ScanActionId): Int = when (id) {
     ScanActionId.LoadCargo -> R.string.scan_action_load_cargo
     ScanActionId.OpenEntry -> R.string.scan_action_open_entry
     ScanActionId.ReviewEntry -> R.string.scan_action_review_entry
+    ScanActionId.TakeFolder -> R.string.scan_action_take_folder
     ScanActionId.ShowOnMap -> R.string.scan_action_show_on_map
     ScanActionId.RegisterPreRegistro -> R.string.scan_action_register_prereg
 }
@@ -414,6 +490,7 @@ private fun actionDetail(id: ScanActionId): Int = when (id) {
     ScanActionId.LoadCargo -> R.string.scan_action_load_cargo_detail
     ScanActionId.OpenEntry -> R.string.scan_action_open_entry_detail
     ScanActionId.ReviewEntry -> R.string.scan_action_review_entry_detail
+    ScanActionId.TakeFolder -> R.string.scan_action_take_folder_detail
     ScanActionId.ShowOnMap -> R.string.scan_action_show_on_map_detail
     ScanActionId.RegisterPreRegistro -> R.string.scan_action_register_prereg_detail
 }

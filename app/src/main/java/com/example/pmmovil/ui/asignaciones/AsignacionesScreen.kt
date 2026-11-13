@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.TaskAlt
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -261,9 +262,14 @@ fun AsignacionesScreen(
                         localResults = localResults,
                         search = uiState.search,
                         currentUsername = currentUsername,
+                        takingReference = uiState.takingReference,
                         onEntryClick = {
                             focusManager.clearFocus()
                             viewModel.selectEntry(it)
+                        },
+                        onTake = {
+                            focusManager.clearFocus()
+                            viewModel.takeFolder(it)
                         }
                     )
                 } else {
@@ -279,8 +285,10 @@ fun AsignacionesScreen(
                                 hub = hub,
                                 currentUsername = currentUsername,
                                 waitingUnlock = uiState.unlockRequests,
+                                takingReference = uiState.takingReference,
                                 onEntryClick = viewModel::selectEntry,
-                                onUnlockClick = viewModel::showDesbloqueoDialog
+                                onUnlockClick = viewModel::showDesbloqueoDialog,
+                                onRelease = viewModel::releaseFolder
                             )
                         }
                     }
@@ -296,6 +304,46 @@ fun AsignacionesScreen(
             isOpening = uiState.isOpeningEntry,
             onDismiss = viewModel::dismissModeSelector,
             onModeSelected = viewModel::openSelectedEntry
+        )
+    }
+
+    // Otra persona ya tenía tomada la carpeta: se dice quién y desde qué hora, y se pregunta si se la quiere quedar.
+    uiState.takeConflict?.let { conflict ->
+        val since = formatActivity(conflict.desde, remember { LocalDateTime.now() })
+        AlertDialog(
+            onDismissRequest = viewModel::dismissTakeConflict,
+            containerColor = PmmBgSurface,
+            title = {
+                Text(
+                    text = stringResource(R.string.assignments_take_conflict_title),
+                    color = PmmTextPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = stringResource(
+                        R.string.assignments_take_conflict_message,
+                        conflict.tomadaPor.ifBlank { stringResource(R.string.assignments_take_someone) },
+                        since ?: "—",
+                        conflict.entry.crefAgrupada
+                    ),
+                    color = PmmTextSecondary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = viewModel::confirmTakeOver,
+                    colors = ButtonDefaults.buttonColors(containerColor = PmmBlueDeep)
+                ) {
+                    Text(stringResource(R.string.assignments_take_conflict_confirm), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissTakeConflict) {
+                    Text(stringResource(R.string.assignments_take_conflict_cancel))
+                }
+            }
         )
     }
 
@@ -529,8 +577,10 @@ private fun PendingHubList(
     hub: PendingHub,
     currentUsername: String?,
     waitingUnlock: Set<String>,
+    takingReference: String?,
     onEntryClick: (EntradaPendienteDto) -> Unit,
-    onUnlockClick: (EntradaPendienteDto) -> Unit
+    onUnlockClick: (EntradaPendienteDto) -> Unit,
+    onRelease: (EntradaPendienteDto) -> Unit
 ) {
     val context = LocalContext.current
 
@@ -556,8 +606,10 @@ private fun PendingHubList(
                     entry = entry,
                     currentUsername = currentUsername,
                     waitingUnlock = entry.crefAgrupada in waitingUnlock,
+                    busy = takingReference == entry.crefAgrupada,
                     onEntryClick = { onEntryClick(entry) },
-                    onUnlockClick = { onUnlockClick(entry) }
+                    onUnlockClick = { onUnlockClick(entry) },
+                    onRelease = { onRelease(entry) }
                 )
             }
         }
@@ -573,8 +625,10 @@ private fun PendingHubList(
                     entry = entry,
                     currentUsername = currentUsername,
                     waitingUnlock = entry.crefAgrupada in waitingUnlock,
+                    busy = takingReference == entry.crefAgrupada,
                     onEntryClick = { onEntryClick(entry) },
-                    onUnlockClick = { onUnlockClick(entry) }
+                    onUnlockClick = { onUnlockClick(entry) },
+                    onRelease = { onRelease(entry) }
                 )
             }
         }
@@ -699,7 +753,9 @@ private fun SearchResultsPane(
     localResults: List<EntradaPendienteDto>,
     search: SearchState,
     currentUsername: String?,
-    onEntryClick: (EntradaPendienteDto) -> Unit
+    takingReference: String?,
+    onEntryClick: (EntradaPendienteDto) -> Unit,
+    onTake: (EntradaPendienteDto) -> Unit
 ) {
     val context = LocalContext.current
     val tokens = remember(query) { searchTokens(query) }
@@ -724,7 +780,9 @@ private fun SearchResultsPane(
                     approximate = false,
                     tokens = tokens,
                     currentUsername = currentUsername,
-                    onClick = { onEntryClick(entry) }
+                    busy = takingReference == entry.crefAgrupada,
+                    onClick = { onEntryClick(entry) },
+                    onTake = { onTake(entry) }
                 )
             }
         }
@@ -766,7 +824,9 @@ private fun SearchResultsPane(
                                 approximate = hit.aproximada,
                                 tokens = tokens,
                                 currentUsername = currentUsername,
-                                onClick = { onEntryClick(hit.item) }
+                                busy = takingReference == hit.item.crefAgrupada,
+                                onClick = { onEntryClick(hit.item) },
+                                onTake = { onTake(hit.item) }
                             )
                         }
                         if (search.total > search.hits.size) {
@@ -854,13 +914,19 @@ private fun ResultRow(
     approximate: Boolean,
     tokens: List<String>,
     currentUsername: String?,
-    onClick: () -> Unit
+    busy: Boolean = false,
+    onClick: () -> Unit,
+    onTake: () -> Unit = {}
 ) {
     val status = calculateEntryStatus(entry)
     val visual = entryVisual(status.lifecycle)
     val locked = isEntryLocked(entry, currentUsername)
     val owner = entry.usuarioRevisando?.takeIf { it.isNotBlank() } ?: entry.usuarioTomoDocumento
     val haptic = LocalHapticFeedback.current
+    val canTake = CarpetaToma.puedeTomar(entry, currentUsername)
+    val takenByMe = CarpetaToma.esMia(entry.tomadaPor, currentUsername)
+    val takenBy = entry.tomadaPor?.trim()?.takeIf { it.isNotEmpty() }
+    val takenAt = formatActivity(entry.tomadaDesde, remember { LocalDateTime.now() })
 
     Surface(
         onClick = {
@@ -965,12 +1031,32 @@ private fun ResultRow(
                         }
                     }
                 }
+                // «¿Quién trae la 123?»: quien la tomó y desde qué hora.
+                if (takenBy != null) {
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = if (takenByMe) {
+                            stringResource(R.string.assignments_taken_by_me, takenAt ?: "—")
+                        } else {
+                            stringResource(R.string.assignments_taken_by_other, takenBy, takenAt ?: "—")
+                        },
+                        color = if (takenByMe) PmmBlueDeep else PmmAmberDark,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
             Box(
                 modifier = Modifier
                     .padding(end = 12.dp)
                     .align(Alignment.CenterVertically)
             ) {
+              Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+              ) {
                 if (locked) {
                     Surface(
                         shape = RoundedCornerShape(999.dp),
@@ -1000,6 +1086,29 @@ private fun ResultRow(
                 } else {
                     StatusBadge(status = status, visual = visual)
                 }
+                // Agarró la carpeta sin abrir la revisión: queda a su nombre y el Monitor lo ve desde este momento.
+                if (canTake) {
+                    OutlinedButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onTake()
+                        },
+                        enabled = !busy,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                        shape = RoundedCornerShape(999.dp),
+                        border = BorderStroke(1.dp, PmmBlueDeep.copy(alpha = 0.45f)),
+                        modifier = Modifier.height(30.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.assignments_take_action),
+                            color = PmmBlueDeep,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            maxLines = 1
+                        )
+                    }
+                }
+              }
             }
         }
     }
@@ -1165,8 +1274,10 @@ private fun PendingEntryCard(
     entry: EntradaPendienteDto,
     currentUsername: String?,
     waitingUnlock: Boolean,
+    busy: Boolean = false,
     onEntryClick: () -> Unit,
-    onUnlockClick: () -> Unit
+    onUnlockClick: () -> Unit,
+    onRelease: () -> Unit = {}
 ) {
     val status = calculateEntryStatus(entry)
     val visual = entryVisual(status.lifecycle)
@@ -1179,6 +1290,8 @@ private fun PendingEntryCard(
             formatActivity(entry.inicioRevision, now)?.let { stringResource(R.string.assignments_activity_in_progress, it) }
         status.category == EntryCategory.PAUSED ->
             formatActivity(entry.finRevision, now)?.let { stringResource(R.string.assignments_activity_paused, it) }
+        // Una carpeta tomada ya dice su hora en su propio banner.
+        CarpetaToma.esTomaPropia(entry, currentUsername) -> null
         entry.esAsignada == true ->
             formatActivity(entry.asignFecha, now)?.let { stringResource(R.string.assignments_activity_assigned, it) }
         else -> null
@@ -1221,7 +1334,12 @@ private fun PendingEntryCard(
                     .weight(1f)
                     .padding(16.dp)
             ) {
-                if (entry.esAsignada == true) {
+                if (CarpetaToma.esTomaPropia(entry, currentUsername)) {
+                    // Una carpeta que el propio revisador tomó no es una asignación del supervisor: se dice desde cuándo la
+                    // trae y se le deja devolverla si la tomó por error.
+                    TakenBanner(entry = entry, now = now, busy = busy, onRelease = onRelease)
+                    Spacer(Modifier.height(12.dp))
+                } else if (entry.esAsignada == true) {
                     AssignmentBanner(entry)
                     Spacer(Modifier.height(12.dp))
                 }
@@ -1384,6 +1502,71 @@ private fun AssignmentBanner(entry: EntradaPendienteDto) {
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+/**
+ * El banner de una carpeta que el propio revisador tomó: «TOMADA · 09:30 · 3 h 20 min sin iniciar» y un botón para
+ * devolverla si la tomó por error. El tiempo lo mide el servidor; no se calcula con el reloj de la tableta.
+ */
+@Composable
+private fun TakenBanner(
+    entry: EntradaPendienteDto,
+    now: LocalDateTime,
+    busy: Boolean,
+    onRelease: () -> Unit
+) {
+    val since = formatActivity(entry.tomadaDesde ?: entry.asignFecha, now)
+    val elapsed = CarpetaToma.tiempoSinIniciar(entry.segundosDesdeToma)
+    val detail = listOfNotNull(
+        since,
+        elapsed?.let { stringResource(R.string.assignments_taken_elapsed, it) }
+    ).joinToString(" · ")
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Surface(
+            shape = RoundedCornerShape(7.dp),
+            color = PmmNavyVariant,
+            border = BorderStroke(1.dp, PmmBlueDeep.copy(alpha = 0.25f))
+        ) {
+            Text(
+                text = stringResource(R.string.assignments_taken_badge),
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                color = PmmBlueDeep,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Black,
+                letterSpacing = 0.5.sp
+            )
+        }
+        if (detail.isNotEmpty()) {
+            Spacer(Modifier.width(7.dp))
+            Text(
+                text = detail,
+                color = PmmTextSecondary,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
+            )
+        }
+        Spacer(Modifier.weight(1f))
+        TextButton(
+            onClick = onRelease,
+            enabled = !busy,
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+            modifier = Modifier.height(28.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.assignments_release_action),
+                color = PmmTextMuted,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
             )
         }
     }

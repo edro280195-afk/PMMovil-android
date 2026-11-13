@@ -52,6 +52,10 @@
     <string name="scan_action_open_entry_detail">Ver o editar la entrada en bodega</string>
     <string name="scan_action_review_entry">Abrir la revisión</string>
     <string name="scan_action_review_entry_detail">Consulta o continúa la revisión de la mercancía</string>
+    <string name="scan_action_take_folder">Tomar carpeta</string>
+    <string name="scan_action_take_folder_detail">Queda a tu nombre y el Monitor la ve; no abre la revisión ni arranca el reloj</string>
+    <string name="scan_take_taken">Carpeta tomada</string>
+    <string name="scan_take_working">Tomando la carpeta…</string>
     <string name="scan_action_show_on_map">Abrir el mapa</string>
     <string name="scan_action_show_on_map_detail">Mapa de la bodega</string>
     <string name="scan_action_register_prereg">Registrar la llegada</string>

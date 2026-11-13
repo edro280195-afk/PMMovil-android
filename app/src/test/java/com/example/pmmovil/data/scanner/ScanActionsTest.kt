@@ -60,11 +60,44 @@ class ScanActionsTest {
 
         assertEquals(bulto, carpeta)
         assertEquals(
-            listOf(ScanActionId.ReviewEntry, ScanActionId.OpenEntry, ScanActionId.ShowOnMap),
+            listOf(ScanActionId.ReviewEntry, ScanActionId.TakeFolder, ScanActionId.OpenEntry, ScanActionId.ShowOnMap),
             bulto.map { it.id }
         )
         assertEquals("detalle/01C263582800000", bulto.first().route)
-        assertEquals("entrada_editar/01C263582800000", bulto[1].route)
+        assertEquals("entrada_editar/01C263582800000", bulto[2].route)
+    }
+
+    @Test
+    fun `taking a folder writes, so it is a command that needs modify permission and has no route`() {
+        val take = ScanActionResolver.actionsFor(ScannedCode.Carpeta("01C263582800000"))
+            .single { it.id == ScanActionId.TakeFolder }
+
+        assertTrue(take.command)
+        assertEquals("", take.route)
+        assertEquals(ScanAction.LEVEL_MODIFY, take.level)
+        assertEquals(listOf(MobileModuleIds.REVIEW), take.modules)
+        // Ninguna otra acción de un código escribe desde el lector: solo esta es un comando.
+        assertTrue(
+            ScanActionId.entries
+                .filter { it != ScanActionId.TakeFolder }
+                .all { !ScanActionResolver.build(it, "01C263582800000").command }
+        )
+    }
+
+    @Test
+    fun `reading a folder with only read permission never offers to take it`() {
+        val reader = only(MobileModuleIds.REVIEW)
+        val actions = ScanActionResolver.available(ScannedCode.Carpeta("01C263582800000"), reader)
+
+        assertTrue(actions.none { it.id == ScanActionId.TakeFolder })
+    }
+
+    @Test
+    fun `a reviewer with modify permission can take the folder and the review stays first`() {
+        val reviewer = only(MobileModuleIds.REVIEW, ScanAction.LEVEL_MODIFY)
+        val actions = ScanActionResolver.available(ScannedCode.Carpeta("01C263582800000"), reviewer)
+
+        assertEquals(listOf(ScanActionId.ReviewEntry, ScanActionId.TakeFolder), actions.map { it.id })
     }
 
     @Test

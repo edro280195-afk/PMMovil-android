@@ -242,7 +242,11 @@ data class EntradaPendienteDto(
     @SerializedName("asignSupervisor") val asignSupervisor: String? = null,
     @SerializedName("asignNota") val asignNota: String? = null,
     @SerializedName("asignEstatus") val asignEstatus: Int? = null,
-    @SerializedName("asignFecha") val asignFecha: String? = null
+    @SerializedName("asignFecha") val asignFecha: String? = null,
+    // «Tomar carpeta»: quién trae la carpeta (la tomó y todavía no la termina), desde cuándo y cuánto lleva sin iniciar.
+    @SerializedName("tomadaPor") val tomadaPor: String? = null,
+    @SerializedName("tomadaDesde") val tomadaDesde: String? = null,
+    @SerializedName("segundosDesdeToma") val segundosDesdeToma: Long? = null
 )
 
 data class EntradasPendientesResponse(
