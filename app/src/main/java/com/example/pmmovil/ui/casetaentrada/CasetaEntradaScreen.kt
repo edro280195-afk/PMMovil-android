@@ -5067,15 +5067,26 @@ private fun CasetaStepCaja(
                     )
                 }
                 if (state.isRefrigerated) {
-                    StepConditional {
-                        StepHint("Por ${form.boxTypeDescription} se piden temperatura y combustible.")
+                    // Pendiente = falta alguno de los dos datos o la temperatura no es una lectura (p. ej. «N/A»):
+                    // mientras tanto la tarjeta destella, vibra al aparecer y manda el cursor a la temperatura.
+                    val temperaturePending = CasetaEntradaRules.temperatureError(form.temperature) != null
+                    val fuelPending = CasetaEntradaRules.fuelError(form.fuel) != null
+                    RefrigeratedCaptureCard(
+                        boxTypeLabel = form.boxTypeDescription,
+                        pending = temperaturePending || fuelPending,
+                        hasError = state.fieldErrors.containsKey("temperature") || state.fieldErrors.containsKey("fuel"),
+                        onAttention = { if (editable) focusChain.temperature.requestFocus() }
+                    ) {
                         CasetaTextField(
                             value = form.temperature,
-                            onValueChange = { viewModel.updateText("temperature", it) },
+                            onValueChange = { viewModel.updateText("temperature", it.take(CasetaEntradaRules.TEMPERATURE_MAX_LENGTH)) },
                             enabled = editable,
-                            label = { Text("Temperatura *") },
+                            label = { Text("Temperatura del termo *") },
+                            placeholder = { Text("Ej. 34F o -18C") },
                             singleLine = true,
                             isError = state.fieldErrors.containsKey("temperature"),
+                            pending = temperaturePending,
+                            resaltado = true,
                             supportingText = errorText(state.fieldErrors["temperature"]),
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                             keyboardActions = KeyboardActions(onNext = {
@@ -5087,11 +5098,14 @@ private fun CasetaStepCaja(
                         )
                         CasetaTextField(
                             value = form.fuel,
-                            onValueChange = { viewModel.updateText("fuel", it) },
+                            onValueChange = { viewModel.updateText("fuel", it.take(CasetaEntradaRules.FUEL_MAX_LENGTH)) },
                             enabled = editable,
-                            label = { Text("Combustible *") },
+                            label = { Text("Combustible del termo *") },
+                            placeholder = { Text("Ej. 3/4 o LLENO") },
                             singleLine = true,
                             isError = state.fieldErrors.containsKey("fuel"),
+                            pending = fuelPending,
+                            resaltado = true,
                             supportingText = errorText(state.fieldErrors["fuel"]),
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                             keyboardActions = KeyboardActions(onNext = {

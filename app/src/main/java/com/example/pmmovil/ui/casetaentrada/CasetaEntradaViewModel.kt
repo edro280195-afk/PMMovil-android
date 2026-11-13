@@ -350,7 +350,7 @@ data class CasetaEntradaUiState(
         get() = CasetaEntradaRules.requiresGuide(form.movement)
 
     val isRefrigerated: Boolean
-        get() = CasetaEntradaRules.isRefrigerated(form.boxTypeDescription.ifBlank { form.boxType })
+        get() = CasetaEntradaRules.isRefrigerated(form.idBoxType.ifBlank { form.boxType }, form.boxTypeDescription)
 
     // No. de camion, operador y sellos son datos variables de cada viaje: se
     // resaltan en ambar si faltan al reutilizar una plantilla, pero son opcionales.
@@ -953,14 +953,15 @@ class CasetaEntradaViewModel @Inject constructor(
             denyPermission("editar la entrada de caseta")
             return
         }
+        val refrigerated = CasetaEntradaRules.isRefrigerated(item.id, item.nombre)
         _uiState.update {
             it.copy(
                 form = it.form.copy(
                     idBoxType = item.id,
                     boxType = item.id,
                     boxTypeDescription = item.nombre,
-                    temperature = if (CasetaEntradaRules.isRefrigerated(item.nombre)) it.form.temperature else "",
-                    fuel = if (CasetaEntradaRules.isRefrigerated(item.nombre)) it.form.fuel else ""
+                    temperature = if (refrigerated) it.form.temperature else "",
+                    fuel = if (refrigerated) it.form.fuel else ""
                 ),
                 fieldErrors = it.fieldErrors - "idBoxType" - "temperature" - "fuel"
             )
@@ -2677,8 +2678,48 @@ object CasetaEntradaRules {
     fun requiresGuide(movement: String): Boolean =
         movement == "CONSOLIDADO/MENSAJERIA"
 
+    /** Id de «CAJA REFRIGERADA 53'» en el catálogo de unidades (en producción las 473 cajas con este id son refrigeradas). */
+    const val BOX_TYPE_REFRIGERATED_ID = "58"
+
+    /** `temperatura` es varchar(5) y `combustible` varchar(10) en `caseta`: más largo no cabe al guardar. */
+    const val TEMPERATURE_MAX_LENGTH = 5
+    const val FUEL_MAX_LENGTH = 10
+
+    /**
+     * Refrigerada por el nombre del tipo de caja. Antes se comparaba el nombre EXACTO («CAJA REFRIGERADA 53'»): con otra
+     * forma de escribirlo (la del SAT trae «SEMIRREMOLQUE TIPO CAJA REFRIGERADA 53''.») no se pedía temperatura.
+     */
     fun isRefrigerated(boxType: String): Boolean =
-        boxType.equals("CAJA REFRIGERADA 53'", ignoreCase = true)
+        boxType.contains("REFRIGERAD", ignoreCase = true)
+
+    /** Refrigerada por el id del catálogo o, si falta, por el nombre. */
+    fun isRefrigerated(idBoxType: String, boxTypeDescription: String): Boolean =
+        idBoxType.trim() == BOX_TYPE_REFRIGERATED_ID || isRefrigerated(boxTypeDescription)
+
+    /**
+     * Por qué la temperatura capturada no sirve (`null` si sirve). Tiene que ser una lectura del termo, o sea traer al
+     * menos un número («34F», «-18C»): en producción las capturas de refrigeradas salían con la temperatura vacía o con
+     * «N/A» para pasar el campo.
+     */
+    fun temperatureError(value: String): String? {
+        val text = value.trim()
+        return when {
+            text.isEmpty() -> "Captura la temperatura de la caja refrigerada."
+            text.none(Char::isDigit) -> "Escribe la temperatura que marca el termo (por ejemplo 34F o -18C); N/A no es válido."
+            text.length > TEMPERATURE_MAX_LENGTH -> "La temperatura admite máximo $TEMPERATURE_MAX_LENGTH caracteres (por ejemplo 34F)."
+            else -> null
+        }
+    }
+
+    /** Por qué el combustible capturado no sirve (`null` si sirve). */
+    fun fuelError(value: String): String? {
+        val text = value.trim()
+        return when {
+            text.isEmpty() -> "Captura el combustible de la caja refrigerada."
+            text.length > FUEL_MAX_LENGTH -> "El combustible admite máximo $FUEL_MAX_LENGTH caracteres (por ejemplo 3/4)."
+            else -> null
+        }
+    }
 
     /**
      * Registros guardados cuando el combo aun decia «-- Selecciona --» traen ese texto (y el id 0) en lugar de un tipo:
@@ -2757,13 +2798,9 @@ object CasetaEntradaRules {
         if (form.pedimento.isNotBlank() && !Regex("^\\d{7}$").matches(form.pedimento.trim())) {
             errors["pedimento"] = "Pedimento debe tener 7 digitos."
         }
-        if (isRefrigerated(form.boxTypeDescription.ifBlank { form.boxType })) {
-            if (form.temperature.isBlank()) {
-                errors["temperature"] = "Captura la temperatura de la caja refrigerada."
-            }
-            if (form.fuel.isBlank()) {
-                errors["fuel"] = "Captura el combustible de la caja refrigerada."
-            }
+        if (isRefrigerated(form.idBoxType.ifBlank { form.boxType }, form.boxTypeDescription)) {
+            temperatureError(form.temperature)?.let { errors["temperature"] = it }
+            fuelError(form.fuel)?.let { errors["fuel"] = it }
         }
         if (form.photoCount > 15) {
             errors["photos"] = "Maximo 15 fotos por registro."

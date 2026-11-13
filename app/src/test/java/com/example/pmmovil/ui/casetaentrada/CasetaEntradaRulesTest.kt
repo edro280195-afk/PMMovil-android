@@ -75,6 +75,65 @@ class CasetaEntradaRulesTest {
     }
 
     @Test
+    fun refrigerated_is_detected_by_catalog_id_and_by_any_spelling_of_the_name() {
+        // El id 58 es el de las refrigeradas en producción aunque el nombre venga distinto (estilo SAT).
+        assertTrue(CasetaEntradaRules.isRefrigerated("58", "SEMIRREMOLQUE TIPO CAJA REFRIGERADA 53''."))
+        assertTrue(CasetaEntradaRules.isRefrigerated("58", ""))
+        assertTrue(CasetaEntradaRules.isRefrigerated("", "SEMIRREMOLQUE TIPO CAJA REFRIGERADA 53''."))
+        assertTrue(CasetaEntradaRules.isRefrigerated("", "CAJA REFRIGERADA 53 PIES"))
+        assertFalse(CasetaEntradaRules.isRefrigerated("56", "CAJA CERRADA 53'"))
+        assertFalse(CasetaEntradaRules.isRefrigerated("", ""))
+    }
+
+    @Test
+    fun validate_asks_for_temperature_when_the_box_is_refrigerated_only_by_its_id() {
+        val errors = CasetaEntradaRules.validate(
+            validForm(boxTypeDescription = "SEMIRREMOLQUE TIPO CAJA REFRIGERADA 53''.").copy(idBoxType = "58")
+        )
+
+        assertTrue(errors.containsKey("temperature"))
+        assertTrue(errors.containsKey("fuel"))
+    }
+
+    @Test
+    fun temperature_must_be_a_reading_not_na_or_text() {
+        listOf("N/A", "NA", "na", "n/a", "SIN DATO", "-", "  ", "").forEach {
+            assertNotNull("«$it» no debe pasar como temperatura", CasetaEntradaRules.temperatureError(it))
+        }
+        listOf("34F", "-18C", "65F", "34", "-5.5", " 34 F ").forEach {
+            assertNull("«$it» sí es una lectura", CasetaEntradaRules.temperatureError(it))
+        }
+    }
+
+    @Test
+    fun temperature_and_fuel_must_fit_the_database_columns() {
+        // caseta.temperatura es varchar(5) y caseta.combustible varchar(10).
+        assertNull(CasetaEntradaRules.temperatureError("-18.5"))
+        assertNotNull(CasetaEntradaRules.temperatureError("-18.5C"))
+        assertNull(CasetaEntradaRules.fuelError("1234567890"))
+        assertNotNull(CasetaEntradaRules.fuelError("12345678901"))
+    }
+
+    @Test
+    fun fuel_accepts_gauge_fractions_and_words_but_not_empty() {
+        listOf("3/4", "7/8", "LLENO", "MEDIO").forEach {
+            assertNull(CasetaEntradaRules.fuelError(it))
+        }
+        assertNotNull(CasetaEntradaRules.fuelError(""))
+        assertNotNull(CasetaEntradaRules.fuelError("   "))
+    }
+
+    @Test
+    fun validate_blocks_a_refrigerated_box_whose_temperature_is_na() {
+        val form = validForm(boxTypeDescription = "CAJA REFRIGERADA 53'", temperature = "N/A", fuel = "3/4")
+
+        val errors = CasetaEntradaRules.validate(form)
+
+        assertEquals(setOf("temperature"), errors.keys)
+        assertTrue(CasetaEntradaRules.validate(form.copy(temperature = "34F")).isEmpty())
+    }
+
+    @Test
     fun validate_rejects_invalid_pedimento_when_present() {
         val errors = CasetaEntradaRules.validate(validForm(pedimento = "123"))
 
