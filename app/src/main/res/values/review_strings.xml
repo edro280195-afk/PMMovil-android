@@ -78,6 +78,8 @@
     <string name="revision_share_chooser">Compartir seguimiento de revisión</string>
     <string name="revision_field_updated">✓ Campo %1$s actualizado</string>
     <string name="revision_scanned">Escaneado: %1$s</string>
+    <string name="revision_close_incomplete_title">Revisión cerrada, entrada sin marcar</string>
+    <string name="revision_close_incomplete_message">La revisión se cerró, pero la entrada no quedó marcada como revisada físicamente: todavía hay facturas por completar o partidas sin revisar.</string>
     <string name="revision_force_closed_title">Revisión cerrada por supervisión</string>
     <string name="revision_force_closed_message">Tu sesión de revisión fue cerrada desde el panel de supervisión.</string>
     <string name="revision_supervisor">Supervisor: %1$s</string>

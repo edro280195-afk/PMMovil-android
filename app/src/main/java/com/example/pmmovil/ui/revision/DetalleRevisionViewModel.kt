@@ -226,6 +226,10 @@ class DetalleRevisionViewModel @Inject constructor(
     private val _cierreForzoso = MutableStateFlow<CierreForzosoNotice?>(null)
     val cierreForzoso: StateFlow<CierreForzosoNotice?> = _cierreForzoso.asStateFlow()
 
+    // «Terminar» cerró la sesión pero la entrada no quedó marcada como revisada físicamente; ver RevisionCierre.
+    private val _cierreIncompleto = MutableStateFlow<UiText?>(null)
+    val cierreIncompleto: StateFlow<UiText?> = _cierreIncompleto.asStateFlow()
+
     private val _timerSeconds = MutableStateFlow(0)
     val timerSeconds: StateFlow<Int> = _timerSeconds.asStateFlow()
 
@@ -551,7 +555,7 @@ class DetalleRevisionViewModel @Inject constructor(
                         cargarFotos()
                         if (canEdit()) {
                             facturas.getOrNull(_selectedFacturaIndex.value)?.let {
-                                repository.registrarEditor(it.Cnofact)
+                                repository.registrarEditor(it.Cnofact, crefAgrupada)
                             }
                         }
                     } catch (e: Exception) {
@@ -1016,8 +1020,8 @@ class DetalleRevisionViewModel @Inject constructor(
         // sólo Lectura puede cambiar de factura sin registrar actividad de
         // edición en el servidor.
         if (canEdit()) {
-            prev?.let { viewModelScope.launch { repository.limpiarEditor(it.Cnofact) } }
-            next?.let { viewModelScope.launch { repository.registrarEditor(it.Cnofact) } }
+            prev?.let { viewModelScope.launch { repository.limpiarEditor(it.Cnofact, crefAgrupada) } }
+            next?.let { viewModelScope.launch { repository.registrarEditor(it.Cnofact, crefAgrupada) } }
         }
     }
 
@@ -1071,7 +1075,7 @@ class DetalleRevisionViewModel @Inject constructor(
             // la hace el API en una sola actualización atómica al guardar
             // "npesolbs" -- por eso el refreshFactura() de abajo basta para
             // traer el kg recalculado, sin un segundo guardado desde aquí.
-            repository.guardarCampoFactura(cnofact, campo, valor)
+            repository.guardarCampoFactura(cnofact, campo, valor, crefAgrupada)
                 .onSuccess {
                     registrarActividadFactura(cnofact, "Campo actualizado: $campo")
                     refreshFactura(cnofact)
@@ -1082,7 +1086,7 @@ class DetalleRevisionViewModel @Inject constructor(
 
     private fun refreshFactura(cnofact: String) {
         viewModelScope.launch {
-            repository.getRevisionFactura(cnofact).onSuccess { updated ->
+            repository.getRevisionFactura(cnofact, crefAgrupada).onSuccess { updated ->
                 _facturas.value = _facturas.value.map { f ->
                     if (f.Cnofact == cnofact) updated else f
                 }
@@ -1140,7 +1144,7 @@ class DetalleRevisionViewModel @Inject constructor(
     private fun checkHazmatValidation(cnofact: String) {
         _isCheckingHazmat.value = true
         viewModelScope.launch {
-            repository.validarHazmat(cnofact).onSuccess { problemas ->
+            repository.validarHazmat(cnofact, crefAgrupada).onSuccess { problemas ->
                 _isCheckingHazmat.value = false
                 if (problemas.isNotEmpty()) {
                     val list = problemas.map { "${it.cnoparte ?: ""}: ${it.problema ?: ""}" }
@@ -1220,15 +1224,15 @@ class DetalleRevisionViewModel @Inject constructor(
         _validationState.value = null
         if (autorizada) {
             viewModelScope.launch {
-                repository.aclararDiscrepancias(cnofact).onSuccess {
+                repository.aclararDiscrepancias(cnofact, crefAgrupada).onSuccess {
                     registrarActividadFactura(cnofact, "Discrepancias aclaradas")
                     val fac = _facturas.value.find { it.Cnofact == cnofact }
                     val usuario = authRepository.getName() ?: "S/U"
                     val notaAclaracion = "${fac?.Discrepancias} AUTORIZO: $usuario"
                     val nuevoObs2 = if (!fac?.Obsrev2.isNullOrBlank()) "${fac.Obsrev2} | $notaAclaracion" else notaAclaracion
                     
-                    repository.guardarCampoFactura(cnofact, "obsrev2", nuevoObs2)
-                    repository.guardarCampoFactura(cnofact, "discrepancias", "")
+                    repository.guardarCampoFactura(cnofact, "obsrev2", nuevoObs2, crefAgrupada)
+                    repository.guardarCampoFactura(cnofact, "discrepancias", "", crefAgrupada)
                     
                     saveStatusFactura(cnofact, 1)
                 }
@@ -1248,7 +1252,7 @@ class DetalleRevisionViewModel @Inject constructor(
             return
         }
         viewModelScope.launch {
-            repository.guardarCampoFactura(cnofact, "status_rev", status)
+            repository.guardarCampoFactura(cnofact, "status_rev", status, crefAgrupada)
                 .onSuccess {
                     registrarActividadFactura(cnofact, if (status == 1) "Factura completada" else "Factura marcada con discrepancia")
                     refreshFactura(cnofact)
@@ -1926,7 +1930,7 @@ class DetalleRevisionViewModel @Inject constructor(
                     val statusFinal = if (es100 && !tieneDiscrepancias) 1 else 2
 
                     repository.finalizarTimer(crefAgrupada, statusFinal, true)
-                        .onSuccess {
+                        .onSuccess { respuesta ->
                             revisionFinalizada = true
                             timerJob?.cancel()
                             _timerActivo.value = false
@@ -1944,8 +1948,19 @@ class DetalleRevisionViewModel @Inject constructor(
                             }
 
                             repository.limpiarEditoresEntrada(crefAgrupada)
-                            _celebrateOnExit.value = true
-                            _navegarAtras.value = true
+
+                            if (RevisionCierre.entradaQuedoMarcada(respuesta)) {
+                                _celebrateOnExit.value = true
+                                _navegarAtras.value = true
+                            } else {
+                                // La sesión se cerró, pero la entrada NO quedó marcada como revisada
+                                // físicamente (faltan facturas por completar o partidas por revisar).
+                                // Celebrar y salir sin decir nada dejaba la entrada sin cerrar y sin
+                                // que nadie lo supiera: se avisa y el revisor sale al confirmar.
+                                _cierreIncompleto.value = RevisionCierre.motivoDelServidor(respuesta)
+                                    ?.let { UiText.Raw(it) }
+                                    ?: resource(R.string.revision_close_incomplete_message)
+                            }
                         }
                         .onFailure { _toast.value = resource(R.string.message_close_failed) }
                 }
@@ -1956,6 +1971,12 @@ class DetalleRevisionViewModel @Inject constructor(
     fun clearToast() { _toast.value = null }
     fun consumeNavBack() { _navegarAtras.value = false }
     fun consumeCierreForzoso() { _cierreForzoso.value = null }
+
+    /** El revisor confirmó que leyó el aviso de cierre incompleto: ahora sí se sale de la pantalla. */
+    fun consumeCierreIncompleto() {
+        _cierreIncompleto.value = null
+        _navegarAtras.value = true
+    }
 
     fun getToken(): String = authRepository.getToken() ?: ""
     fun isHubConnected(): Boolean = hubService.isConnected()
@@ -2031,7 +2052,7 @@ class DetalleRevisionViewModel @Inject constructor(
 
         if (canEdit()) {
             _facturas.value.getOrNull(_selectedFacturaIndex.value)?.let { f ->
-                applicationScope.launch { repository.limpiarEditor(f.Cnofact) }
+                applicationScope.launch { repository.limpiarEditor(f.Cnofact, crefAgrupada) }
             }
             applicationScope.launch { repository.limpiarEditoresEntrada(crefAgrupada) }
         }

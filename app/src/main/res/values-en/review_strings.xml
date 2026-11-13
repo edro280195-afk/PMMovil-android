@@ -75,6 +75,8 @@
     <string name="revision_share_chooser">Share inspection tracking</string>
     <string name="revision_field_updated">✓ %1$s field updated</string>
     <string name="revision_scanned">Scanned: %1$s</string>
+    <string name="revision_close_incomplete_title">Inspection closed, entry not marked</string>
+    <string name="revision_close_incomplete_message">The inspection was closed, but the entry was not marked as physically inspected: there are still invoices to complete or lines left to inspect.</string>
     <string name="revision_force_closed_title">Inspection closed by supervision</string>
     <string name="revision_force_closed_message">Your inspection session was closed from the supervision panel.</string>
     <string name="revision_supervisor">Supervisor: %1$s</string>

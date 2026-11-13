@@ -149,6 +149,7 @@ fun DetalleRevisionScreen(
     val selectedIndex by viewModel.selectedFacturaIndex.collectAsState()
     val navegarAtras  by viewModel.navegarAtras.collectAsState()
     val cierreForzoso by viewModel.cierreForzoso.collectAsState()
+    val cierreIncompleto by viewModel.cierreIncompleto.collectAsState()
 
     // --- Fase 3 State ---
     val paisesList    by viewModel.paises.collectAsState()
@@ -387,6 +388,34 @@ fun DetalleRevisionScreen(
     }
 
     // --- DIALOGS & MODALS ---
+
+    // «Terminar» cerró la sesión pero la entrada NO quedó marcada como revisada físicamente: no se celebra ni se sale
+    // en silencio; el revisor tiene que enterarse de qué falta.
+    cierreIncompleto?.let { motivo ->
+        AlertDialog(
+            onDismissRequest = { /* El revisor debe confirmar que leyó el aviso. */ },
+            containerColor = PmmNavySurface,
+            title = {
+                Text(
+                    stringResource(R.string.revision_close_incomplete_title),
+                    color = PmmTextPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = { Text(motivo.asString(), color = PmmTextSecondary) },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.consumeCierreIncompleto() },
+                    colors = ButtonDefaults.buttonColors(containerColor = PmmBlueDeep)
+                ) {
+                    Text(
+                        stringResource(R.string.common_understood),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        )
+    }
 
     cierreForzoso?.let { cierre ->
         AlertDialog(

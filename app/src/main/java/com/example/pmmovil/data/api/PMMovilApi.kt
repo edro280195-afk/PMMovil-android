@@ -237,7 +237,10 @@ interface PMMovilApi {
     suspend fun getEntradaCompletaRevision(@Path("cref_agrupada") crefAgrupada: String): Response<EntradaCompletaRevisionResponse>
 
     @GET("Revision/factura/{cnofact}")
-    suspend fun getRevisionFactura(@Path("cnofact") cnofact: String): Response<FacturaSingleResponse>
+    suspend fun getRevisionFactura(
+        @Path("cnofact") cnofact: String,
+        @Query("cref") cref: String?
+    ): Response<FacturaSingleResponse>
 
     @PATCH("Revision/factura/campo")
     suspend fun guardarCampoFactura(@Body request: GuardarCampoFacturaRequest): Response<SimpleSuccessResponse>
@@ -318,7 +321,7 @@ interface PMMovilApi {
     suspend fun iniciarTimer(@Path("creferencia") creferencia: String): Response<TimerIniciarResponse>
 
     @POST("Timer/finalizar")
-    suspend fun finalizarTimer(@Body request: TimerFinalizarRequest): Response<SimpleSuccessResponse>
+    suspend fun finalizarTimer(@Body request: TimerFinalizarRequest): Response<TimerFinalizarResponse>
 
     // ── Fotos ─────────────────────────────────────────────────────────────────
     @POST("Foto/subir")
@@ -340,7 +343,10 @@ interface PMMovilApi {
     suspend fun getPaisesFrecuentes(): Response<PaisesFrecuentesResponse>
 
     @GET("Revision/factura/validar-hazmat/{cnofact}")
-    suspend fun validarHazmat(@Path("cnofact") cnofact: String): Response<ValidarHazmatResponse>
+    suspend fun validarHazmat(
+        @Path("cnofact") cnofact: String,
+        @Query("cref") cref: String?
+    ): Response<ValidarHazmatResponse>
 
     // ── PDF ───────────────────────────────────────────────────────────────────
     @GET("FacturaPdf/entrada/{crefAgrupada}")

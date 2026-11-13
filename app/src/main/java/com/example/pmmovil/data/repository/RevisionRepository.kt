@@ -171,17 +171,25 @@ class RevisionRepository @Inject constructor(private val api: PMMovilApi) {
             }
         }
 
-    suspend fun getRevisionFactura(cnofact: String): Result<FacturaRevisionDto> = withContext(Dispatchers.IO) {
+    suspend fun getRevisionFactura(
+        cnofact: String,
+        crefAgrupada: String? = null
+    ): Result<FacturaRevisionDto> = withContext(Dispatchers.IO) {
         runCatching {
-            val r = api.getRevisionFactura(cnofact)
+            val r = api.getRevisionFactura(cnofact, crefAgrupada)
             if (r.isSuccessful && r.body()?.success == true) r.body()!!.data!!
             else throw Exception("HTTP ${r.code()}")
         }
     }
 
-    suspend fun guardarCampoFactura(cnofact: String, campo: String, valor: Any) = withContext(Dispatchers.IO) {
+    suspend fun guardarCampoFactura(
+        cnofact: String,
+        campo: String,
+        valor: Any,
+        crefAgrupada: String? = null
+    ) = withContext(Dispatchers.IO) {
         runCatching {
-            val r = api.guardarCampoFactura(GuardarCampoFacturaRequest(cnofact, campo, valor))
+            val r = api.guardarCampoFactura(GuardarCampoFacturaRequest(cnofact, campo, valor, crefAgrupada))
             if (r.isSuccessful && r.body()?.success == true) Unit
             else throw Exception(errorMessage(r, "No se pudo guardar el campo '$campo'."))
         }
@@ -211,33 +219,33 @@ class RevisionRepository @Inject constructor(private val api: PMMovilApi) {
         }
     }
 
-    suspend fun limpiarRevisor(cnofact: String) = withContext(Dispatchers.IO) {
+    suspend fun limpiarRevisor(cnofact: String, crefAgrupada: String? = null) = withContext(Dispatchers.IO) {
         runCatching {
-            val r = api.limpiarRevisor(CnofactRequest(cnofact))
+            val r = api.limpiarRevisor(CnofactRequest(cnofact, crefAgrupada))
             if (r.isSuccessful && r.body()?.success == true) Unit
             else throw Exception(errorMessage(r, "No se pudo limpiar el revisor."))
         }
     }
 
-    suspend fun aclararDiscrepancias(cnofact: String) = withContext(Dispatchers.IO) {
+    suspend fun aclararDiscrepancias(cnofact: String, crefAgrupada: String? = null) = withContext(Dispatchers.IO) {
         runCatching {
-            val r = api.aclararDiscrepancias(CnofactRequest(cnofact))
+            val r = api.aclararDiscrepancias(CnofactRequest(cnofact, crefAgrupada))
             if (r.isSuccessful && r.body()?.success == true) Unit
             else throw Exception(errorMessage(r, "No se pudieron aclarar las discrepancias."))
         }
     }
 
-    suspend fun registrarEditor(cnofact: String) = withContext(Dispatchers.IO) {
+    suspend fun registrarEditor(cnofact: String, crefAgrupada: String? = null) = withContext(Dispatchers.IO) {
         runCatching {
-            val r = api.registrarEditor(CnofactRequest(cnofact))
+            val r = api.registrarEditor(CnofactRequest(cnofact, crefAgrupada))
             if (r.isSuccessful && r.body()?.success == true) Unit
             else throw Exception(errorMessage(r, "No se pudo registrar el editor."))
         }
     }
 
-    suspend fun limpiarEditor(cnofact: String) = withContext(Dispatchers.IO) {
+    suspend fun limpiarEditor(cnofact: String, crefAgrupada: String? = null) = withContext(Dispatchers.IO) {
         runCatching {
-            val r = api.limpiarEditor(CnofactRequest(cnofact))
+            val r = api.limpiarEditor(CnofactRequest(cnofact, crefAgrupada))
             if (r.isSuccessful && r.body()?.success == true) Unit
             else throw Exception(errorMessage(r, "No se pudo limpiar el editor."))
         }
@@ -333,9 +341,9 @@ class RevisionRepository @Inject constructor(private val api: PMMovilApi) {
         }
     }
 
-    suspend fun validarHazmat(cnofact: String) = withContext(Dispatchers.IO) {
+    suspend fun validarHazmat(cnofact: String, crefAgrupada: String? = null) = withContext(Dispatchers.IO) {
         runCatching {
-            val r = api.validarHazmat(cnofact)
+            val r = api.validarHazmat(cnofact, crefAgrupada)
             if (r.isSuccessful && r.body()?.success == true) r.body()!!.problemas ?: emptyList()
             else throw Exception("Error al validar HazMat")
         }
@@ -405,10 +413,20 @@ class RevisionRepository @Inject constructor(private val api: PMMovilApi) {
         }
     }
 
-    suspend fun finalizarTimer(creferencia: String, statusFinal: Int, esFinal: Boolean) = withContext(Dispatchers.IO) {
+    /**
+     * «Terminar» (`esFinal = true`) o pausar. Devuelve la respuesta completa: la sesión se cierra siempre, pero la
+     * entrada solo queda marcada como revisada físicamente si `revisionCompleta` no es falso. Quien llama debe
+     * mirarlo; tratar cualquier `success` como «quedó revisada» fue lo que escondía los cierres a medias.
+     */
+    suspend fun finalizarTimer(
+        creferencia: String,
+        statusFinal: Int,
+        esFinal: Boolean
+    ): Result<TimerFinalizarResponse> = withContext(Dispatchers.IO) {
         runCatching {
             val r = api.finalizarTimer(TimerFinalizarRequest(creferencia, statusFinal, esFinal))
-            if (r.isSuccessful && r.body()?.success == true) Unit
+            val cuerpo = r.body()
+            if (r.isSuccessful && cuerpo?.success == true) cuerpo
             else throw Exception(errorMessage(r, "No se pudo finalizar el temporizador de revisión."))
         }
     }

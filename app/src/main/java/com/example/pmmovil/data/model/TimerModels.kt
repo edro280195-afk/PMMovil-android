@@ -23,6 +23,20 @@ data class TimerFinalizarRequest(
     val esFinal: Boolean
 )
 
+/**
+ * Respuesta de «Terminar». La sesión se cierra siempre, pero la entrada solo queda marcada como revisada físicamente
+ * cuando está completa; [revisionCompleta] dice cuál de las dos pasó. Los campos son opcionales para convivir con un
+ * API anterior que solo respondía `success` (en ese caso se asume que quedó completa, como antes).
+ */
+data class TimerFinalizarResponse(
+    val success: Boolean,
+    val message: String? = null,
+    val estatusFinal: Int? = null,
+    val revisionCompleta: Boolean? = null,
+    val facturasIncompletas: Int? = null,
+    val facturasConPartidasPendientes: Int? = null
+)
+
 data class ValidarCierreResponse(
     val success: Boolean,
     val facturasSinRevisor: List<String>?
@@ -31,7 +45,10 @@ data class ValidarCierreResponse(
 data class GuardarCampoFacturaRequest(
     val cnofact: String,
     val campo: String,
-    val valor: Any
+    val valor: Any,
+    // El número de factura se repite entre entradas: con la entrada, el API sabe de cuál factura se trata y no
+    // modifica las que comparten el número en otras entradas.
+    val crefAgrupada: String? = null
 )
 
 data class GuardarCampoPartidaRequest(
@@ -46,7 +63,7 @@ data class GuardarCantidadComercialRequest(
     val unidad: String
 )
 
-data class CnofactRequest(val cnofact: String)
+data class CnofactRequest(val cnofact: String, val crefAgrupada: String? = null)
 
 data class AgregarPartidaRequest(val cnofact: String, val cref: String)
 
