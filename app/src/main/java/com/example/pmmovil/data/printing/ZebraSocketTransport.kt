@@ -42,6 +42,10 @@ internal object ZebraSocketTransport {
 
     private const val ETX: Byte = 0x03
     private const val MAX_STATUS_BYTES = 1024
+    private const val MAX_REPLY_BYTES = 4_096
+
+    /** Silencio que se toma como «terminó de contestar» cuando la Zebra no marca el final de la respuesta. */
+    private const val SGD_QUIET_MILLIS = 400
 
     /**
      * Envía [bytes] y cierra la conexión. [onProgress] recibe el total de bytes aceptados por la impresora hasta
@@ -110,6 +114,106 @@ internal object ZebraSocketTransport {
             if (received.size() == 0) throw IOException("La impresora cerró la conexión sin responder al estado.")
             return received.toString(Charsets.US_ASCII.name())
         }
+    }
+
+    /**
+     * Pide el valor de una variable SGD (`! U1 getvar "clave"`) y devuelve la respuesta sin saltos de línea.
+     *
+     * Una ZT410 con firmware Link-OS contesta `"300"` SIN CR/LF y deja la conexión abierta. Esperar un `\n`
+     * (como se hacía antes) agotaba el plazo de lectura aunque la Zebra ya hubiera contestado, y la app decía
+     * «aceptó la conexión pero no respondió» mientras que una PC, que nunca lee esa respuesta, imprimía bien.
+     * La respuesta se da por completa cuando llega un salto de línea, cuando el valor entre comillas ya se
+     * cerró, o cuando la Zebra deja de mandar bytes por [SGD_QUIET_MILLIS].
+     *
+     * @throws ZebraSilentPrinterException si no llega ni un byte antes de [readTimeoutMillis].
+     */
+    fun querySgd(
+        host: String,
+        port: Int,
+        key: String,
+        connectTimeoutMillis: Int,
+        readTimeoutMillis: Int
+    ): String {
+        val reply = exchange(
+            host = host,
+            port = port,
+            command = "! U1 getvar \"$key\"\r\n",
+            connectTimeoutMillis = connectTimeoutMillis,
+            readTimeoutMillis = readTimeoutMillis,
+            isComplete = { bytes -> isSgdReplyComplete(bytes) }
+        )
+        val text = reply.toString(Charsets.US_ASCII).filter { it != '\r' && it != '\n' }.trim()
+        if (text.isEmpty()) throw IOException("La impresora no devolvio respuesta al comando SGD.")
+        return text
+    }
+
+    /**
+     * Pide `~HI` (identificación: modelo-dpi, firmware, puntos por mm y memoria) y devuelve el texto recibido.
+     * Es el respaldo para Zebras sin SGD por el puerto 9100 (no Link-OS), que no contestan `getvar`.
+     */
+    fun queryHostIdentification(
+        host: String,
+        port: Int,
+        connectTimeoutMillis: Int,
+        readTimeoutMillis: Int
+    ): String = exchange(
+        host = host,
+        port = port,
+        command = "~HI",
+        connectTimeoutMillis = connectTimeoutMillis,
+        readTimeoutMillis = readTimeoutMillis,
+        isComplete = { bytes -> bytes.contains(ETX) }
+    ).toString(Charsets.US_ASCII)
+
+    /**
+     * Envía [command] y lee la respuesta. El primer byte tiene hasta [readTimeoutMillis]; después, la respuesta
+     * termina cuando [isComplete] lo dice o cuando la Zebra calla [SGD_QUIET_MILLIS] (algunas no marcan el final).
+     */
+    private fun exchange(
+        host: String,
+        port: Int,
+        command: String,
+        connectTimeoutMillis: Int,
+        readTimeoutMillis: Int,
+        isComplete: (ByteArray) -> Boolean
+    ): ByteArray {
+        Socket().use { socket ->
+            socket.tcpNoDelay = true
+            socket.soTimeout = readTimeoutMillis
+            socket.connect(InetSocketAddress(host, port), connectTimeoutMillis)
+            socket.getOutputStream().apply {
+                write(command.toByteArray(Charsets.US_ASCII))
+                flush()
+            }
+
+            val received = ByteArrayOutputStream()
+            val chunk = ByteArray(256)
+            val input = socket.getInputStream()
+            while (received.size() < MAX_REPLY_BYTES) {
+                val read = try {
+                    input.read(chunk)
+                } catch (timeout: SocketTimeoutException) {
+                    if (received.size() == 0) {
+                        throw ZebraSilentPrinterException("La impresora aceptó la conexión pero no contestó.")
+                    }
+                    break // ya contestó y dejó de hablar: eso es el final de la respuesta
+                }
+                if (read < 0) break
+                received.write(chunk, 0, read)
+                if (isComplete(received.toByteArray())) break
+                socket.soTimeout = SGD_QUIET_MILLIS
+            }
+            if (received.size() == 0) throw IOException("La impresora cerró la conexión sin responder.")
+            return received.toByteArray()
+        }
+    }
+
+    /** True si [reply] ya es una respuesta SGD entera: termina en salto de línea o es un valor entre comillas cerrado. */
+    internal fun isSgdReplyComplete(reply: ByteArray): Boolean {
+        if (reply.isEmpty()) return false
+        if (reply.contains('\n'.code.toByte())) return true
+        val text = reply.toString(Charsets.US_ASCII).trim()
+        return text.length >= 2 && text.first() == '"' && text.last() == '"'
     }
 
     private fun finishConnect(channel: SocketChannel, timeoutMillis: Int) {

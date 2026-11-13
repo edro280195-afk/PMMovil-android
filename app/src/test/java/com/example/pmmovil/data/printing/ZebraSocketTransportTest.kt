@@ -136,6 +136,112 @@ class ZebraSocketTransportTest {
         assertTrue("La pausa debe leerse", status!!.paused)
     }
 
+    /** La Zebra de la planta (ZT410, firmware V75.20.14Z) contesta `"300"` sin CR/LF y deja la conexión abierta. */
+    @Test
+    fun `una respuesta SGD sin salto de linea se lee al instante y no agota el plazo`() {
+        val commandSeen = java.util.concurrent.atomic.AtomicReference<String>()
+        val port = fakePrinter { socket ->
+            val command = ByteArray(128)
+            val read = socket.getInputStream().read(command)
+            commandSeen.set(String(command, 0, read, Charsets.US_ASCII))
+            socket.getOutputStream().apply {
+                write("\"300\"".toByteArray(Charsets.US_ASCII)) // sin \r\n, tal cual la ZT410
+                flush()
+            }
+            release.await(10, TimeUnit.SECONDS) // y no cierra la conexión
+        }
+
+        val startedAt = System.nanoTime()
+        val value = ZebraSocketTransport.querySgd("127.0.0.1", port, "head.resolution.in_dpi", 2_000, 5_000)
+        val elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000
+
+        assertEquals("\"300\"", value)
+        assertEquals("! U1 getvar \"head.resolution.in_dpi\"\r\n", commandSeen.get())
+        assertTrue("No debe esperar el plazo de lectura ($elapsedMillis ms)", elapsedMillis < 2_000)
+    }
+
+    @Test
+    fun `una respuesta SGD con CR LF se lee igual`() {
+        val port = fakePrinter { socket ->
+            socket.getInputStream().read(ByteArray(128))
+            socket.getOutputStream().apply {
+                write("\"203\"\r\n".toByteArray(Charsets.US_ASCII))
+                flush()
+            }
+            release.await(10, TimeUnit.SECONDS)
+        }
+
+        assertEquals("\"203\"", ZebraSocketTransport.querySgd("127.0.0.1", port, "head.resolution.in_dpi", 2_000, 5_000))
+    }
+
+    @Test
+    fun `una respuesta SGD sin comillas ni salto de linea termina cuando la Zebra deja de hablar`() {
+        val port = fakePrinter { socket ->
+            socket.getInputStream().read(ByteArray(128))
+            socket.getOutputStream().apply {
+                write("ZT410".toByteArray(Charsets.US_ASCII))
+                flush()
+            }
+            release.await(10, TimeUnit.SECONDS)
+        }
+
+        val startedAt = System.nanoTime()
+        val value = ZebraSocketTransport.querySgd("127.0.0.1", port, "device.product_name", 2_000, 5_000)
+        val elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000
+
+        assertEquals("ZT410", value)
+        assertTrue("Termina por silencio, no por el plazo largo ($elapsedMillis ms)", elapsedMillis < 2_000)
+    }
+
+    @Test
+    fun `una respuesta SGD partida en dos paquetes se junta`() {
+        val port = fakePrinter { socket ->
+            socket.getInputStream().read(ByteArray(128))
+            socket.getOutputStream().apply {
+                write("\"Z".toByteArray(Charsets.US_ASCII))
+                flush()
+                Thread.sleep(100)
+                write("T410\"".toByteArray(Charsets.US_ASCII))
+                flush()
+            }
+            release.await(10, TimeUnit.SECONDS)
+        }
+
+        assertEquals("\"ZT410\"", ZebraSocketTransport.querySgd("127.0.0.1", port, "device.product_name", 2_000, 5_000))
+    }
+
+    @Test
+    fun `una Zebra que no contesta el SGD agota el plazo como impresora callada`() {
+        val port = fakePrinter { _ -> release.await(10, TimeUnit.SECONDS) }
+
+        try {
+            ZebraSocketTransport.querySgd("127.0.0.1", port, "head.resolution.in_dpi", 2_000, 500)
+            fail("Sin respuesta debia lanzar SocketTimeoutException")
+        } catch (expected: SocketTimeoutException) {
+            assertTrue(expected is ZebraSilentPrinterException)
+        }
+    }
+
+    @Test
+    fun `la identificacion ~HI devuelve el modelo y los dpi`() {
+        val port = fakePrinter { socket ->
+            val command = ByteArray(8)
+            val read = socket.getInputStream().read(command)
+            assertEquals("~HI", String(command, 0, read, Charsets.US_ASCII))
+            socket.getOutputStream().apply {
+                write("\u0002ZT410-300dpi,V75.20.14Z,12,4096KB\u0003\r\n".toByteArray(Charsets.US_ASCII))
+                flush()
+            }
+            release.await(10, TimeUnit.SECONDS)
+        }
+
+        val raw = ZebraSocketTransport.queryHostIdentification("127.0.0.1", port, 2_000, 5_000)
+        val identification = ZebraHostIdentificationParser.parse(raw)
+
+        assertNotNull(identification)
+        assertEquals(300, identification!!.printheadDpi)
+    }
+
     @Test
     fun `una impresora que acepta la conexion pero no contesta el estado agota el plazo`() {
         // Es exactamente lo que "Probar conexion" no detectaba: el puerto abre y nadie responde.

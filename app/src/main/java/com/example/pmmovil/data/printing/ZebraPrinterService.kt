@@ -2,7 +2,6 @@ package com.example.pmmovil.data.printing
 
 import android.os.SystemClock
 import android.util.Log
-import java.io.BufferedInputStream
 import java.io.IOException
 import java.io.OutputStream
 import java.net.ConnectException
@@ -104,13 +103,7 @@ class ZebraPrinterService @Inject constructor(
                 }
 
                 val reading: Int? = try {
-                    requestSgdValue(
-                        host = host,
-                        port = config.port,
-                        key = SGD_PRINTHEAD_DPI,
-                        connectTimeoutMillis = config.connectTimeoutMillis,
-                        readTimeoutMillis = config.writeTimeoutMillis
-                    ).toZebraInt()
+                    readPrintheadDpiFromPrinter(config)
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Exception) {
@@ -710,20 +703,51 @@ class ZebraPrinterService @Inject constructor(
         }
     }
 
+    /** Lee una variable SGD. La respuesta de una Zebra no siempre termina en salto de línea: ver [ZebraSocketTransport.querySgd]. */
     private fun requestSgdValue(
         host: String,
         port: Int,
         key: String,
         connectTimeoutMillis: Int,
         readTimeoutMillis: Int
-    ): String {
-        return Socket().use { socket ->
-            socket.tcpNoDelay = true
-            socket.soTimeout = readTimeoutMillis
-            socket.connect(InetSocketAddress(host, port), connectTimeoutMillis)
-            writeAsciiCommand(socket.getOutputStream(), "! U1 getvar \"$key\"")
-            readAsciiLine(BufferedInputStream(socket.getInputStream()))
+    ): String = ZebraSocketTransport.querySgd(
+        host = host,
+        port = port,
+        key = key,
+        connectTimeoutMillis = connectTimeoutMillis,
+        readTimeoutMillis = readTimeoutMillis
+    )
+
+    /**
+     * dpi de la cabeza. Primero la variable SGD; si la Zebra no la contesta o no la conoce (una no Link-OS), se
+     * le pregunta su identificación con `~HI`. Devuelve null si contestó pero no dijo los dpi.
+     */
+    private fun readPrintheadDpiFromPrinter(config: ZebraPrinterConfig): Int? {
+        val host = config.host.trim()
+        val fromSgd: Int? = try {
+            requestSgdValue(
+                host = host,
+                port = config.port,
+                key = SGD_PRINTHEAD_DPI,
+                connectTimeoutMillis = config.connectTimeoutMillis,
+                readTimeoutMillis = config.writeTimeoutMillis
+            ).toZebraInt()
+        } catch (error: Exception) {
+            Log.w(TAG, "La Zebra no contestó la variable de dpi por SGD host=$host port=${config.port}; se prueba ~HI", error)
+            null
         }
+        if (fromSgd != null) return fromSgd
+
+        val identification = ZebraHostIdentificationParser.parse(
+            ZebraSocketTransport.queryHostIdentification(
+                host = host,
+                port = config.port,
+                connectTimeoutMillis = config.connectTimeoutMillis,
+                readTimeoutMillis = config.writeTimeoutMillis
+            )
+        )
+        Log.i(TAG, "~HI host=$host modelo=${identification?.model} firmware=${identification?.firmware} dpi=${identification?.printheadDpi}")
+        return identification?.printheadDpi
     }
 
     private fun sendSgdSetCommand(
@@ -746,20 +770,6 @@ class ZebraPrinterService @Inject constructor(
         output.write(command.toByteArray(Charsets.US_ASCII))
         output.write(CRLF)
         output.flush()
-    }
-
-    private fun readAsciiLine(input: BufferedInputStream): String {
-        val bytes = ArrayList<Byte>(128)
-        while (bytes.size < MAX_SGD_RESPONSE_BYTES) {
-            val value = input.read()
-            if (value == -1) break
-            if (value == '\n'.code) break
-            if (value != '\r'.code) bytes += value.toByte()
-        }
-        if (bytes.isEmpty()) {
-            throw IOException("La impresora no devolvio respuesta al comando SGD.")
-        }
-        return bytes.toByteArray().toString(Charsets.US_ASCII)
     }
 
     private fun String?.toCleanSgdValue(): String? {
@@ -793,7 +803,6 @@ class ZebraPrinterService @Inject constructor(
 
     private companion object {
         const val TAG = "ZebraPrinterService"
-        const val MAX_SGD_RESPONSE_BYTES = 4_096
 
         /** La consulta de estado es corta: si la Zebra no contesta en 3 s, ya es una señal. */
         const val STATUS_READ_TIMEOUT_MILLIS = 3_000
