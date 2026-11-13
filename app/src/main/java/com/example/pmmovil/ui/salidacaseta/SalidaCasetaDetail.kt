@@ -71,6 +71,8 @@ import com.example.pmmovil.data.model.SalidaCarril
 import com.example.pmmovil.data.model.SalidaPatioItem
 import com.example.pmmovil.di.NetworkModule
 import com.example.pmmovil.ui.components.AnimatedCounter
+import com.example.pmmovil.ui.components.EvidenceGalleryDialog
+import com.example.pmmovil.ui.components.evidenceGalleryStartIndex
 import com.example.pmmovil.ui.components.pmmPressable
 import com.example.pmmovil.ui.components.pmmTap
 import com.example.pmmovil.ui.theme.Motion
@@ -596,6 +598,10 @@ private fun FotosDeSalida(
     onAbrirCamara: () -> Unit,
     onQuitar: (String) -> Unit
 ) {
+    // Ruta de la foto abierta en el visor grande (null = cerrado). Es la misma pantalla que usa Entrada Caseta.
+    var abierta by remember { mutableStateOf<String?>(null) }
+    val galeria = remember(rutas) { SalidaFotosGaleria.deSalida(rutas) }
+
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         rutas.forEach { ruta ->
             Box(
@@ -603,8 +609,9 @@ private fun FotosDeSalida(
                     .size(78.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(PmmNavyVariant)
+                    .pmmTap { abierta = ruta }
             ) {
-                AsyncImage(model = File(ruta), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                AsyncImage(model = File(ruta), contentDescription = "Ver foto en grande", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                 if (puedeBorrar) {
                     Box(
                         modifier = Modifier
@@ -642,12 +649,31 @@ private fun FotosDeSalida(
     } else if (rutas.isEmpty()) {
         Text("Aún no hay fotos. La evidencia de la unidad y los sellos se guarda con la salida.", color = PmmTextMuted, fontSize = 11.sp)
     }
+    if (rutas.isNotEmpty()) {
+        Text("Toca una foto para verla en grande.", color = PmmTextMuted, fontSize = 11.sp)
+    }
+
+    abierta?.let { ruta ->
+        EvidenceGalleryDialog(
+            items = galeria,
+            startIndex = evidenceGalleryStartIndex(galeria, ruta),
+            onDismiss = { abierta = null },
+            // Sin permiso de borrar el visor no ofrece el botón.
+            onDelete = if (puedeBorrar) ({ foto -> onQuitar(foto.id) }) else null,
+            deleteMessage = "Esta evidencia se quitará de la salida."
+        )
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FotosDeLlegada(casetaId: String, indices: List<Int>) {
     val base = NetworkModule.BASE_URL
+    val urlDe = { indice: Int -> "${base}Foto/caseta/ver?casetaId=${Uri.encode(casetaId)}&indice=$indice" }
+    // Índice (en el servidor) de la foto abierta en el visor grande; null = cerrado.
+    var abierta by remember { mutableStateOf<Int?>(null) }
+    val galeria = remember(casetaId, indices) { SalidaFotosGaleria.deLlegada(indices, urlDe) }
+
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         indices.forEach { indice ->
             Box(
@@ -655,9 +681,10 @@ private fun FotosDeLlegada(casetaId: String, indices: List<Int>) {
                     .size(78.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(PmmNavyVariant)
+                    .pmmTap { abierta = indice }
             ) {
                 AsyncImage(
-                    model = "${base}Foto/caseta/ver?casetaId=${Uri.encode(casetaId)}&indice=$indice",
+                    model = urlDe(indice),
                     contentDescription = "Foto de llegada $indice",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
@@ -665,7 +692,16 @@ private fun FotosDeLlegada(casetaId: String, indices: List<Int>) {
             }
         }
     }
-    Text("Ayudan a reconocer la caja en el patio.", color = PmmTextMuted, fontSize = 11.sp)
+    Text("Ayudan a reconocer la caja en el patio. Toca una para verla en grande.", color = PmmTextMuted, fontSize = 11.sp)
+
+    abierta?.let { indice ->
+        EvidenceGalleryDialog(
+            items = galeria,
+            startIndex = evidenceGalleryStartIndex(galeria, "llegada-$indice"),
+            onDismiss = { abierta = null }
+            // Sin onDelete: estas fotos viven en el servidor y se tomaron en la Entrada.
+        )
+    }
 }
 
 // ── Observaciones ────────────────────────────────────────────────────────────
