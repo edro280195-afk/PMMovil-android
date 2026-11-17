@@ -206,10 +206,15 @@ class StyledQrRenderer {
                 px(eyeCol) + 6f * moduleSize,
                 px(eyeRow) + 6f * moduleSize
             )
+            // El contorno interior va en sentido contrario al exterior: así el hueco del anillo se respeta con
+            // cualquier regla de relleno. Con los dos en el mismo sentido, el motor gráfico del Honeywell CT60
+            // (Android 9, build 88.00.13) pintaba el marco como un cuadro macizo aunque el path fuera EVEN_ODD,
+            // el QR salía con los tres ojos rellenos, la verificación de lectura fallaba en los cuatro niveles y
+            // Entrada Bodega no imprimía nada en ese equipo.
             val framePath = Path().apply {
                 fillType = Path.FillType.EVEN_ODD
-                appendEyeShape(this, frameOuter, style.eyeFrameShape)
-                appendEyeShape(this, frameInner, style.eyeFrameShape)
+                appendEyeShape(this, frameOuter, style.eyeFrameShape, Path.Direction.CW)
+                appendEyeShape(this, frameInner, style.eyeFrameShape, Path.Direction.CCW)
             }
             canvas.drawPath(framePath, ink)
 
@@ -219,7 +224,7 @@ class StyledQrRenderer {
                 px(eyeCol) + 5f * moduleSize,
                 px(eyeRow) + 5f * moduleSize
             )
-            val ballPath = Path().apply { appendEyeShape(this, ball, style.eyeBallShape) }
+            val ballPath = Path().apply { appendEyeShape(this, ball, style.eyeBallShape, Path.Direction.CW) }
             canvas.drawPath(ballPath, ink)
         }
 
@@ -339,20 +344,20 @@ class StyledQrRenderer {
     private fun cornerRadius(radius: Float, neighborA: Boolean, neighborB: Boolean): Float =
         if (!neighborA && !neighborB) radius else 0f
 
-    private fun appendEyeShape(path: Path, rect: RectF, shape: QrEyeShape) {
+    private fun appendEyeShape(path: Path, rect: RectF, shape: QrEyeShape, direction: Path.Direction) {
         val size = min(rect.width(), rect.height())
         when (shape) {
-            QrEyeShape.SQUARE -> path.addRect(rect, Path.Direction.CW)
+            QrEyeShape.SQUARE -> path.addRect(rect, direction)
             QrEyeShape.ROUNDED -> {
                 val radius = size * EYE_ROUNDED_RATIO
-                path.addRoundRect(rect, radius, radius, Path.Direction.CW)
+                path.addRoundRect(rect, radius, radius, direction)
             }
-            QrEyeShape.CIRCLE -> path.addOval(rect, Path.Direction.CW)
+            QrEyeShape.CIRCLE -> path.addOval(rect, direction)
             QrEyeShape.LEAF -> {
                 // Dos esquinas opuestas muy redondeadas y las otras dos rectas: forma de hoja.
                 val radius = size * EYE_LEAF_RATIO
                 val radii = floatArrayOf(radius, radius, 0f, 0f, radius, radius, 0f, 0f)
-                path.addRoundRect(rect, radii, Path.Direction.CW)
+                path.addRoundRect(rect, radii, direction)
             }
         }
     }
