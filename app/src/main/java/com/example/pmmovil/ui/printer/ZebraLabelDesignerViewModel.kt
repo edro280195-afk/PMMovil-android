@@ -451,16 +451,22 @@ class ZebraLabelDesignerViewModel @Inject constructor(
                 guia = "MEX-GUIA-EXPRESS-998877",
                 ubicaciones = "B01-A2, B01-A3, B01-A4",
                 parcial = "100/100",
-                recibio = "FRANCISCO JAVIE RODRIGUEZ MARTINEZ"
+                recibio = "FRANCISCO JAVIE RODRIGUEZ MARTINEZ",
+                cantidad = "99999.99",
+                peso = "123456.78"
             )
+            // La carpeta lleva quién recibió y la cantidad; el peso solo si el manejo es PAQ/M (aquí, manejo normal).
             SampleDataMode.FOLDER -> ZebraZplBuilder.buildTestLabel().copy(
                 tipoEtiqueta = "CARPETA",
-                parcial = ""
+                parcial = "",
+                peso = ""
             )
-            // Una etiqueta de bulto real no lleva "quién recibió" (solo la de la carpeta): así se ve como sale impresa.
+            // Una etiqueta de bulto de manejo normal no lleva quién recibió, cantidad ni peso: así sale impresa.
             SampleDataMode.SINGLE_BOX -> ZebraZplBuilder.buildTestLabel().copy(
                 parcial = "1/1",
-                recibio = ""
+                recibio = "",
+                cantidad = "",
+                peso = ""
             )
         }
         _uiState.update { it.copy(sampleDataMode = mode, previewLabel = label) }

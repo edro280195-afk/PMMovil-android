@@ -69,6 +69,42 @@ class ZebraLabelLayoutPreferencesTest {
     }
 
     @Test
+    fun `layout guardado antes de Cantidad y Peso los estrena visibles en la fila de abajo sin pisar a Recibio`() {
+        val legacyJson = """{ "schemaVersion": 4, "logo": { "x": 72, "y": 48, "width": 460, "height": 188 } }"""
+
+        val layout = deserializeZebraLabelLayout(legacyJson, ZebraLabelType.ENTRADA_BODEGA)
+
+        assertTrue(layout.quantityLabel.visible && layout.quantityValue.visible)
+        assertTrue(layout.weightLabel.visible && layout.weightValue.visible)
+        // Misma fila, de izquierda a derecha, dentro del hueco libre (antes de la columna de UBICA: en x = 940).
+        assertEquals(layout.quantityLabel.y, layout.weightValue.y)
+        assertTrue(layout.quantityLabel.x + layout.quantityLabel.width <= layout.quantityValue.x)
+        assertTrue(layout.quantityValue.x + layout.quantityValue.width <= layout.weightLabel.x)
+        assertTrue(layout.weightLabel.x + layout.weightLabel.width <= layout.weightValue.x)
+        assertTrue(layout.weightValue.x + layout.weightValue.width <= layout.locationLabel.x)
+        // Debajo de Recibio, sin encimarse con él.
+        assertTrue(layout.receivedValue.y + layout.receivedValue.height <= layout.quantityValue.y)
+    }
+
+    @Test
+    fun `la etiqueta de caseta no muestra Cantidad ni Peso`() {
+        val caseta = ZebraLabelType.CASETA.defaultLayout()
+        assertFalse(caseta.quantityLabel.visible || caseta.quantityValue.visible)
+        assertFalse(caseta.weightLabel.visible || caseta.weightValue.visible)
+
+        val migrada = deserializeZebraLabelLayout("""{ "schemaVersion": 4 }""", ZebraLabelType.CASETA)
+        assertFalse(migrada.quantityValue.visible || migrada.weightValue.visible)
+    }
+
+    @Test
+    fun `al escalar a 203 dpi Cantidad y Peso se escalan con el resto`() {
+        val escalada = ZebraLabelLayout.reference().scaledForPrintheadDpi(203)
+
+        assertEquals(186, escalada.quantityValue.x)
+        assertEquals(744, escalada.weightLabel.y)
+    }
+
+    @Test
     fun `layout vigente conserva una visibilidad falsa y los estilos elegidos`() {
         val currentJson = """
             {

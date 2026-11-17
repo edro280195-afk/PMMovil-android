@@ -49,21 +49,34 @@ object ZebraZplBuilder {
             qrValue = "PMMOVIL-ZPL-TEST-${System.currentTimeMillis()}",
             parcial = "1/1",
             tipoEtiqueta = "PRUEBA",
-            recibio = "FRANCISCO RODRIGUEZ"
+            recibio = "FRANCISCO RODRIGUEZ",
+            cantidad = "6",
+            peso = "1250.5"
         )
     }
 
+    /** Tipo de manejo "paquete múltiple" (revdet/traf `cidmanejo`): su etiqueta lleva cantidad y peso. */
+    const val MANEJO_PAQUETE_MULTIPLE: String = "PAQ/M"
+
     /**
-     * [receiverName] es el NOMBRE de quien recibió, y se imprime SOLO en la etiqueta de la CARPETA (las de cada
-     * bulto no lo llevan). Por omisión se toma de la captura, pero quien arma la etiqueta debe pasar uno ya
-     * depurado: la captura cae a la clave de usuario cuando la sesión no trae nombre, y la etiqueta nunca debe
-     * llevar la clave.
+     * Reglas de qué campos lleva cada etiqueta, tomadas del reporte legacy (`etiqueta.frx`: condiciones "imprimir
+     * cuando" de cada campo):
+     * - **CANT.** (cantidad total) -> manejo PAQ/M **o** etiqueta de CARPETA.
+     * - **PESO** (libras) -> solo manejo PAQ/M.
+     * - **RECIBIO** (nombre) -> solo etiqueta de CARPETA.
+     *
+     * [receiverName] es el NOMBRE de quien recibió. Por omisión se toma de la captura, pero quien arma la etiqueta
+     * debe pasar uno ya depurado: la captura cae a la clave de usuario cuando la sesión no trae nombre, y la
+     * etiqueta nunca debe llevar la clave.
      */
     fun fromEntradaForm(
         form: EntradaFormSnapshot,
         receiverName: String = form.recibio
     ): List<ZebraLabelData> {
         val receiver = receiverName.trim().uppercase(Locale.forLanguageTag("es-MX"))
+        val isPackageMultiple = form.manejo.trim().equals(MANEJO_PAQUETE_MULTIPLE, ignoreCase = true)
+        val totalQuantity = formatLabelNumber(form.detalles.sumOf { it.cantidad })
+        val totalWeightLbs = formatLabelNumber(form.pesoLbs)
         val reference = form.referenceRaw()
         val displayReference = form.labelReferenceDisplay()
         val date = form.fecha.toArrivalDate()
@@ -88,7 +101,9 @@ object ZebraZplBuilder {
                     ubicaciones = locations,
                     qrValue = reference,
                     tipoEtiqueta = "CARPETA",
-                    recibio = receiver
+                    recibio = receiver,
+                    cantidad = totalQuantity,
+                    peso = if (isPackageMultiple) totalWeightLbs else ""
                 )
             )
             for (index in 1..totalPackages) {
@@ -101,8 +116,10 @@ object ZebraZplBuilder {
                         guia = form.guia,
                         ubicaciones = locations,
                         qrValue = "$reference $index-$totalPackages",
-                        parcial = "$index/$totalPackages"
+                        parcial = "$index/$totalPackages",
                         // Sin recibio a propósito: quién recibió va SOLO en la etiqueta de la carpeta.
+                        cantidad = if (isPackageMultiple) totalQuantity else "",
+                        peso = if (isPackageMultiple) totalWeightLbs else ""
                     )
                 )
             }
@@ -175,6 +192,8 @@ object ZebraZplBuilder {
 
             ${receivedZpl(layout, label.recibio)}
 
+            ${quantityAndWeightZpl(layout, label)}
+
             ${textZpl(
                 element = counterElement.copy(fontHeight = counterFontHeight, fontWidth = counterFontWidth),
                 value = safeCounterText,
@@ -191,6 +210,36 @@ object ZebraZplBuilder {
         return textZpl(layout.receivedLabel, "RECIBIO:") + "\n            " +
             textZpl(layout.receivedValue, name.zplText(30)) + "\n            " +
             underlineZpl(layout.receivedValue)
+    }
+
+    /** CANT.: y PESO: solo cuando traen valor (la regla de cada etiqueta ya decidió en [fromEntradaForm]). */
+    private fun quantityAndWeightZpl(layout: ZebraLabelLayout, label: ZebraLabelData): String {
+        val parts = mutableListOf<String>()
+        if (label.cantidad.isNotBlank()) {
+            parts += textZpl(layout.quantityLabel, "CANT.:")
+            parts += textZpl(layout.quantityValue, label.cantidad.zplText(12))
+            parts += underlineZpl(layout.quantityValue)
+        }
+        if (label.peso.isNotBlank()) {
+            parts += textZpl(layout.weightLabel, "PESO:")
+            parts += textZpl(layout.weightValue, label.peso.zplText(14))
+            parts += underlineZpl(layout.weightValue)
+        }
+        return parts.joinToString("\n            ")
+    }
+
+    /**
+     * Número para la etiqueta: redondeado a 2 decimales como el legacy (`ROUND(x, 2)`) y sin ceros sobrantes
+     * (6 -> "6", 2.5 -> "2.5", 1250.456 -> "1250.46"). Sin separador de miles.
+     */
+    internal fun formatLabelNumber(value: Double): String {
+        if (value.isNaN() || value.isInfinite()) return ""
+        // valueOf (no el constructor): redondea sobre el texto decimal del número, como el ROUND del legacy
+        // (2.675 -> 2.68), en vez de sobre su representación binaria (2.67499...).
+        return java.math.BigDecimal.valueOf(value)
+            .setScale(2, java.math.RoundingMode.HALF_UP)
+            .stripTrailingZeros()
+            .toPlainString()
     }
 
     private fun logoZpl(element: ZebraLabelElement): String {

@@ -118,7 +118,11 @@ data class ZebraLabelData(
     val tipoEtiqueta: String = "",
     val copies: Int = 1,
     /** NOMBRE de quien recibió la mercancía (nunca la clave de usuario). Vacío = la etiqueta no lo imprime. */
-    val recibio: String = ""
+    val recibio: String = "",
+    /** Cantidad total de la entrada ya formateada (legacy: SUM(trafdet.ncantidad), "CANT.:"). Vacío = no se imprime. */
+    val cantidad: String = "",
+    /** Peso total en libras ya formateado (legacy: SUM(traf3.detlbs), "PESO:"). Vacío = no se imprime. */
+    val peso: String = ""
 )
 
 /** Avance de un envío largo, para que la pantalla diga qué está pasando en vez de un círculo sin explicación. */

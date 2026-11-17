@@ -31,6 +31,12 @@ data class ZebraLabelLayout(
     // izquierda, bajo CAJA: y en la misma fila que UBICA:. El valor mide hasta x = 920 para no pisar esa columna.
     val receivedLabel: ZebraLabelElement = ZebraLabelElement(x = 65, y = 995, width = 270, height = 58, fontHeight = 48, fontWidth = 42),
     val receivedValue: ZebraLabelElement = ZebraLabelElement(x = 350, y = 995, width = 570, height = 58, fontHeight = 38, fontWidth = 30),
+    // Cantidad y peso (reporte legacy: CANT.: y PESO:). Comparten la fila de abajo, bajo "Recibió", dentro del mismo
+    // hueco libre (hasta x = 920). Se imprimen según el tipo de etiqueta y de manejo (ver ZebraZplBuilder.fromEntradaForm).
+    val quantityLabel: ZebraLabelElement = ZebraLabelElement(x = 65, y = 1100, width = 200, height = 58, fontHeight = 48, fontWidth = 42),
+    val quantityValue: ZebraLabelElement = ZebraLabelElement(x = 275, y = 1100, width = 175, height = 58, fontHeight = 44, fontWidth = 38),
+    val weightLabel: ZebraLabelElement = ZebraLabelElement(x = 475, y = 1100, width = 170, height = 58, fontHeight = 48, fontWidth = 42),
+    val weightValue: ZebraLabelElement = ZebraLabelElement(x = 655, y = 1100, width = 265, height = 58, fontHeight = 44, fontWidth = 38),
     val counter: ZebraLabelElement = ZebraLabelElement(
         x = 1_190,
         y = 950,
@@ -59,6 +65,10 @@ data class ZebraLabelLayout(
         ZebraLabelElementId.LOCATION_VALUE -> locationValue
         ZebraLabelElementId.RECEIVED_LABEL -> receivedLabel
         ZebraLabelElementId.RECEIVED_VALUE -> receivedValue
+        ZebraLabelElementId.QUANTITY_LABEL -> quantityLabel
+        ZebraLabelElementId.QUANTITY_VALUE -> quantityValue
+        ZebraLabelElementId.WEIGHT_LABEL -> weightLabel
+        ZebraLabelElementId.WEIGHT_VALUE -> weightValue
         ZebraLabelElementId.COUNTER -> counter
     }
 
@@ -78,6 +88,10 @@ data class ZebraLabelLayout(
         ZebraLabelElementId.LOCATION_VALUE -> copy(locationValue = element)
         ZebraLabelElementId.RECEIVED_LABEL -> copy(receivedLabel = element)
         ZebraLabelElementId.RECEIVED_VALUE -> copy(receivedValue = element)
+        ZebraLabelElementId.QUANTITY_LABEL -> copy(quantityLabel = element)
+        ZebraLabelElementId.QUANTITY_VALUE -> copy(quantityValue = element)
+        ZebraLabelElementId.WEIGHT_LABEL -> copy(weightLabel = element)
+        ZebraLabelElementId.WEIGHT_VALUE -> copy(weightValue = element)
         ZebraLabelElementId.COUNTER -> copy(counter = element)
     }
 
@@ -121,6 +135,10 @@ data class ZebraLabelLayout(
             locationValue = scaleElement(locationValue),
             receivedLabel = scaleElement(receivedLabel),
             receivedValue = scaleElement(receivedValue),
+            quantityLabel = scaleElement(quantityLabel),
+            quantityValue = scaleElement(quantityValue),
+            weightLabel = scaleElement(weightLabel),
+            weightValue = scaleElement(weightValue),
             counter = scaleElement(counter),
             customTexts = customTexts.map { it.copy(element = scaleElement(it.element)) },
             customImages = customImages.map { it.copy(element = scaleElement(it.element)) }
@@ -160,7 +178,9 @@ data class ZebraLabelLayout(
             boxLabel = ZebraLabelElement(x = 65, y = 870, width = 220, height = 58, fontHeight = 48, fontWidth = 42, inverted = true),
             guideLabel = ZebraLabelElement(x = 940, y = 870, width = 220, height = 58, fontHeight = 48, fontWidth = 42, inverted = true),
             locationLabel = ZebraLabelElement(x = 940, y = 995, width = 250, height = 58, fontHeight = 48, fontWidth = 42, inverted = true),
-            receivedLabel = ZebraLabelElement(x = 65, y = 995, width = 270, height = 58, fontHeight = 48, fontWidth = 42, inverted = true)
+            receivedLabel = ZebraLabelElement(x = 65, y = 995, width = 270, height = 58, fontHeight = 48, fontWidth = 42, inverted = true),
+            quantityLabel = ZebraLabelElement(x = 65, y = 1100, width = 200, height = 58, fontHeight = 48, fontWidth = 42, inverted = true),
+            weightLabel = ZebraLabelElement(x = 475, y = 1100, width = 170, height = 58, fontHeight = 48, fontWidth = 42, inverted = true)
         )
 
         fun casetaCompact(): ZebraLabelLayout = ZebraLabelLayout(
@@ -195,6 +215,10 @@ data class ZebraLabelLayout(
             locationValue = ZebraLabelElement(x = 0, y = 0, width = 0, height = 0, visible = false),
             receivedLabel = ZebraLabelElement(x = 0, y = 0, width = 0, height = 0, visible = false),
             receivedValue = ZebraLabelElement(x = 0, y = 0, width = 0, height = 0, visible = false),
+            quantityLabel = ZebraLabelElement(x = 0, y = 0, width = 0, height = 0, visible = false),
+            quantityValue = ZebraLabelElement(x = 0, y = 0, width = 0, height = 0, visible = false),
+            weightLabel = ZebraLabelElement(x = 0, y = 0, width = 0, height = 0, visible = false),
+            weightValue = ZebraLabelElement(x = 0, y = 0, width = 0, height = 0, visible = false),
             counter = ZebraLabelElement(x = 0, y = 0, width = 0, height = 0, visible = false),
             customTexts = emptyList(),
             customImages = listOf(
@@ -351,5 +375,9 @@ enum class ZebraLabelElementId(
     LOCATION_VALUE("Ubicación", "locationValue"),
     RECEIVED_LABEL("Etiqueta recibió", "receivedLabel"),
     RECEIVED_VALUE("Recibió", "receivedValue"),
+    QUANTITY_LABEL("Etiqueta cantidad", "quantityLabel"),
+    QUANTITY_VALUE("Cantidad", "quantityValue"),
+    WEIGHT_LABEL("Etiqueta peso", "weightLabel"),
+    WEIGHT_VALUE("Peso", "weightValue"),
     COUNTER("Contador", "counter")
 }

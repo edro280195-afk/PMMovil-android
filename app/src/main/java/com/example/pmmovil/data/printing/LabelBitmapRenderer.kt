@@ -86,6 +86,15 @@ class LabelBitmapRenderer @Inject constructor(
             drawText(canvas, layout.receivedLabel, "RECIBIO:")
             drawText(canvas, layout.receivedValue, label.recibio)
         }
+        // Igual: CANT. y PESO solo salen cuando la regla de la etiqueta les dio valor (ver ZebraZplBuilder).
+        if (label.cantidad.isNotBlank()) {
+            drawText(canvas, layout.quantityLabel, "CANT.:")
+            drawText(canvas, layout.quantityValue, label.cantidad)
+        }
+        if (label.peso.isNotBlank()) {
+            drawText(canvas, layout.weightLabel, "PESO:")
+            drawText(canvas, layout.weightValue, label.peso)
+        }
         drawCounter(canvas, layout.counter, label, layout)
         layout.customTexts.forEach { customText ->
             drawText(canvas, customText.element, customText.text)

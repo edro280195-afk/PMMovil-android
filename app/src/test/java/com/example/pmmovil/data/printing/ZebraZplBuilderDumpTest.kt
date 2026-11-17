@@ -94,6 +94,74 @@ class ZebraZplBuilderDumpTest {
         assertFalse(zpl.contains("gcasas", ignoreCase = true))
     }
 
+    // ── CANT. / PESO / RECIBIO según el tipo de etiqueta y el manejo (reporte legacy etiqueta.frx) ────────────────
+
+    @Test
+    fun `carpeta de manejo normal lleva recibio y cantidad pero no peso`() {
+        val form = photographedLabelForm().copy(manejo = "I", pesoLbs = 1250.456, recibio = "Francisco Rodriguez")
+        val carpeta = ZebraZplBuilder.fromEntradaForm(form).first()
+
+        assertEquals("FRANCISCO RODRIGUEZ", carpeta.recibio)
+        assertEquals("6", carpeta.cantidad)
+        assertEquals("", carpeta.peso)
+    }
+
+    @Test
+    fun `bultos de manejo normal no llevan recibio ni cantidad ni peso`() {
+        val form = photographedLabelForm().copy(manejo = "I", pesoLbs = 1250.456, recibio = "Francisco Rodriguez")
+        val bultos = ZebraZplBuilder.fromEntradaForm(form).drop(1)
+
+        assertEquals(6, bultos.size)
+        assertTrue(bultos.all { it.recibio.isEmpty() && it.cantidad.isEmpty() && it.peso.isEmpty() })
+        val zpl = ZebraZplBuilder.buildLabels(bultos)
+        assertFalse(zpl.contains("CANT.:"))
+        assertFalse(zpl.contains("PESO:"))
+    }
+
+    @Test
+    fun `carpeta de PAQ-M lleva recibio cantidad y peso en libras`() {
+        val form = photographedLabelForm().copy(manejo = "PAQ/M", pesoLbs = 1250.456, recibio = "Francisco Rodriguez")
+        val carpeta = ZebraZplBuilder.fromEntradaForm(form).first()
+
+        assertEquals("FRANCISCO RODRIGUEZ", carpeta.recibio)
+        assertEquals("6", carpeta.cantidad)
+        assertEquals("1250.46", carpeta.peso)
+    }
+
+    @Test
+    fun `bultos de PAQ-M llevan cantidad y peso pero no recibio`() {
+        val form = photographedLabelForm().copy(manejo = "PAQ/M", pesoLbs = 1250.456, recibio = "Francisco Rodriguez")
+        val bultos = ZebraZplBuilder.fromEntradaForm(form).drop(1)
+
+        assertTrue(bultos.all { it.recibio.isEmpty() })
+        assertTrue(bultos.all { it.cantidad == "6" && it.peso == "1250.46" })
+
+        val zpl = ZebraZplBuilder.buildLabels(listOf(bultos.last()))
+        assertTrue(zpl.contains("^FO1100,1535^A0B,48,42^FB200,1,0,L,0^FDCANT.:^FS"))
+        assertTrue(zpl.contains("^FO1100,1350^A0B,44,38^FB175,1,0,L,0^FD6^FS"))
+        assertTrue(zpl.contains("^FO1100,1155^A0B,48,42^FB170,1,0,L,0^FDPESO:^FS"))
+        assertTrue(zpl.contains("^FO1100,880^A0B,44,38^FB265,1,0,L,0^FD1250.46^FS"))
+        assertFalse(zpl.contains("RECIBIO:"))
+    }
+
+    @Test
+    fun `el manejo PAQ-M se reconoce sin importar mayusculas ni espacios`() {
+        val form = photographedLabelForm().copy(manejo = "  paq/m ", pesoLbs = 10.0)
+        val bultos = ZebraZplBuilder.fromEntradaForm(form).drop(1)
+
+        assertTrue(bultos.all { it.cantidad == "6" && it.peso == "10" })
+    }
+
+    @Test
+    fun `los numeros de la etiqueta se redondean a dos decimales sin ceros sobrantes`() {
+        assertEquals("6", ZebraZplBuilder.formatLabelNumber(6.0))
+        assertEquals("100", ZebraZplBuilder.formatLabelNumber(100.0))
+        assertEquals("2.5", ZebraZplBuilder.formatLabelNumber(2.5))
+        assertEquals("2.68", ZebraZplBuilder.formatLabelNumber(2.675))
+        assertEquals("1250.46", ZebraZplBuilder.formatLabelNumber(1250.456))
+        assertEquals("0", ZebraZplBuilder.formatLabelNumber(0.0))
+    }
+
     private fun photographedLabelForm() = EntradaFormSnapshot(
         ref1 = "50",
         ref2 = "C",
