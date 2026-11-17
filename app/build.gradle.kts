@@ -91,8 +91,8 @@ android {
         applicationId = "com.example.pmmovil"
         minSdk = 28
         targetSdk = 36
-        versionCode = 26
-        versionName = "1.1.15"
+        versionCode = 27
+        versionName = "1.1.16"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders["sentryDsn"] = sentryDsnValue
