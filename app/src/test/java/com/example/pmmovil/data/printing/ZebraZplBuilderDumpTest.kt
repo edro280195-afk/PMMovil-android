@@ -55,14 +55,28 @@ class ZebraZplBuilderDumpTest {
     }
 
     @Test
-    fun `la etiqueta lleva el nombre de quien recibio en mayusculas junto a su rotulo`() {
+    fun `la etiqueta de la carpeta lleva el nombre de quien recibio en mayusculas junto a su rotulo`() {
         val form = photographedLabelForm().copy(recibio = "Francisco Rodriguez")
         val labels = ZebraZplBuilder.fromEntradaForm(form)
-        val zpl = ZebraZplBuilder.buildLabels(listOf(labels.first(), labels.last()))
+        val zplCarpeta = ZebraZplBuilder.buildLabels(listOf(labels.first()))
 
-        assertTrue(labels.all { it.recibio == "FRANCISCO RODRIGUEZ" })
-        assertTrue(zpl.contains("^FO995,1465^A0B,48,42^FB270,1,0,L,0^FDRECIBIO:^FS"))
-        assertTrue(zpl.contains("^FO995,880^A0B,38,30^FB570,1,0,L,0^FDFRANCISCO RODRIGUEZ^FS"))
+        assertEquals("CARPETA", labels.first().tipoEtiqueta)
+        assertEquals("FRANCISCO RODRIGUEZ", labels.first().recibio)
+        assertTrue(zplCarpeta.contains("^FO995,1465^A0B,48,42^FB270,1,0,L,0^FDRECIBIO:^FS"))
+        assertTrue(zplCarpeta.contains("^FO995,880^A0B,38,30^FB570,1,0,L,0^FDFRANCISCO RODRIGUEZ^FS"))
+    }
+
+    @Test
+    fun `las etiquetas de cada bulto no llevan quien recibio`() {
+        val form = photographedLabelForm().copy(recibio = "Francisco Rodriguez")
+        val labels = ZebraZplBuilder.fromEntradaForm(form)
+        val bultos = labels.drop(1)
+
+        assertEquals(6, bultos.size)
+        assertTrue(bultos.all { it.recibio.isEmpty() })
+        val zplBultos = ZebraZplBuilder.buildLabels(bultos)
+        assertFalse(zplBultos.contains("RECIBIO:"))
+        assertFalse(zplBultos.contains("FRANCISCO RODRIGUEZ"))
     }
 
     @Test
@@ -71,7 +85,7 @@ class ZebraZplBuilderDumpTest {
         val form = photographedLabelForm().copy(recibio = "gcasas")
 
         val conNombre = ZebraZplBuilder.fromEntradaForm(form, receiverName = "Gladys Rodriguez")
-        assertTrue(conNombre.all { it.recibio == "GLADYS RODRIGUEZ" })
+        assertEquals("GLADYS RODRIGUEZ", conNombre.first().recibio)
 
         val sinNombre = ZebraZplBuilder.fromEntradaForm(form, receiverName = "")
         assertTrue(sinNombre.all { it.recibio.isEmpty() })

@@ -54,9 +54,10 @@ object ZebraZplBuilder {
     }
 
     /**
-     * [receiverName] es el NOMBRE de quien recibió que va impreso. Por omisión se toma de la captura, pero quien
-     * arma la etiqueta debe pasar uno ya depurado: la captura cae a la clave de usuario cuando la sesión no trae
-     * nombre, y la etiqueta nunca debe llevar la clave.
+     * [receiverName] es el NOMBRE de quien recibió, y se imprime SOLO en la etiqueta de la CARPETA (las de cada
+     * bulto no lo llevan). Por omisión se toma de la captura, pero quien arma la etiqueta debe pasar uno ya
+     * depurado: la captura cae a la clave de usuario cuando la sesión no trae nombre, y la etiqueta nunca debe
+     * llevar la clave.
      */
     fun fromEntradaForm(
         form: EntradaFormSnapshot,
@@ -100,8 +101,8 @@ object ZebraZplBuilder {
                         guia = form.guia,
                         ubicaciones = locations,
                         qrValue = "$reference $index-$totalPackages",
-                        parcial = "$index/$totalPackages",
-                        recibio = receiver
+                        parcial = "$index/$totalPackages"
+                        // Sin recibio a propósito: quién recibió va SOLO en la etiqueta de la carpeta.
                     )
                 )
             }

@@ -457,8 +457,10 @@ class ZebraLabelDesignerViewModel @Inject constructor(
                 tipoEtiqueta = "CARPETA",
                 parcial = ""
             )
+            // Una etiqueta de bulto real no lleva "quién recibió" (solo la de la carpeta): así se ve como sale impresa.
             SampleDataMode.SINGLE_BOX -> ZebraZplBuilder.buildTestLabel().copy(
-                parcial = "1/1"
+                parcial = "1/1",
+                recibio = ""
             )
         }
         _uiState.update { it.copy(sampleDataMode = mode, previewLabel = label) }
