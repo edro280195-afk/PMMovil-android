@@ -27,6 +27,10 @@ data class ZebraLabelLayout(
     val guideValue: ZebraLabelElement = ZebraLabelElement(x = 1_200, y = 870, width = 500, height = 58, fontHeight = 44, fontWidth = 38),
     val locationLabel: ZebraLabelElement = ZebraLabelElement(x = 940, y = 995, width = 250, height = 58, fontHeight = 48, fontWidth = 42),
     val locationValue: ZebraLabelElement = ZebraLabelElement(x = 1_200, y = 995, width = 250, height = 58, fontHeight = 44, fontWidth = 38),
+    // Quién recibió (el nombre, no la clave de usuario). Ocupa el único hueco libre de la plantilla: abajo a la
+    // izquierda, bajo CAJA: y en la misma fila que UBICA:. El valor mide hasta x = 920 para no pisar esa columna.
+    val receivedLabel: ZebraLabelElement = ZebraLabelElement(x = 65, y = 995, width = 270, height = 58, fontHeight = 48, fontWidth = 42),
+    val receivedValue: ZebraLabelElement = ZebraLabelElement(x = 350, y = 995, width = 570, height = 58, fontHeight = 38, fontWidth = 30),
     val counter: ZebraLabelElement = ZebraLabelElement(
         x = 1_190,
         y = 950,
@@ -53,6 +57,8 @@ data class ZebraLabelLayout(
         ZebraLabelElementId.GUIDE_VALUE -> guideValue
         ZebraLabelElementId.LOCATION_LABEL -> locationLabel
         ZebraLabelElementId.LOCATION_VALUE -> locationValue
+        ZebraLabelElementId.RECEIVED_LABEL -> receivedLabel
+        ZebraLabelElementId.RECEIVED_VALUE -> receivedValue
         ZebraLabelElementId.COUNTER -> counter
     }
 
@@ -70,6 +76,8 @@ data class ZebraLabelLayout(
         ZebraLabelElementId.GUIDE_VALUE -> copy(guideValue = element)
         ZebraLabelElementId.LOCATION_LABEL -> copy(locationLabel = element)
         ZebraLabelElementId.LOCATION_VALUE -> copy(locationValue = element)
+        ZebraLabelElementId.RECEIVED_LABEL -> copy(receivedLabel = element)
+        ZebraLabelElementId.RECEIVED_VALUE -> copy(receivedValue = element)
         ZebraLabelElementId.COUNTER -> copy(counter = element)
     }
 
@@ -111,6 +119,8 @@ data class ZebraLabelLayout(
             guideValue = scaleElement(guideValue),
             locationLabel = scaleElement(locationLabel),
             locationValue = scaleElement(locationValue),
+            receivedLabel = scaleElement(receivedLabel),
+            receivedValue = scaleElement(receivedValue),
             counter = scaleElement(counter),
             customTexts = customTexts.map { it.copy(element = scaleElement(it.element)) },
             customImages = customImages.map { it.copy(element = scaleElement(it.element)) }
@@ -149,7 +159,8 @@ data class ZebraLabelLayout(
             customerLabel = ZebraLabelElement(x = 65, y = 735, width = 280, height = 58, fontHeight = 48, fontWidth = 42, inverted = true),
             boxLabel = ZebraLabelElement(x = 65, y = 870, width = 220, height = 58, fontHeight = 48, fontWidth = 42, inverted = true),
             guideLabel = ZebraLabelElement(x = 940, y = 870, width = 220, height = 58, fontHeight = 48, fontWidth = 42, inverted = true),
-            locationLabel = ZebraLabelElement(x = 940, y = 995, width = 250, height = 58, fontHeight = 48, fontWidth = 42, inverted = true)
+            locationLabel = ZebraLabelElement(x = 940, y = 995, width = 250, height = 58, fontHeight = 48, fontWidth = 42, inverted = true),
+            receivedLabel = ZebraLabelElement(x = 65, y = 995, width = 270, height = 58, fontHeight = 48, fontWidth = 42, inverted = true)
         )
 
         fun casetaCompact(): ZebraLabelLayout = ZebraLabelLayout(
@@ -182,6 +193,8 @@ data class ZebraLabelLayout(
             guideValue = ZebraLabelElement(x = 0, y = 0, width = 0, height = 0, visible = false),
             locationLabel = ZebraLabelElement(x = 0, y = 0, width = 0, height = 0, visible = false),
             locationValue = ZebraLabelElement(x = 0, y = 0, width = 0, height = 0, visible = false),
+            receivedLabel = ZebraLabelElement(x = 0, y = 0, width = 0, height = 0, visible = false),
+            receivedValue = ZebraLabelElement(x = 0, y = 0, width = 0, height = 0, visible = false),
             counter = ZebraLabelElement(x = 0, y = 0, width = 0, height = 0, visible = false),
             customTexts = emptyList(),
             customImages = listOf(
@@ -336,5 +349,7 @@ enum class ZebraLabelElementId(
     GUIDE_VALUE("Guía", "guideValue"),
     LOCATION_LABEL("Etiqueta ubicación", "locationLabel"),
     LOCATION_VALUE("Ubicación", "locationValue"),
+    RECEIVED_LABEL("Etiqueta recibió", "receivedLabel"),
+    RECEIVED_VALUE("Recibió", "receivedValue"),
     COUNTER("Contador", "counter")
 }

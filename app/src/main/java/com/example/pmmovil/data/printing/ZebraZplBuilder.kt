@@ -48,11 +48,21 @@ object ZebraZplBuilder {
             ubicaciones = "PRUEBA",
             qrValue = "PMMOVIL-ZPL-TEST-${System.currentTimeMillis()}",
             parcial = "1/1",
-            tipoEtiqueta = "PRUEBA"
+            tipoEtiqueta = "PRUEBA",
+            recibio = "FRANCISCO RODRIGUEZ"
         )
     }
 
-    fun fromEntradaForm(form: EntradaFormSnapshot): List<ZebraLabelData> {
+    /**
+     * [receiverName] es el NOMBRE de quien recibió que va impreso. Por omisión se toma de la captura, pero quien
+     * arma la etiqueta debe pasar uno ya depurado: la captura cae a la clave de usuario cuando la sesión no trae
+     * nombre, y la etiqueta nunca debe llevar la clave.
+     */
+    fun fromEntradaForm(
+        form: EntradaFormSnapshot,
+        receiverName: String = form.recibio
+    ): List<ZebraLabelData> {
+        val receiver = receiverName.trim().uppercase(Locale.forLanguageTag("es-MX"))
         val reference = form.referenceRaw()
         val displayReference = form.labelReferenceDisplay()
         val date = form.fecha.toArrivalDate()
@@ -76,7 +86,8 @@ object ZebraZplBuilder {
                     guia = form.guia,
                     ubicaciones = locations,
                     qrValue = reference,
-                    tipoEtiqueta = "CARPETA"
+                    tipoEtiqueta = "CARPETA",
+                    recibio = receiver
                 )
             )
             for (index in 1..totalPackages) {
@@ -89,7 +100,8 @@ object ZebraZplBuilder {
                         guia = form.guia,
                         ubicaciones = locations,
                         qrValue = "$reference $index-$totalPackages",
-                        parcial = "$index/$totalPackages"
+                        parcial = "$index/$totalPackages",
+                        recibio = receiver
                     )
                 )
             }
@@ -160,6 +172,8 @@ object ZebraZplBuilder {
             ${textZpl(layout.locationValue, label.ubicaciones.zplText(70))}
             ${underlineZpl(layout.locationValue)}
 
+            ${receivedZpl(layout, label.recibio)}
+
             ${textZpl(
                 element = counterElement.copy(fontHeight = counterFontHeight, fontWidth = counterFontWidth),
                 value = safeCounterText,
@@ -168,6 +182,14 @@ object ZebraZplBuilder {
             ^PQ$copies
             ^XZ
         """.trimIndent()
+    }
+
+    /** Rótulo + nombre de quien recibió; sin nombre no se imprime nada (igual que en la etiqueta de imagen). */
+    private fun receivedZpl(layout: ZebraLabelLayout, name: String): String {
+        if (name.isBlank()) return ""
+        return textZpl(layout.receivedLabel, "RECIBIO:") + "\n            " +
+            textZpl(layout.receivedValue, name.zplText(30)) + "\n            " +
+            underlineZpl(layout.receivedValue)
     }
 
     private fun logoZpl(element: ZebraLabelElement): String {

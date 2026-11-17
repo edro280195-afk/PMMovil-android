@@ -450,7 +450,8 @@ class ZebraLabelDesignerViewModel @Inject constructor(
                 caja = "PMM-CAJA-NORTE-99",
                 guia = "MEX-GUIA-EXPRESS-998877",
                 ubicaciones = "B01-A2, B01-A3, B01-A4",
-                parcial = "100/100"
+                parcial = "100/100",
+                recibio = "FRANCISCO JAVIE RODRIGUEZ MARTINEZ"
             )
             SampleDataMode.FOLDER -> ZebraZplBuilder.buildTestLabel().copy(
                 tipoEtiqueta = "CARPETA",

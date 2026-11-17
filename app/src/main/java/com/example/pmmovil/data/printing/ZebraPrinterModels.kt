@@ -116,7 +116,9 @@ data class ZebraLabelData(
     val qrValue: String,
     val parcial: String = "",
     val tipoEtiqueta: String = "",
-    val copies: Int = 1
+    val copies: Int = 1,
+    /** NOMBRE de quien recibió la mercancía (nunca la clave de usuario). Vacío = la etiqueta no lo imprime. */
+    val recibio: String = ""
 )
 
 /** Avance de un envío largo, para que la pantalla diga qué está pasando en vez de un círculo sin explicación. */

@@ -54,6 +54,32 @@ class ZebraZplBuilderDumpTest {
         assertFalse(zpl.contains("^PW830"))
     }
 
+    @Test
+    fun `la etiqueta lleva el nombre de quien recibio en mayusculas junto a su rotulo`() {
+        val form = photographedLabelForm().copy(recibio = "Francisco Rodriguez")
+        val labels = ZebraZplBuilder.fromEntradaForm(form)
+        val zpl = ZebraZplBuilder.buildLabels(listOf(labels.first(), labels.last()))
+
+        assertTrue(labels.all { it.recibio == "FRANCISCO RODRIGUEZ" })
+        assertTrue(zpl.contains("^FO995,1465^A0B,48,42^FB270,1,0,L,0^FDRECIBIO:^FS"))
+        assertTrue(zpl.contains("^FO995,880^A0B,38,30^FB570,1,0,L,0^FDFRANCISCO RODRIGUEZ^FS"))
+    }
+
+    @Test
+    fun `el nombre que arma la pantalla manda sobre la captura y sin nombre no se imprime el campo`() {
+        // La captura trae la clave de usuario cuando la sesión no tiene nombre; la pantalla la filtra y pasa vacío.
+        val form = photographedLabelForm().copy(recibio = "gcasas")
+
+        val conNombre = ZebraZplBuilder.fromEntradaForm(form, receiverName = "Gladys Rodriguez")
+        assertTrue(conNombre.all { it.recibio == "GLADYS RODRIGUEZ" })
+
+        val sinNombre = ZebraZplBuilder.fromEntradaForm(form, receiverName = "")
+        assertTrue(sinNombre.all { it.recibio.isEmpty() })
+        val zpl = ZebraZplBuilder.buildLabels(sinNombre)
+        assertFalse(zpl.contains("RECIBIO:"))
+        assertFalse(zpl.contains("gcasas", ignoreCase = true))
+    }
+
     private fun photographedLabelForm() = EntradaFormSnapshot(
         ref1 = "50",
         ref2 = "C",

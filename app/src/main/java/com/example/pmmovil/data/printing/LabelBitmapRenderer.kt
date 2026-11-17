@@ -81,6 +81,11 @@ class LabelBitmapRenderer @Inject constructor(
         drawText(canvas, layout.guideValue, label.guia)
         drawText(canvas, layout.locationLabel, "UBICA:")
         drawText(canvas, layout.locationValue, label.ubicaciones)
+        // Sin nombre no se imprime ni el rótulo: un "RECIBIO:" huérfano parecería un campo roto.
+        if (label.recibio.isNotBlank()) {
+            drawText(canvas, layout.receivedLabel, "RECIBIO:")
+            drawText(canvas, layout.receivedValue, label.recibio)
+        }
         drawCounter(canvas, layout.counter, label, layout)
         layout.customTexts.forEach { customText ->
             drawText(canvas, customText.element, customText.text)

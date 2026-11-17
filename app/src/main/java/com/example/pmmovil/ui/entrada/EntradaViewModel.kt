@@ -1369,13 +1369,24 @@ class EntradaViewModel @Inject constructor(
         const val PRINTER_CATALOG_TIMEOUT_MILLIS = 2_500L
     }
 
+    /**
+     * Nombre de quien recibió para imprimir en la etiqueta. La captura cae a la CLAVE de usuario cuando la sesión no
+     * trae nombre (ver [emptyForm]); esa clave sirve en pantalla, pero la etiqueta lleva el nombre. Si lo único que
+     * hay es la clave, la etiqueta sale sin ese campo en vez de imprimir una clave que nadie reconoce.
+     */
+    private fun receiverNameForLabel(form: EntradaFormSnapshot): String {
+        val receiver = form.recibio.trim()
+        val userKey = authRepository.getUsername().orEmpty().trim()
+        return if (receiver.isNotEmpty() && receiver.equals(userKey, ignoreCase = true)) "" else receiver
+    }
+
     private suspend fun sendZebraLabels(
         form: EntradaFormSnapshot,
         printer: ZebraPrinterDto,
         onProgress: ((ZebraSendProgress) -> Unit)? = null
     ): ZebraPrintResult {
         val config = printer.toConfig()
-        val labels = ZebraZplBuilder.fromEntradaForm(form)
+        val labels = ZebraZplBuilder.fromEntradaForm(form, receiverName = receiverNameForLabel(form))
         val result = if (BuildConfig.USE_IMAGE_LABELS) {
             // Etiqueta renderizada como imagen (^GF): mismo socket, mismo modo que el ZPL de texto.
             val resolution = zebraPrinterService.readPrintheadResolutionDpi(config, onProgress)

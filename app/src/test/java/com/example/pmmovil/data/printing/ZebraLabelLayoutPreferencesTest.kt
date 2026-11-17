@@ -29,6 +29,46 @@ class ZebraLabelLayoutPreferencesTest {
     }
 
     @Test
+    fun `layout de bodega guardado antes del campo Recibio lo estrena visible en su lugar por omision`() {
+        val legacyJson = """
+            {
+              "schemaVersion": 4,
+              "logo": { "x": 72, "y": 48, "width": 460, "height": 188 }
+            }
+        """.trimIndent()
+
+        val layout = deserializeZebraLabelLayout(legacyJson, ZebraLabelType.ENTRADA_BODEGA)
+
+        assertTrue(layout.receivedLabel.visible)
+        assertTrue(layout.receivedValue.visible)
+        assertEquals(65, layout.receivedLabel.x)
+        assertEquals(995, layout.receivedLabel.y)
+        assertEquals(350, layout.receivedValue.x)
+        assertEquals(LabelFontFamily.SANS, layout.receivedValue.fontFamily)
+        // El valor termina antes de la columna de UBICA: (x = 940) para no encimarse.
+        assertTrue(layout.receivedValue.x + layout.receivedValue.width <= layout.locationLabel.x)
+    }
+
+    @Test
+    fun `la etiqueta de caseta no muestra Recibio ni en la plantilla ni al migrar`() {
+        val porOmision = ZebraLabelType.CASETA.defaultLayout()
+        assertFalse(porOmision.receivedLabel.visible)
+        assertFalse(porOmision.receivedValue.visible)
+
+        val migrada = deserializeZebraLabelLayout("""{ "schemaVersion": 4 }""", ZebraLabelType.CASETA)
+        assertFalse(migrada.receivedLabel.visible)
+        assertFalse(migrada.receivedValue.visible)
+    }
+
+    @Test
+    fun `al escalar a 203 dpi Recibio se escala con el resto`() {
+        val escalada = ZebraLabelLayout.reference().scaledForPrintheadDpi(203)
+
+        assertEquals(237, escalada.receivedValue.x)
+        assertEquals(673, escalada.receivedLabel.y)
+    }
+
+    @Test
     fun `layout vigente conserva una visibilidad falsa y los estilos elegidos`() {
         val currentJson = """
             {
