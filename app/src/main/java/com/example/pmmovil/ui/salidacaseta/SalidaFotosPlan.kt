@@ -34,11 +34,28 @@ object SalidaFotosPlan {
     /**
      * Los lotes que todavía hay que mandar. Una foto ya está en el servidor cuando se mandó en esa misma posición;
      * si el guardia quitó una del medio, las que se recorrieron cambian de posición y se mandan otra vez.
+     *
+     * Solo van las que faltan, juntando las que quedan seguidas en lotes de hasta [porLote]: con las fotos subiendo en
+     * segundo plano mientras el guardia toma más (18-nov-2026), un lote de 3 que ya llegó no se vuelve a mandar entero
+     * cuando aparece la cuarta. El servidor acepta cualquier posición inicial y reemplaza la foto de cada posición.
      */
-    fun pendientes(fotos: List<String>, subidas: Map<String, Int>, porLote: Int = FOTOS_POR_LOTE): List<Lote> =
-        lotes(fotos.size, porLote).filterNot { lote ->
-            (lote.desde until lote.hastaExclusivo).all { i -> subidas[fotos[i]] == i + 1 }
+    fun pendientes(fotos: List<String>, subidas: Map<String, Int>, porLote: Int = FOTOS_POR_LOTE): List<Lote> {
+        val tamano = porLote.coerceAtLeast(1)
+        val faltan = fotos.indices.filter { i -> subidas[fotos[i]] != i + 1 }
+        val pendientes = mutableListOf<Lote>()
+        var i = 0
+        while (i < faltan.size) {
+            val desde = faltan[i]
+            var hasta = desde + 1
+            i++
+            while (i < faltan.size && faltan[i] == hasta && hasta - desde < tamano) {
+                hasta++
+                i++
+            }
+            pendientes += Lote(desde, hasta)
         }
+        return pendientes
+    }
 
     fun textoAvance(enviadas: Int, total: Int): String = "Enviando fotos: $enviadas de $total"
 }

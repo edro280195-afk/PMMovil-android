@@ -6,6 +6,7 @@ import android.util.Base64
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import android.util.Log
+import com.example.pmmovil.data.camera.FotoParaSubir
 import com.example.pmmovil.data.camera.PhotoPipeline
 import com.example.pmmovil.data.ocr.applyExifOrientation
 import com.example.pmmovil.data.ocr.LocalTextOcr
@@ -1133,6 +1134,12 @@ class CasetaEntradaViewModel @Inject constructor(
                 )
             }
         }
+        // Se prepara para subir (2560 px, calidad 92) mientras el guardia termina de llenar la entrada: al Guardar, el
+        // envío solo manda bytes ya listos en vez de reducir cada foto de 12 MP en ese momento. En applicationScope
+        // para que termine aunque se cierre la pantalla; un hilo a la vez para no competir con la cámara.
+        if (_uiState.value.form.localPhotoPaths.contains(path)) {
+            applicationScope.launch(photoPrepDispatcher) { FotoParaSubir.preparar(path) }
+        }
     }
 
     fun removeLocalPhoto(path: String) {
@@ -1144,6 +1151,7 @@ class CasetaEntradaViewModel @Inject constructor(
             it.copy(form = it.form.copy(localPhotoPaths = it.form.localPhotoPaths - path))
         }
         runCatching { File(path).delete() }
+        FotoParaSubir.olvidar(path)
     }
 
     fun removeRemotePhoto(index: Int) {
@@ -2658,6 +2666,8 @@ class CasetaEntradaViewModel @Inject constructor(
     }
 
     companion object {
+        /** Preparar fotos para subir, de una en una: no le quita a la cámara los núcleos que usa para su vista previa. */
+        private val photoPrepDispatcher = Dispatchers.Default.limitedParallelism(1)
         private const val HIGH_CONFIDENCE = 0.78
         private const val LOCAL_FAST_PATH_THRESHOLD = 0.90
         private const val HISTORY_BOOST = 0.12

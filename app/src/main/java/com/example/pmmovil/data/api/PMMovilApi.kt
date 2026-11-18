@@ -535,6 +535,17 @@ interface PMMovilApi {
         @Body request: CasetaEntradaFotosRequest
     ): Response<CasetaEntradaFotosResponse>
 
+    // Las mismas fotos como archivos (sin el 33 % del base64). Un servidor anterior responde 404 y se vuelve a la de arriba.
+    @Multipart
+    @POST("Caseta/entrada/{casetaId}/fotos/archivos")
+    suspend fun uploadCasetaEntradaPhotoFiles(
+        @Path("casetaId") casetaId: String,
+        @Part indices: List<okhttp3.MultipartBody.Part>,
+        @Part fotos: List<okhttp3.MultipartBody.Part>,
+        @Part("finalizar") finalizar: okhttp3.RequestBody,
+        @Part("actualizado") actualizado: okhttp3.RequestBody
+    ): Response<CasetaEntradaFotosResponse>
+
     @POST("Caseta/entrada/ocr-placa")
     suspend fun readCasetaEntradaPlate(
         @Body request: CasetaEntradaPlateOcrRequest
@@ -619,6 +630,15 @@ interface PMMovilApi {
     suspend fun subirFotosSalidaCaseta(
         @Path("relno") relno: String,
         @Body request: SubirFotosSalidaCasetaRequest
+    ): Response<ConfirmarSalidaCasetaResponse>
+
+    // Las mismas fotos como archivos (sin el 33 % del base64). Un servidor anterior responde 404 y se vuelve a la de arriba.
+    @Multipart
+    @POST("Caseta/{relno}/salida-fotos/archivos")
+    suspend fun subirFotosSalidaCasetaArchivos(
+        @Path("relno") relno: String,
+        @Part("indiceInicial") indiceInicial: okhttp3.RequestBody,
+        @Part fotos: List<okhttp3.MultipartBody.Part>
     ): Response<ConfirmarSalidaCasetaResponse>
 
     // ── Salida de caja de caseta (legacy Salidas.aspx) ───────────────────────

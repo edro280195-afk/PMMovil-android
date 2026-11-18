@@ -50,26 +50,49 @@ class SalidaFotosPlanTest {
     }
 
     @Test
-    fun `un reintento solo manda los lotes que no llegaron`() {
+    fun `un reintento solo manda las fotos que no llegaron`() {
         val fotos = listOf("a", "b", "c", "d", "e", "f", "g", "h")
-        // Los dos primeros lotes (a-b y c-d) ya llegaron; el tercero se cayó a la mitad (solo e).
+        // Ya llegaron de la a a la e; faltan f, g y h.
         val subidas = mapOf("a" to 1, "b" to 2, "c" to 3, "d" to 4, "e" to 5)
 
         val pendientes = SalidaFotosPlan.pendientes(fotos, subidas, porLote = 2)
 
-        assertEquals(listOf(4 to 6, 6 to 8), pendientes.map { it.desde to it.hastaExclusivo })
+        assertEquals(listOf(5 to 7, 7 to 8), pendientes.map { it.desde to it.hastaExclusivo })
+        assertEquals(listOf(6, 8), pendientes.map { it.indiceInicial })
     }
 
     @Test
-    fun `si el guardia quita una foto del medio las que se recorrieron se mandan otra vez`() {
+    fun `si el guardia quita una foto del medio solo se mandan las que se recorrieron`() {
         // Se habían subido a, b, c, d, e, f. Se quitó "b": ahora son a, c, d, e, f.
         val fotos = listOf("a", "c", "d", "e", "f")
         val subidas = mapOf("a" to 1, "b" to 2, "c" to 3, "d" to 4, "e" to 5, "f" to 6)
 
         val pendientes = SalidaFotosPlan.pendientes(fotos, subidas, porLote = 2)
 
-        // "a" sigue en su posición pero comparte lote con "c", que cambió de lugar; "d" y "e" también se recorrieron.
-        assertEquals(listOf(0 to 2, 2 to 4, 4 to 5), pendientes.map { it.desde to it.hastaExclusivo })
+        // "a" sigue en su posición y no se repite; c, d, e y f se recorrieron un lugar.
+        assertEquals(listOf(1 to 3, 3 to 5), pendientes.map { it.desde to it.hastaExclusivo })
+    }
+
+    @Test
+    fun `una cuarta foto despues de un lote de tres solo manda la cuarta`() {
+        val fotos = listOf("a", "b", "c", "d")
+        val subidas = mapOf("a" to 1, "b" to 2, "c" to 3)
+
+        val pendientes = SalidaFotosPlan.pendientes(fotos, subidas)
+
+        assertEquals(listOf(3 to 4), pendientes.map { it.desde to it.hastaExclusivo })
+        assertEquals(4, pendientes.single().indiceInicial)
+    }
+
+    @Test
+    fun `los huecos separados van en lotes separados`() {
+        val fotos = listOf("a", "b", "c", "d", "e", "f")
+        val subidas = mapOf("a" to 1, "c" to 3, "e" to 5)
+
+        assertEquals(
+            listOf(1 to 2, 3 to 4, 5 to 6),
+            SalidaFotosPlan.pendientes(fotos, subidas).map { it.desde to it.hastaExclusivo }
+        )
     }
 
     @Test
@@ -81,14 +104,14 @@ class SalidaFotosPlanTest {
     }
 
     @Test
-    fun `con el tamano de lote por omision un reintento repite solo el lote que se cayo`() {
+    fun `con el tamano de lote por omision un reintento manda solo lo que falta, de cuatro en cuatro`() {
         val fotos = (1..10).map { "f$it" }
-        // Llegó el primer lote (f1-f4); el segundo se cayó a la mitad (solo f5 y f6).
+        // Ya llegaron de f1 a f6; faltan f7 a f10.
         val subidas = fotos.take(6).mapIndexed { i, f -> f to i + 1 }.toMap()
 
         val pendientes = SalidaFotosPlan.pendientes(fotos, subidas)
 
-        assertEquals(listOf(4 to 8, 8 to 10), pendientes.map { it.desde to it.hastaExclusivo })
+        assertEquals(listOf(6 to 10), pendientes.map { it.desde to it.hastaExclusivo })
     }
 
     @Test

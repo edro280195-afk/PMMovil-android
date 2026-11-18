@@ -16,22 +16,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.util.Base64
-import com.example.pmmovil.data.camera.PhotoEncodingRules
-import com.example.pmmovil.data.camera.PhotoPipeline
-import com.example.pmmovil.data.ocr.applyExifOrientation
-import java.io.ByteArrayOutputStream
+import com.example.pmmovil.data.camera.FotoParaSubir
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.withContext
 
 data class CasetaUiState(
     val pending: List<CasetaPendiente> = emptyList(),
@@ -82,15 +73,14 @@ class CasetaViewModel @Inject constructor(
     val uiState: StateFlow<CasetaUiState> = _uiState.asStateFlow()
     private var searchJob: Job? = null
 
-    // Comprime cada foto apenas se toma, no hasta que se presiona "Confirmar
-    // salida": sin esto el usuario esperaba a que se comprimieran TODAS de golpe
-    // justo en el peor momento. Scope propio (no viewModelScope) para que un
-    // cierre de pantalla a medio comprimir no tire el trabajo si el usuario vuelve.
-    private val photoEncodingScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val pendingEncodedPhotos = mutableMapOf<String, Deferred<String?>>()
+    // Cada foto se prepara para subir apenas se toma (ver FotoParaSubir: queda en disco, junto a la original), no hasta
+    // que se presiona "Confirmar salida". Scope propio (no viewModelScope) para que un cierre de pantalla a medio preparar
+    // no tire el trabajo si el usuario vuelve; un hilo a la vez para no competir con la cámara.
+    private val photoPrepScope = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1))
+    private val preparando = mutableMapOf<String, Job>()
 
-    // Las fotos viajan al servidor por lotes (como en Entrada) y luego se confirma la salida; antes iban TODAS en una
-    // sola peticion, sin avance y sin forma de salir si la red se atoraba.
+    // Las fotos suben en segundo plano en cuanto se toman, por lotes y como archivos; al confirmar solo se manda lo que
+    // falte. Antes iban TODAS en una sola peticion, sin avance y sin forma de salir si la red se atoraba.
     private val envioFotos = SalidaFotosEnvio(repository, "PMM-CASETA")
 
     /** La confirmacion en curso: se puede cancelar sin perder las fotos. */
@@ -306,7 +296,6 @@ class CasetaViewModel @Inject constructor(
                     usuario = usuario,
                     observaciones = observaciones,
                     rutas = rutas,
-                    codificar = ::encodePhotos,
                     alAvanzar = ::publicarProgreso
                 )
             } catch (e: CancellationException) {
@@ -337,8 +326,9 @@ class CasetaViewModel @Inject constructor(
                 is SalidaFotosEnvio.Confirmacion.Terminada -> confirmacion.resultado
                     .onSuccess { response ->
                         if (response.success) {
-                            pendingEncodedPhotos.clear()
+                            preparando.clear()
                             envioFotos.olvidarTodas()
+                            rutas.forEach(FotoParaSubir::olvidar)
                             _uiState.update {
                                 it.copy(
                                     isProcessing = false,
@@ -412,10 +402,17 @@ class CasetaViewModel @Inject constructor(
             return
         }
         _uiState.update { it.copy(localPhotoPaths = it.localPhotoPaths + path) }
-        // Arranca la compresion ya mismo, en paralelo a que se sigan tomando
-        // mas fotos. Para cuando se presione "Confirmar salida" esto ya esta
-        // listo (o casi) en vez de tener que hacerse de golpe en ese momento.
-        pendingEncodedPhotos[path] = photoEncodingScope.async { encodePhotoForSave(path) }
+        // Se prepara ya y sube en segundo plano, en paralelo a que se sigan tomando mas fotos: para cuando se presione
+        // "Confirmar salida" ya estan en el servidor (o casi) en vez de tener que mandarse de golpe en ese momento.
+        preparando[path] = photoPrepScope.launch { FotoParaSubir.preparar(path) }
+        subirFotosEnFondo()
+    }
+
+    /** Sube lo que falte de la relacion abierta mientras el guardia sigue tomando fotos. */
+    private fun subirFotosEnFondo() {
+        val relno = _uiState.value.detail?.relno?.takeIf(String::isNotBlank) ?: return
+        if (_uiState.value.localPhotoPaths.isEmpty()) return
+        envioFotos.subirEnSegundoPlano(viewModelScope, relno) { _uiState.value.localPhotoPaths }
     }
 
     fun removePhoto(path: String) {
@@ -429,49 +426,25 @@ class CasetaViewModel @Inject constructor(
             return
         }
         _uiState.update { it.copy(localPhotoPaths = it.localPhotoPaths - path) }
-        pendingEncodedPhotos.remove(path)?.cancel()
+        preparando.remove(path)?.cancel()
         envioFotos.olvidar(path)
+        FotoParaSubir.olvidar(path)
+        // Las que estaban despues se recorrieron una posicion: el envio de fondo las vuelve a mandar donde ahora van.
+        subirFotosEnFondo()
     }
 
-    /** Descarta fotos y compresiones en curso de una relacion que se abandona sin confirmar. */
+    /** Descarta fotos y preparaciones en curso de una relacion que se abandona sin confirmar. */
     private fun clearLocalPhotos() {
-        pendingEncodedPhotos.values.forEach { it.cancel() }
-        pendingEncodedPhotos.clear()
+        envioFotos.detenerEnvioDeFondo()
+        preparando.values.forEach { it.cancel() }
+        preparando.clear()
         envioFotos.olvidarTodas()
+        _uiState.value.localPhotoPaths.forEach(FotoParaSubir::olvidar)
         _uiState.update { it.copy(localPhotoPaths = emptyList()) }
     }
 
-    private suspend fun encodePhotos(paths: List<String>): List<String> =
-        withContext(Dispatchers.Default) {
-            // Reutiliza la compresion que ya viene corriendo desde addPhoto();
-            // solo si por algo no existe (ej. proceso reiniciado) se comprime
-            // aqui mismo como respaldo, igual que antes.
-            val encoded = paths.map { path ->
-                val deferred = pendingEncodedPhotos.getOrPut(path) {
-                    photoEncodingScope.async { encodePhotoForSave(path) }
-                }
-                val photo = deferred.await()
-                if (photo.isNullOrBlank()) {
-                    pendingEncodedPhotos.remove(path)?.cancel()
-                }
-                photo
-            }
-            PhotoEncodingRules.requireAllEncoded(encoded)
-        }
-
-    /**
-     * Foto lista para el API.
-     *
-     * Antes vivia aqui su propia version del algoritmo: 1200 px de lado y un
-     * bucle que bajaba la calidad de 80 hasta 40 con tal de caber en 400 KB.
-     * Era el peor pipeline de la app -- 0.8 MP y, cuando el bucle se disparaba,
-     * bloques de compresion encima de lo que se fue a documentar. Y el tope ni
-     * se alcanzaba: la foto de referencia medida pesaba 101 KB.
-     */
-    private fun encodePhotoForSave(path: String): String? = PhotoPipeline.aBase64(path)
-
     override fun onCleared() {
         super.onCleared()
-        photoEncodingScope.cancel()
+        photoPrepScope.cancel()
     }
 }
