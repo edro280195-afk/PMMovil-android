@@ -188,6 +188,7 @@ import com.example.pmmovil.ui.camera.LocalEvidenceCameraScreen
 import com.example.pmmovil.ui.camera.LocalEvidencePhoto
 import com.example.pmmovil.ui.components.UnsavedChangesDialog
 import com.example.pmmovil.ui.components.PmmSnackbarHost
+import com.example.pmmovil.ui.components.EvidenceZoomLayers
 import com.example.pmmovil.ui.scanner.HardwareScannerListener
 import com.example.pmmovil.ui.theme.PmmAmber
 import com.example.pmmovil.ui.theme.PmmAmberDark
@@ -591,23 +592,16 @@ fun CasetaEntradaScreen(
             onReadPlate = { p ->
                 if (p.localPath != null) {
                     viewModel.runSmartCaptureFromLocalPhoto(CasetaEntradaCaptureMode.Plate, p.localPath)
-                } else if (p.remoteBase64 != null && p.remoteIndex != null) {
-                    viewModel.runSmartCaptureFromBase64(
-                        CasetaEntradaCaptureMode.Plate,
-                        p.remoteBase64,
-                        p.remoteIndex
-                    )
+                } else if (p.remoteIndex != null) {
+                    // Foto guardada: el original se trae solo para esta lectura.
+                    viewModel.runSmartCaptureFromRemotePhoto(CasetaEntradaCaptureMode.Plate, p.remoteIndex)
                 }
             },
             onReadBox = { p ->
                 if (p.localPath != null) {
                     viewModel.runSmartCaptureFromLocalPhoto(CasetaEntradaCaptureMode.Box, p.localPath)
-                } else if (p.remoteBase64 != null && p.remoteIndex != null) {
-                    viewModel.runSmartCaptureFromBase64(
-                        CasetaEntradaCaptureMode.Box,
-                        p.remoteBase64,
-                        p.remoteIndex
-                    )
+                } else if (p.remoteIndex != null) {
+                    viewModel.runSmartCaptureFromRemotePhoto(CasetaEntradaCaptureMode.Box, p.remoteIndex)
                 }
             },
             onApplyCandidate = viewModel::applyCaptureCandidate,
@@ -3236,21 +3230,28 @@ private fun PhotoTile(
 
 private data class CasetaEntradaPreviewPhoto(
     val id: String,
+    /** Lo que se ve en grande en el visor. */
     val model: Any,
     val label: String,
     val localPath: String? = null,
     val remoteIndex: Int? = null,
-    val remoteBase64: String? = null
+    val remoteBase64: String? = null,
+    /** Lo que se pinta en la tira de abajo (la miniatura, si es una foto guardada). */
+    val thumbModel: Any = model,
+    /** El original para el zoom fuerte de una foto guardada. */
+    val zoomModel: Any? = null
 )
 
 private fun buildCasetaEntradaPreviewPhotos(form: CasetaEntradaForm): List<CasetaEntradaPreviewPhoto> {
     val remote = form.remotePhotos.mapIndexed { index, remotePhoto ->
         CasetaEntradaPreviewPhoto(
             id = "remote-$index",
-            model = remotePhoto.model,
+            model = remotePhoto.viewerModel,
             label = remotePhoto.label.ifBlank { "Guardada ${index + 1}" },
             remoteIndex = index,
-            remoteBase64 = remotePhoto.base64.takeIf(String::isNotBlank)
+            remoteBase64 = remotePhoto.base64.takeIf(String::isNotBlank),
+            thumbModel = remotePhoto.model,
+            zoomModel = remotePhoto.zoomModel
         )
     }
     val local = form.localPhotoPaths.map { path ->
@@ -3321,7 +3322,8 @@ private fun PhotoPreviewDialog(
                         ZoomableCasetaImage(
                             model = items[page].model,
                             contentDescription = items[page].label,
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier.fillMaxSize(),
+                            zoomModel = items[page].zoomModel
                         )
                     }
                     Surface(
@@ -3359,7 +3361,7 @@ private fun PhotoPreviewDialog(
                             itemsIndexed(items, key = { _, it -> "thumb-${it.id}" }) { i, item ->
                                 val selected = i == pagerState.currentPage
                                 AsyncImage(
-                                    model = item.model,
+                                    model = item.thumbModel,
                                     contentDescription = item.label,
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier
@@ -3449,7 +3451,8 @@ private fun PhotoPreviewDialog(
 private fun ZoomableCasetaImage(
     model: Any,
     contentDescription: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    zoomModel: Any? = null
 ) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
@@ -3491,18 +3494,13 @@ private fun ZoomableCasetaImage(
             },
         contentAlignment = Alignment.Center
     ) {
-        AsyncImage(
+        // Foto guardada: se ve la vista ligera y el original solo llega al acercarse (ver EvidenceZoomLayers).
+        EvidenceZoomLayers(
             model = model,
+            zoomModel = zoomModel,
             contentDescription = contentDescription,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                    translationX = offset.x
-                    translationY = offset.y
-                }
+            scale = { scale },
+            offset = { offset }
         )
     }
 }

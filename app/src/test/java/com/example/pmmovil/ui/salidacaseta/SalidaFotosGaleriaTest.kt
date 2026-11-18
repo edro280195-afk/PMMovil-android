@@ -32,16 +32,29 @@ class SalidaFotosGaleriaTest {
     @Test
     fun `sin fotos no hay nada que mostrar`() {
         assertTrue(SalidaFotosGaleria.deSalida(emptyList()).isEmpty())
-        assertTrue(SalidaFotosGaleria.deLlegada(emptyList()) { "x" }.isEmpty())
+        assertTrue(SalidaFotosGaleria.deLlegada(emptyList()) { _, _ -> "x" }.isEmpty())
     }
 
     @Test
     fun `las fotos de llegada usan la url de cada indice del servidor`() {
-        val items = SalidaFotosGaleria.deLlegada(listOf(2, 3, 5)) { indice -> "http://api/Foto/caseta/ver?indice=$indice" }
+        val items = SalidaFotosGaleria.deLlegada(listOf(2, 3, 5)) { indice, tamano ->
+            "http://api/Foto/caseta/ver?indice=$indice&tam=${tamano.parametro ?: "original"}"
+        }
 
         assertEquals(listOf("llegada-2", "llegada-3", "llegada-5"), items.map { it.id })
         assertEquals(listOf("Llegada 1", "Llegada 2", "Llegada 3"), items.map { it.label })
-        assertEquals("http://api/Foto/caseta/ver?indice=5", items[2].model)
+        // En grande la vista; en la tira la miniatura; el original solo para el zoom.
+        assertEquals("http://api/Foto/caseta/ver?indice=5&tam=vista", items[2].model)
+        assertEquals("http://api/Foto/caseta/ver?indice=5&tam=mini", items[2].thumbModel)
+        assertEquals("http://api/Foto/caseta/ver?indice=5&tam=original", items[2].zoomModel)
+    }
+
+    @Test
+    fun `las fotos de salida tomadas en la tableta no piden original aparte`() {
+        val item = SalidaFotosGaleria.deSalida(listOf("/fotos/a.jpg")).single()
+
+        assertEquals(item.model, item.thumbModel)
+        assertEquals(null, item.zoomModel)
     }
 
     @Test

@@ -51,7 +51,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
@@ -69,12 +68,16 @@ import kotlinx.coroutines.launch
 
 /**
  * Una foto del visor. [id] debe ser estable (la ruta del archivo, el índice en el servidor…): con él el visor
- * reconoce la foto aunque la lista cambie al borrar. [model] es lo que entiende Coil (un `File`, una URL…).
+ * reconoce la foto aunque la lista cambie al borrar. [model] es lo que entiende Coil (un `File`, una URL…) y es lo que
+ * se ve en grande. Para fotos del servidor: [thumbModel] es la miniatura de la tira de abajo y [zoomModel] el original,
+ * que solo se trae al acercarse (ver [EvidenceZoomLayers]).
  */
 data class EvidenceGalleryItem(
     val id: String,
     val model: Any,
-    val label: String
+    val label: String,
+    val thumbModel: Any = model,
+    val zoomModel: Any? = null
 )
 
 /** Posición donde debe abrir el visor al tocar la foto [id]; si no está, la primera. */
@@ -141,7 +144,8 @@ fun EvidenceGalleryDialog(
                         ZoomableEvidenceImage(
                             model = items[page].model,
                             contentDescription = items[page].label,
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier.fillMaxSize(),
+                            zoomModel = items[page].zoomModel
                         )
                     }
                     Surface(
@@ -192,7 +196,7 @@ fun EvidenceGalleryDialog(
                                 itemsIndexed(items, key = { _, it -> "thumb-${it.id}" }) { i, item ->
                                     val selected = i == pagerState.currentPage
                                     AsyncImage(
-                                        model = item.model,
+                                        model = item.thumbModel,
                                         contentDescription = item.label,
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier
@@ -262,7 +266,8 @@ fun EvidenceGalleryDialog(
 private fun ZoomableEvidenceImage(
     model: Any,
     contentDescription: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    zoomModel: Any? = null
 ) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
@@ -303,18 +308,12 @@ private fun ZoomableEvidenceImage(
             },
         contentAlignment = Alignment.Center
     ) {
-        AsyncImage(
+        EvidenceZoomLayers(
             model = model,
+            zoomModel = zoomModel,
             contentDescription = contentDescription,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                    translationX = offset.x
-                    translationY = offset.y
-                }
+            scale = { scale },
+            offset = { offset }
         )
     }
 }
