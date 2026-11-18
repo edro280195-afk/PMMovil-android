@@ -3786,9 +3786,12 @@ private fun casetaEntradaEvidencePhotos(state: CasetaEntradaUiState): List<Local
             add(
                 LocalEvidencePhoto(
                     id = "remote-$index",
-                    model = photo.model,
+                    // En grande la vista de pantalla (no la miniatura estirada); en la tira, la miniatura.
+                    model = photo.viewerModel,
                     label = photo.label.ifBlank { "Guardada ${index + 1}" },
-                    status = "Guardada"
+                    status = "Guardada",
+                    thumbModel = photo.model,
+                    zoomModel = photo.zoomModel
                 )
             )
         }
