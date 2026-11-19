@@ -72,6 +72,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.pmmovil.data.notifications.AvisosEnPantalla
 import com.example.pmmovil.ui.components.PmmSnackbarHost
 import com.example.pmmovil.ui.scanner.HardwareScannerListener
 import com.example.pmmovil.ui.theme.PmmAmber
@@ -116,6 +120,22 @@ fun SalidaScreen(
 
     // Lector físico / Bluetooth (HID) o gatillo del Honeywell/Zebra: siempre escuchando.
     HardwareScannerListener(viewModel::onScannerInput)
+
+    // Le dice al servicio de push qué relación bloqueada está a la vista: el aviso de desbloqueo en vivo ya limpia esta
+    // pantalla y avisa, así que en ese caso no se repite como notificación del sistema.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val relnoBloqueado = if (state.stage == SalidaStage.BLOCKED) state.bloqueo?.relno else null
+    DisposableEffect(lifecycleOwner, relnoBloqueado) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) AvisosEnPantalla.salidaBloqueadaRelno = relnoBloqueado
+            if (event == Lifecycle.Event.ON_PAUSE) AvisosEnPantalla.salidaBloqueadaRelno = null
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            AvisosEnPantalla.salidaBloqueadaRelno = null
+        }
+    }
 
     // Salir (flecha o gesto de atrás) también suelta la relación que esta pantalla tomó al abrirla: si no, queda a nombre
     // del cargador y los demás la ven «OCUPADA». El ViewModel avisa cuando ya se soltó y entonces se navega hacia atrás.

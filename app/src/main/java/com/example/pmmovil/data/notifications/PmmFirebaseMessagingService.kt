@@ -68,16 +68,26 @@ class PmmFirebaseMessagingService : FirebaseMessagingService() {
             ?: message.data["body"]
             ?: return
 
-        showNotification(title, body, message.data["type"], message.data["crefAgrupada"])
+        val type = message.data["type"]
+        val relno = message.data["relno"]
+
+        // El aviso en vivo (SignalR) de este mismo suceso ya está a la vista en esa pantalla: no se repite como
+        // notificación del sistema. En cualquier otra pantalla, o con la app en segundo plano, el push es el único aviso.
+        if (PushSalida.debeSuprimir(type, relno, AvisosEnPantalla.relacionAbierta, AvisosEnPantalla.salidaBloqueadaRelno)) {
+            return
+        }
+
+        showNotification(title, body, type, message.data["crefAgrupada"], relno)
     }
 
-    private fun showNotification(title: String, body: String, type: String?, crefAgrupada: String?) {
+    private fun showNotification(title: String, body: String, type: String?, crefAgrupada: String?, relno: String? = null) {
         val openIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             type?.let { putExtra("notification_type", it) }
             crefAgrupada?.let { putExtra("crefAgrupada", it) }
+            relno?.let { putExtra("relno", it) }
         }
-        val pendingIntentCode = listOf(type.orEmpty(), crefAgrupada.orEmpty(), title)
+        val pendingIntentCode = listOf(type.orEmpty(), crefAgrupada.orEmpty(), relno.orEmpty(), title)
             .joinToString("|")
             .hashCode()
         val pendingIntent = PendingIntent.getActivity(
@@ -87,7 +97,7 @@ class PmmFirebaseMessagingService : FirebaseMessagingService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notification = NotificationCompat.Builder(this, PMM_NOTIFICATION_CHANNEL_ID)
+        val notification = NotificationCompat.Builder(this, PushSalida.canalPara(type, PMM_NOTIFICATION_CHANNEL_ID))
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title)
             .setContentText(body)
@@ -123,6 +133,16 @@ class PmmFirebaseMessagingService : FirebaseMessagingService() {
                 description = "Asignaciones y autorizaciones de revisión"
             }
             manager.createNotificationChannel(channel)
+            // Canal propio para relaciones bloqueadas y desbloqueadas: se puede silenciar o ajustar aparte.
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    PushSalida.CANAL_BLOQUEOS,
+                    "Bloqueos de carga",
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "Relaciones bloqueadas por escaneo rápido y su desbloqueo"
+                }
+            )
         }
     }
 }

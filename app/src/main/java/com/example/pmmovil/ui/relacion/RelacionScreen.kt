@@ -93,6 +93,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.pmmovil.data.notifications.AvisosEnPantalla
 import com.example.pmmovil.data.model.CasetaPendiente
 import com.example.pmmovil.data.model.RelacionPendiente
 import com.example.pmmovil.data.model.SalidaEtiqueta
@@ -131,6 +135,20 @@ fun RelacionScreen(
     val tone = remember { ToneGenerator(AudioManager.STREAM_NOTIFICATION, 72) }
 
     HardwareScannerListener(viewModel::openDetail)
+
+    // Le avisa al servicio de push que el aviso de bloqueo en vivo está a la vista (no lo repite como notificación).
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) AvisosEnPantalla.relacionAbierta = true
+            if (event == Lifecycle.Event.ON_PAUSE) AvisosEnPantalla.relacionAbierta = false
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            AvisosEnPantalla.relacionAbierta = false
+        }
+    }
     DisposableEffect(Unit) {
         onDispose { tone.release() }
     }

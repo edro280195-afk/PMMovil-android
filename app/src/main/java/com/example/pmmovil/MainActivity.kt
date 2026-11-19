@@ -52,6 +52,7 @@ import com.example.pmmovil.ui.scanner.UniversalScannerScreen
 import com.example.pmmovil.data.scanner.HardwareBarcodeDecoder
 import com.example.pmmovil.data.scanner.ScanEventBus
 import com.example.pmmovil.data.scanner.isLikelyBarcodeScanner
+import com.example.pmmovil.data.notifications.PushSalida
 import com.example.pmmovil.data.repository.AuthRepository
 import com.example.pmmovil.data.preferences.ModePreferences
 import com.example.pmmovil.data.signalr.WarehouseHubService
@@ -112,10 +113,22 @@ class MainActivity : AppCompatActivity() {
     // valor desde ahí igual que en el arranque en frío.
     private var pendingNotificationCref by mutableStateOf<String?>(null)
 
+    // Aviso de la carga de mercancía (relación bloqueada o desbloqueada) que el usuario tocó en la bandeja del sistema:
+    // tipo y relación. Mismo mecanismo que la referencia de arriba, para el arranque en frío y la app ya abierta.
+    private var pendingSalidaAviso by mutableStateOf<Pair<String, String>?>(null)
+
+    private fun avisoSalidaDe(intent: Intent?): Pair<String, String>? {
+        val type = intent?.getStringExtra("notification_type")
+        val relno = intent?.getStringExtra("relno")
+        if (type == null || !PushSalida.esDeSalida(type) || relno.isNullOrBlank()) return null
+        return type to relno
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         pendingNotificationCref = intent.getStringExtra("crefAgrupada")
+        pendingSalidaAviso = avisoSalidaDe(intent)
     }
 
     @SuppressLint("RestrictedApi")
@@ -217,6 +230,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         pendingNotificationCref = intent?.getStringExtra("crefAgrupada")
+        pendingSalidaAviso = avisoSalidaDe(intent)
         setContent {
             PMMovilTheme {
                 Surface(
@@ -232,6 +246,17 @@ class MainActivity : AppCompatActivity() {
                     val notificationPermissionLauncher = rememberLauncherForActivityResult(
                         ActivityResultContracts.RequestPermission()
                     ) { /* si lo niega, el push igual llega -- solo sin bandeja */ }
+
+                    // Tap en un aviso de la carga de mercancía (relación bloqueada o desbloqueada) -> abre la relación: el
+                    // supervisor en «Autorizar relaciones» y el cargador en «Cargar mercancía». Misma lógica que la
+                    // referencia de revisión de abajo (arranque en frío y app ya abierta).
+                    LaunchedEffect(pendingSalidaAviso) {
+                        val aviso = pendingSalidaAviso
+                        if (aviso != null && authRepository.hasActiveSession()) {
+                            PushSalida.rutaDestino(aviso.first, aviso.second)?.let { navController.navigate(it) }
+                        }
+                        pendingSalidaAviso = null
+                    }
 
                     // Tap en la notificación (push de FCM) -> ir directo a la
                     // entrada, en vez de dejar al usuario en el home a que la
