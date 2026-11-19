@@ -3,6 +3,7 @@ package com.example.pmmovil.ui.camera
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.pmmovil.data.camera.FotoParaSubir
 import com.example.pmmovil.data.db.FotoDao
 import com.example.pmmovil.data.model.FotoRevisionDto
 import com.example.pmmovil.data.model.FotoSyncEntity
@@ -123,6 +124,9 @@ class CameraViewModel @Inject constructor(
             )
             return
         }
+        // La foto se prepara para subir (2560 px, calidad 92) en segundo plano desde ya: cuando el envío la tome, solo lee
+        // el archivo listo en vez de reducir una foto de 12 MP en ese momento.
+        FotoParaSubir.prepararEnSegundoPlano(localFilePath)
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isSaving = true, message = null, isError = false)
             val entity = FotoSyncEntity(
@@ -179,6 +183,7 @@ class CameraViewModel @Inject constructor(
             }
             fotoDao.deleteFoto(photo.id)
             runCatching { File(photo.localFilePath).delete() }
+            FotoParaSubir.olvidar(photo.localFilePath)
             clearDeleting(key)
             _uiState.value = _uiState.value.copy(message = "Foto eliminada.", isError = false)
             loadRemotePhotos(
@@ -212,6 +217,7 @@ class CameraViewModel @Inject constructor(
                     // (ver comentario en FotoDao.deleteFotoByRemotePhotoId).
                     fotoDao.getFotoByRemotePhotoId(photoId)?.let { local ->
                         runCatching { File(local.localFilePath).delete() }
+                        FotoParaSubir.olvidar(local.localFilePath)
                         fotoDao.deleteFotoByRemotePhotoId(photoId)
                     }
                     _uiState.value = _uiState.value.copy(

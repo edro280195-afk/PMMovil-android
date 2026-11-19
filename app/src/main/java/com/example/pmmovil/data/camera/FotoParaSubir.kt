@@ -1,6 +1,10 @@
 package com.example.pmmovil.data.camera
 
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import java.io.File
 import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
@@ -47,6 +51,18 @@ object FotoParaSubir {
 
     /** Prepara la foto sin devolverla: se llama en segundo plano al tomarla. */
     fun preparar(path: String): Boolean = bytes(path) != null
+
+    // De una en una y fuera del hilo de la pantalla: dos a la vez solo pelearían por la misma CPU. Vive lo que vive la app,
+    // así una foto tomada justo antes de cerrar la pantalla termina de prepararse.
+    private val segundoPlano by lazy { CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1)) }
+
+    /**
+     * Prepara la foto en segundo plano en cuanto se toma (no espera ni falla): cuando toque subirla, el envío solo lee el
+     * archivo listo. Si la subida llega antes, [bytes] espera a que termine esta (mismo candado) en vez de repetirla.
+     */
+    fun prepararEnSegundoPlano(path: String) {
+        segundoPlano.launch { runCatching { preparar(path) } }
+    }
 
     /** La foto ya subió o se descartó: su versión preparada sobra. */
     fun olvidar(path: String) {

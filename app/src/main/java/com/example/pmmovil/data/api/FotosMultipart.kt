@@ -25,4 +25,10 @@ object FotosMultipart {
         MultipartBody.Part.createFormData(campo, valor)
 
     fun texto(valor: String): RequestBody = valor.toRequestBody(TEXTO)
+
+    /**
+     * El servidor todavía no tiene la ruta de archivos (un API anterior): 404 si no existe, 405/415 si la ruta existe pero
+     * no recibe multipart. Entonces se manda como base64, como antes. Cualquier otro error es de la foto o del servidor.
+     */
+    fun sinRutaDeArchivos(codigoHttp: Int): Boolean = codigoHttp == 404 || codigoHttp == 405 || codigoHttp == 415
 }

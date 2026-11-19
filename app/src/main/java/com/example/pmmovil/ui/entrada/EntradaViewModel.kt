@@ -3,6 +3,7 @@ package com.example.pmmovil.ui.entrada
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.pmmovil.data.camera.FotoParaSubir
 import com.example.pmmovil.BuildConfig
 import com.example.pmmovil.data.db.EntradaPhotoSyncDao
 import com.example.pmmovil.data.model.CasetaPhotoInfo
@@ -224,6 +225,12 @@ class EntradaViewModel @Inject constructor(
      * pulsa «Guardar». El registro en Room y el aviso al worker van en NonCancellable para que salir de la pantalla justo
      * después de disparar no deje la foto a medias.
      */
+    /** Una foto local que ya no va a subir: se borra junto con su versión preparada para el envío. */
+    private fun borrarFotoLocal(path: String) {
+        runCatching { File(path).delete() }
+        FotoParaSubir.olvidar(path)
+    }
+
     private fun queuePhotoNow(path: String, kind: String, message: String) {
         val reference = _uiState.value.form.reference()
         viewModelScope.launch {
@@ -430,12 +437,8 @@ class EntradaViewModel @Inject constructor(
             denyEdit()
             return
         }
-        draft.form.localPhotoPaths.forEach { path ->
-            runCatching { File(path).delete() }
-        }
-        draft.form.localDamagePhotoPaths.forEach { path ->
-            runCatching { File(path).delete() }
-        }
+        draft.form.localPhotoPaths.forEach(::borrarFotoLocal)
+        draft.form.localDamagePhotoPaths.forEach(::borrarFotoLocal)
         draftStore.delete(draft.id)
         val drafts = draftStore.loadAll()
         _uiState.value = _uiState.value.copy(
@@ -461,8 +464,8 @@ class EntradaViewModel @Inject constructor(
         draftJob?.cancel()
         draftDiscarded = true
         val form = _uiState.value.form
-        form.localPhotoPaths.forEach { path -> runCatching { File(path).delete() } }
-        form.localDamagePhotoPaths.forEach { path -> runCatching { File(path).delete() } }
+        form.localPhotoPaths.forEach(::borrarFotoLocal)
+        form.localDamagePhotoPaths.forEach(::borrarFotoLocal)
         draftStore.delete(draftId)
     }
 
@@ -870,10 +873,12 @@ class EntradaViewModel @Inject constructor(
 
     fun addLocalPhoto(path: String) {
         if (!canAddPhotos()) {
-            runCatching { File(path).delete() }
+            borrarFotoLocal(path)
             denyEdit()
             return
         }
+        // Se prepara para subir (2560 px, calidad 92) en segundo plano desde ya: al subirla solo se lee el archivo listo.
+        FotoParaSubir.prepararEnSegundoPlano(path)
         val form = _uiState.value.form
         if (EntradaPhotoPolicy.shouldQueueImmediately(
                 kind = EntradaPhotoKind.EVIDENCE,
@@ -899,7 +904,7 @@ class EntradaViewModel @Inject constructor(
             denyEdit()
             return
         }
-        runCatching { File(path).delete() }
+        borrarFotoLocal(path)
         _uiState.value = _uiState.value.copy(
             form = _uiState.value.form.copy(
                 localPhotoPaths = _uiState.value.form.localPhotoPaths - path
@@ -911,10 +916,11 @@ class EntradaViewModel @Inject constructor(
 
     fun addLocalDamagePhoto(path: String) {
         if (!canAddPhotos()) {
-            runCatching { File(path).delete() }
+            borrarFotoLocal(path)
             denyEdit()
             return
         }
+        FotoParaSubir.prepararEnSegundoPlano(path)
         val form = _uiState.value.form
         if (EntradaPhotoPolicy.shouldQueueImmediately(
                 kind = EntradaPhotoKind.DAMAGE,
@@ -940,7 +946,7 @@ class EntradaViewModel @Inject constructor(
             denyEdit()
             return
         }
-        runCatching { File(path).delete() }
+        borrarFotoLocal(path)
         _uiState.value = _uiState.value.copy(
             form = _uiState.value.form.copy(
                 localDamagePhotoPaths = _uiState.value.form.localDamagePhotoPaths - path
@@ -1457,7 +1463,7 @@ class EntradaViewModel @Inject constructor(
      */
     private suspend fun enqueueDamagePhotosOf(form: EntradaFormSnapshot, reference: String): Int {
         if (!form.danada) {
-            form.localDamagePhotoPaths.forEach { path -> runCatching { File(path).delete() } }
+            form.localDamagePhotoPaths.forEach(::borrarFotoLocal)
             return 0
         }
         return enqueueEntradaPhotoFiles(
@@ -1542,7 +1548,7 @@ class EntradaViewModel @Inject constructor(
         }
         viewModelScope.launch {
             entradaPhotoSyncDao.delete(photo.id)
-            runCatching { File(photo.localFilePath).delete() }
+            borrarFotoLocal(photo.localFilePath)
             _uiState.value = _uiState.value.copy(message = "Foto en cola eliminada.")
         }
     }

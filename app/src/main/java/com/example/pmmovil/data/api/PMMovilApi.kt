@@ -68,6 +68,22 @@ interface PMMovilApi {
         @Body request: EntradaPhotosRequest
     ): Response<EntradaOperationResponse>
 
+    // Las mismas dos rutas con las fotos como archivos (multipart, ~25 % menos que en base64). Un API anterior no las tiene:
+    // ver FotosMultipart.sinRutaDeArchivos.
+    @Multipart
+    @POST("Entrada/fotos/archivos")
+    suspend fun saveEntradaPhotoFiles(
+        @Part("referencia") referencia: okhttp3.RequestBody,
+        @Part fotos: List<okhttp3.MultipartBody.Part>
+    ): Response<EntradaOperationResponse>
+
+    @Multipart
+    @POST("Entrada/fotos-danio/archivos")
+    suspend fun saveEntradaDamagePhotoFiles(
+        @Part("referencia") referencia: okhttp3.RequestBody,
+        @Part fotos: List<okhttp3.MultipartBody.Part>
+    ): Response<EntradaOperationResponse>
+
     // Aviso de PRUEBA al terminar la captura: el API manda un correo que llega SOLO a desarrollo3 (PMMovil no manda la
     // notificación de entrada al cliente; la manda el sistema PMM). Ver EntradaCaptureNoticeWorker.
     @POST("Entrada/{cref}/aviso-captura")
@@ -339,6 +355,17 @@ interface PMMovilApi {
     // ── Fotos ─────────────────────────────────────────────────────────────────
     @POST("Foto/subir")
     suspend fun subirFoto(@Body request: SubirFotoRequest): Response<SubirFotoResponse>
+
+    // La misma con la foto como archivo (multipart). Un API anterior no la tiene: ver FotosMultipart.sinRutaDeArchivos.
+    @Multipart
+    @POST("Foto/subir/archivo")
+    suspend fun subirFotoArchivo(
+        @Part("creferencia") creferencia: okhttp3.RequestBody,
+        @Part("cclienteid") cclienteid: okhttp3.RequestBody,
+        @Part("extension") extension: okhttp3.RequestBody,
+        @Part("esDiscrepancia") esDiscrepancia: okhttp3.RequestBody,
+        @Part foto: okhttp3.MultipartBody.Part
+    ): Response<SubirFotoResponse>
 
     @GET("Foto/{creferencia}")
     suspend fun getFotos(@Path("creferencia") creferencia: String): Response<FotosResponse>
