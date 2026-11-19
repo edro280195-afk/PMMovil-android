@@ -72,7 +72,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -100,6 +99,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Locale
 import androidx.compose.runtime.collectAsState
+import com.example.pmmovil.ui.components.EvidenceZoomLayers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.withContext
@@ -107,12 +107,18 @@ import kotlinx.coroutines.NonCancellable
 
 private const val TAG_LOCAL_EVIDENCE_CAMERA = "local-evidence-camera"
 
+/**
+ * Una foto de la tira de la cámara. [model] es lo que se ve en grande; para fotos del servidor [thumbModel] es la
+ * miniatura de la tira y [zoomModel] el original, que solo se trae al acercarse (ver [EvidenceZoomLayers]).
+ */
 data class LocalEvidencePhoto(
     val id: String,
     val model: Any,
     val label: String,
     val status: String,
-    val canDelete: Boolean = true
+    val canDelete: Boolean = true,
+    val thumbModel: Any = model,
+    val zoomModel: Any? = null
 )
 
 @Composable
@@ -783,7 +789,7 @@ private fun LocalPhotoThumbnail(
             .clickable(onClick = onOpen)
     ) {
         AsyncImage(
-            model = photo.model,
+            model = photo.thumbModel,
             contentDescription = photo.label,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop
@@ -840,6 +846,7 @@ private fun LocalEvidenceLightbox(
         ) {
             ZoomableLocalEvidenceImage(
                 model = photo.model,
+                zoomModel = photo.zoomModel,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 12.dp, vertical = 76.dp)
@@ -871,7 +878,7 @@ private fun LocalEvidenceLightbox(
 }
 
 @Composable
-private fun ZoomableLocalEvidenceImage(model: Any, modifier: Modifier = Modifier) {
+private fun ZoomableLocalEvidenceImage(model: Any, modifier: Modifier = Modifier, zoomModel: Any? = null) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     Box(
@@ -895,18 +902,13 @@ private fun ZoomableLocalEvidenceImage(model: Any, modifier: Modifier = Modifier
             },
         contentAlignment = Alignment.Center
     ) {
-        AsyncImage(
+        // La vista de pantalla siempre; el original encima solo al acercarse (fotos del servidor).
+        EvidenceZoomLayers(
             model = model,
+            zoomModel = zoomModel,
             contentDescription = "Fotografia",
-            contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                    translationX = offset.x
-                    translationY = offset.y
-                }
+            scale = { scale },
+            offset = { offset }
         )
     }
 }

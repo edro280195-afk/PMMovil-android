@@ -6,6 +6,7 @@ import android.util.Base64
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import android.util.Log
+import com.example.pmmovil.data.camera.FotoParaSubir
 import com.example.pmmovil.data.camera.PhotoPipeline
 import com.example.pmmovil.data.ocr.applyExifOrientation
 import com.example.pmmovil.data.ocr.LocalTextOcr
@@ -28,6 +29,7 @@ import com.example.pmmovil.data.model.TipoRegistro
 import com.example.pmmovil.data.model.MobileModuleIds
 import com.example.pmmovil.data.repository.AuthRepository
 import com.example.pmmovil.di.ApplicationScope
+import com.example.pmmovil.di.NetworkModule
 import com.example.pmmovil.data.catalog.CatalogIndex
 import com.example.pmmovil.data.catalog.CatalogoItem
 import com.example.pmmovil.data.catalog.CatalogoRepository
@@ -47,9 +49,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -60,8 +59,6 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 enum class CasetaEntradaLookupType {
@@ -191,9 +188,14 @@ data class CasetaEntradaForm(
 data class CasetaEntradaRemotePhoto(
     val key: String,
     val label: String,
+    /** Lo que se pinta en cuadrículas y tiras: la miniatura del servidor (~14 KB). */
     val model: Any,
     val base64: String = "",
-    val sourceIndex: Int? = null
+    val sourceIndex: Int? = null,
+    /** Lo que se ve en el visor: la vista de pantalla (~130 KB). Por omisión lo mismo que [model]. */
+    val viewerModel: Any = model,
+    /** El original a resolución completa, solo al hacer zoom fuerte; null si no hay uno distinto. */
+    val zoomModel: Any? = null
 )
 
 // Conversion hacia/desde la fila de Room que respalda la captura en curso.
@@ -407,6 +409,7 @@ class CasetaEntradaViewModel @Inject constructor(
     private var historyJob: Job? = null
     private var captureJob: Job? = null
     private var remotePhotosLoadJob: Job? = null
+    private var remotePhotoOcrJob: Job? = null
 
     // Identidad del borrador que se autoguarda mientras el usuario captura. Se
     // renueva al empezar de cero, al cargar un registro existente o al guardar.
@@ -1131,6 +1134,12 @@ class CasetaEntradaViewModel @Inject constructor(
                 )
             }
         }
+        // Se prepara para subir (2560 px, calidad 92) mientras el guardia termina de llenar la entrada: al Guardar, el
+        // envío solo manda bytes ya listos en vez de reducir cada foto de 12 MP en ese momento. En applicationScope
+        // para que termine aunque se cierre la pantalla; un hilo a la vez para no competir con la cámara.
+        if (_uiState.value.form.localPhotoPaths.contains(path)) {
+            applicationScope.launch(photoPrepDispatcher) { FotoParaSubir.preparar(path) }
+        }
     }
 
     fun removeLocalPhoto(path: String) {
@@ -1142,6 +1151,7 @@ class CasetaEntradaViewModel @Inject constructor(
             it.copy(form = it.form.copy(localPhotoPaths = it.form.localPhotoPaths - path))
         }
         runCatching { File(path).delete() }
+        FotoParaSubir.olvidar(path)
     }
 
     fun removeRemotePhoto(index: Int) {
@@ -1186,6 +1196,51 @@ class CasetaEntradaViewModel @Inject constructor(
             localSource = { readBase64WithPaddleFallback(base64Image) },
             serverSource = { base64Image }
         )
+    }
+
+    /**
+     * Leer placa o caja de una foto ya guardada en el servidor. Las fotos guardadas ya no se bajan completas al abrir el
+     * registro (solo su miniatura), así que el original se trae aquí, únicamente para esta lectura.
+     */
+    fun runSmartCaptureFromRemotePhoto(mode: CasetaEntradaCaptureMode, index: Int) {
+        val state = _uiState.value
+        val photo = state.form.remotePhotos.getOrNull(index) ?: return
+        photo.base64.takeIf(String::isNotBlank)?.let { base64 ->
+            runSmartCaptureFromBase64(mode, base64, index)
+            return
+        }
+        val casetaId = state.form.casetaId.trim()
+        val sourceIndex = photo.sourceIndex?.takeIf { it > 0 } ?: return
+        if (casetaId.isBlank()) return
+
+        remotePhotoOcrJob?.cancel()
+        remotePhotoOcrJob = viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    capture = CasetaEntradaOcrState(
+                        isLoading = true,
+                        sourceId = "remote-$index",
+                        mode = mode,
+                        phase = CasetaEntradaOcrPhase.Captured,
+                        outcome = CasetaEntradaOcrOutcome.Pending,
+                        message = "Trayendo la foto guardada."
+                    )
+                )
+            }
+            val bytes = repository.downloadGatePhoto(casetaId, sourceIndex).getOrNull()
+            if (bytes == null) {
+                _uiState.update {
+                    it.copy(
+                        capture = CasetaEntradaOcrState.Idle,
+                        message = "No se pudo traer la foto guardada para leerla. Revisa la conexión e inténtalo de nuevo.",
+                        feedbackSeq = it.feedbackSeq + 1
+                    )
+                }
+                return@launch
+            }
+            val dataUrl = withContext(Dispatchers.Default) { photoBytesToDataUrl(bytes) }
+            runSmartCaptureFromBase64(mode, dataUrl, index)
+        }
     }
 
     // Corren en paralelo y se fusionan: un acierto parcial de Paddle no debe tapar la red de seguridad de ML Kit (dígitos verticales).
@@ -1280,9 +1335,7 @@ class CasetaEntradaViewModel @Inject constructor(
             sourceId.startsWith("local-") -> runSmartCaptureFromLocalPhoto(mode, sourceId.removePrefix("local-"))
             sourceId.startsWith("remote-") -> {
                 val index = sourceId.removePrefix("remote-").toIntOrNull() ?: return
-                state.form.remotePhotos.getOrNull(index)?.base64?.takeIf(String::isNotBlank)?.let { base64 ->
-                    runSmartCaptureFromBase64(mode, base64, index)
-                }
+                runSmartCaptureFromRemotePhoto(mode, index)
             }
         }
     }
@@ -2049,27 +2102,11 @@ class CasetaEntradaViewModel @Inject constructor(
 
         if (casetaId.isBlank() || photoInfos.isEmpty()) return directPhotos
 
-        return coroutineScope {
-            val downloadSemaphore = Semaphore(3)
-            photoInfos.take(MAX_REMOTE_PHOTOS).mapIndexed { index, info ->
-                async {
-                    downloadSemaphore.withPermit {
-                        val bytes = repository.downloadGatePhoto(casetaId, info.indice).getOrNull()
-                            ?: return@withPermit null
-                        withContext(Dispatchers.Default) {
-                            val dataUrl = photoBytesToDataUrl(bytes)
-                            CasetaEntradaRemotePhoto(
-                                key = "remote-${info.indice}-$index",
-                                label = info.nombreArchivo.ifBlank { "Guardada ${info.indice}" },
-                                model = decodeRemotePhotoBitmap(bytes) ?: dataUrl,
-                                base64 = dataUrl,
-                                sourceIndex = info.indice
-                            )
-                        }
-                    }
-                }
-            }.awaitAll().filterNotNull()
-        }
+        // Antes se bajaba aquí cada original completo (~800 KB, 3 a la vez), se convertía a texto base64 y a una imagen
+        // de 1920x2560 en memoria, y no se enseñaba ninguna hasta tener todas; al volver a abrir, todo otra vez. Ahora
+        // cada foto es una dirección: la cuadrícula pide la miniatura, el visor la vista y el zoom el original, cada
+        // cuadro aparece en cuanto llega y Coil la guarda (con la versión del detalle, para siempre).
+        return CasetaEntradaRemotePhotos.desdeServidor(NetworkModule.BASE_URL, casetaId, photoInfos, MAX_REMOTE_PHOTOS)
     }
 
     private fun runSmartCapture(
@@ -2629,6 +2666,8 @@ class CasetaEntradaViewModel @Inject constructor(
     }
 
     companion object {
+        /** Preparar fotos para subir, de una en una: no le quita a la cámara los núcleos que usa para su vista previa. */
+        private val photoPrepDispatcher = Dispatchers.Default.limitedParallelism(1)
         private const val HIGH_CONFIDENCE = 0.78
         private const val LOCAL_FAST_PATH_THRESHOLD = 0.90
         private const val HISTORY_BOOST = 0.12

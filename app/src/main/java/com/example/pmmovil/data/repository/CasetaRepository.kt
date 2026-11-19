@@ -1,5 +1,6 @@
 package com.example.pmmovil.data.repository
 
+import com.example.pmmovil.data.api.FotosMultipart
 import com.example.pmmovil.data.api.PMMovilApi
 import com.example.pmmovil.data.model.CasetaDetalleResponse
 import com.example.pmmovil.data.model.CasetaPendiente
@@ -16,10 +17,41 @@ import retrofit2.Response
 /** El servidor aun no tiene el envio de fotos por lotes: se manda todo junto en la confirmacion, como antes. */
 class EnvioPorLotesNoDisponible : Exception("El servidor no admite el envío de fotos por lotes.")
 
+/** El servidor aun no recibe las fotos como archivos: se mandan como texto base64, como antes. */
+class EnvioComoArchivoNoDisponible : Exception("El servidor no admite fotos como archivo.")
+
+/**
+ * Lo que la salida con fotos necesita del servidor. [CasetaRepository] lo cumple; las pruebas de
+ * [com.example.pmmovil.ui.salidacaseta.SalidaFotosEnvio] usan uno falso.
+ */
+interface SalidaFotosServidor {
+    /** Un lote como archivos. Falla con [EnvioComoArchivoNoDisponible] si el servidor no tiene esa ruta. */
+    suspend fun subirFotosSalidaArchivos(
+        relno: String,
+        indiceInicial: Int,
+        fotos: List<ByteArray>
+    ): Result<ConfirmarSalidaCasetaResponse>
+
+    /** Un lote como texto base64. Falla con [EnvioPorLotesNoDisponible] si el servidor no tiene envío por lotes. */
+    suspend fun subirFotosSalida(
+        relno: String,
+        indiceInicial: Int,
+        fotosBase64: List<String>
+    ): Result<ConfirmarSalidaCasetaResponse>
+
+    suspend fun confirmarSalida(
+        relno: String,
+        usuario: String,
+        observaciones: String = "",
+        fotosBase64: List<String>? = null,
+        totalFotos: Int? = null
+    ): Result<ConfirmarSalidaCasetaResponse>
+}
+
 @Singleton
 class CasetaRepository @Inject constructor(
     private val api: PMMovilApi
-) {
+) : SalidaFotosServidor {
     suspend fun getPendientes(): Result<List<CasetaPendiente>> = io {
         val response = api.getCasetaPendientes()
         val body = response.body()
@@ -43,12 +75,12 @@ class CasetaRepository @Inject constructor(
      * [totalFotos] con valor = las fotos ya se subieron por lotes con [subirFotosSalida] y aqui solo se confirma;
      * sin valor, las fotos viajan en [fotosBase64] en un solo envio, como antes.
      */
-    suspend fun confirmarSalida(
+    override suspend fun confirmarSalida(
         relno: String,
         usuario: String,
-        observaciones: String = "",
-        fotosBase64: List<String>? = null,
-        totalFotos: Int? = null
+        observaciones: String,
+        fotosBase64: List<String>?,
+        totalFotos: Int?
     ): Result<ConfirmarSalidaCasetaResponse> = io {
         val response = api.confirmarSalidaCaseta(
             relno = relno,
@@ -70,7 +102,7 @@ class CasetaRepository @Inject constructor(
      * Sube un lote de fotos de la salida antes de confirmarla. Si el servidor todavia no tiene el endpoint (404/405)
      * falla con [EnvioPorLotesNoDisponible] y quien llama vuelve al envio unico.
      */
-    suspend fun subirFotosSalida(
+    override suspend fun subirFotosSalida(
         relno: String,
         indiceInicial: Int,
         fotosBase64: List<String>
@@ -80,6 +112,28 @@ class CasetaRepository @Inject constructor(
             request = SubirFotosSalidaCasetaRequest(indiceInicial = indiceInicial, fotosBase64 = fotosBase64)
         )
         if (response.code() == 404 || response.code() == 405) throw EnvioPorLotesNoDisponible()
+        response.body() ?: throw apiFailure(
+            response = response,
+            bodyMessage = null,
+            fallback = "No se pudieron enviar las fotos."
+        )
+    }
+
+    /**
+     * El mismo lote, como archivos. Un servidor anterior no tiene la ruta (404/405/415): falla con
+     * [EnvioComoArchivoNoDisponible] y quien llama vuelve a [subirFotosSalida].
+     */
+    override suspend fun subirFotosSalidaArchivos(
+        relno: String,
+        indiceInicial: Int,
+        fotos: List<ByteArray>
+    ): Result<ConfirmarSalidaCasetaResponse> = io {
+        val response = api.subirFotosSalidaCasetaArchivos(
+            relno = relno,
+            indiceInicial = FotosMultipart.texto(indiceInicial.toString()),
+            fotos = fotos.mapIndexed { i, bytes -> FotosMultipart.foto("fotos", "${indiceInicial + i}.jpg", bytes) }
+        )
+        if (response.code() == 404 || response.code() == 405 || response.code() == 415) throw EnvioComoArchivoNoDisponible()
         response.body() ?: throw apiFailure(
             response = response,
             bodyMessage = null,

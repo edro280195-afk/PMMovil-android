@@ -1,5 +1,6 @@
 package com.example.pmmovil.ui.salidacaseta
 
+import com.example.pmmovil.data.api.CasetaFotoUrls
 import com.example.pmmovil.ui.components.EvidenceGalleryItem
 import java.io.File
 
@@ -18,10 +19,17 @@ object SalidaFotosGaleria {
 
     /**
      * Fotos que se tomaron al llegar la caja: viven en el servidor, así que el visor las pide por URL. [urlDe] arma
-     * la dirección de cada índice (el mismo que ya usan las miniaturas).
+     * la dirección de cada índice en el tamaño pedido: en grande se ve la vista de pantalla, la tira de abajo usa la
+     * miniatura y el original solo llega al acercarse.
      */
-    fun deLlegada(indices: List<Int>, urlDe: (Int) -> String): List<EvidenceGalleryItem> =
+    fun deLlegada(indices: List<Int>, urlDe: (Int, CasetaFotoUrls.Tamano) -> String): List<EvidenceGalleryItem> =
         indices.mapIndexed { i, indice ->
-            EvidenceGalleryItem(id = "llegada-$indice", model = urlDe(indice), label = "Llegada ${i + 1}")
+            EvidenceGalleryItem(
+                id = "llegada-$indice",
+                model = urlDe(indice, CasetaFotoUrls.Tamano.Vista),
+                label = "Llegada ${i + 1}",
+                thumbModel = urlDe(indice, CasetaFotoUrls.Tamano.Mini),
+                zoomModel = urlDe(indice, CasetaFotoUrls.Tamano.Original)
+            )
         }
 }

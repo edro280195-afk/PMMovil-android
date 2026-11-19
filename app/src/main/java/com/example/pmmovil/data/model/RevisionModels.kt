@@ -178,7 +178,9 @@ data class FotoRevisionDto(
     @SerializedName("fCrea") val fCrea: String?,
     // 107 = evidencia normal de revisión, 103 = evidencia de discrepancia
     // (mismo ntipodocto que daño de Entrada Bodega, por decisión de equipo).
-    @SerializedName("nTipoDocto") val nTipoDocto: Int = 107
+    @SerializedName("nTipoDocto") val nTipoDocto: Int = 107,
+    // Versión de la foto (idfotos + fecha) para la dirección; un servidor anterior no la manda (ver EvidenciaFotoUrls.tres).
+    @SerializedName("version") val version: String? = null
 ) {
     val esDiscrepancia: Boolean get() = nTipoDocto == 103
 }

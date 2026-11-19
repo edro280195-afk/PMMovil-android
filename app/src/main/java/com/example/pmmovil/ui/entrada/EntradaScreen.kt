@@ -62,6 +62,8 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.example.pmmovil.ui.components.EvidenceZoomLayers
+import com.example.pmmovil.data.api.EvidenciaFotoUrls
 import com.example.pmmovil.ui.common.SavingProgressState
 import com.example.pmmovil.ui.common.SavingProgressStep
 import com.example.pmmovil.ui.common.SavingStepStatus
@@ -126,7 +128,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
@@ -1757,12 +1758,15 @@ private fun entradaLocalDamagePhotos(state: EntradaUiState): List<LocalEvidenceP
         emptyList()
     } else {
         state.remoteDamagePhotos.asReversed().map { photo ->
+            val urls = EvidenciaFotoUrls.entrada(PMM_API_BASE, reference, photo.nLineNo, danio = true, version = photo.version)
             LocalEvidencePhoto(
                 id = "remote-${photo.idFotos}",
-                model = "${PMM_API_BASE}Foto/entrada-danio/ver/$reference/${photo.nLineNo}",
+                model = urls.vista,
                 label = "Daño ${photo.nLineNo}",
                 status = "Guardada",
-                canDelete = canDelete
+                canDelete = canDelete,
+                thumbModel = urls.mini,
+                zoomModel = urls.original
             )
         }
     }
@@ -1799,13 +1803,16 @@ private fun entradaDamageGalleryItems(state: EntradaUiState, viewModel: EntradaV
             ))
         }
         state.remoteDamagePhotos.forEach { photo ->
+            val urls = EvidenciaFotoUrls.entrada(PMM_API_BASE, reference, photo.nLineNo, danio = true, version = photo.version)
             add(
                 EntradaGalleryItem(
                     key = "remote-danio-${photo.idFotos}",
-                    model = "${PMM_API_BASE}Foto/entrada-danio/ver/$reference/${photo.nLineNo}",
+                    model = urls.vista,
                     label = "Daño ${photo.nLineNo}",
                     pending = false,
-                    onDelete = if (canDelete) ({ viewModel.deleteRemoteDamagePhoto(photo) }) else null
+                    onDelete = if (canDelete) ({ viewModel.deleteRemoteDamagePhoto(photo) }) else null,
+                    thumbModel = urls.mini,
+                    zoomModel = urls.original
                 )
             )
         }
@@ -2261,13 +2268,19 @@ private fun PhotoStrip(state: EntradaUiState, viewModel: EntradaViewModel) {
     }
 }
 
-/** Foto en la galería de Entrada: local (archivo) o remota/caseta (URL autenticada Coil). */
+/**
+ * Foto en la galería de Entrada: local (archivo) o remota/caseta (URL autenticada Coil). [model] es lo que se ve en grande;
+ * para fotos guardadas [thumbModel] es la miniatura de tarjetas y tira y [zoomModel] el original, que solo se trae al
+ * acercarse (ver [EvidenceZoomLayers]).
+ */
 private data class EntradaGalleryItem(
     val key: String,
     val model: Any,
     val label: String,
     val pending: Boolean,
-    val onDelete: (() -> Unit)?
+    val onDelete: (() -> Unit)?,
+    val thumbModel: Any = model,
+    val zoomModel: Any? = null
 )
 
 // Antes apuntaba fijo a https://revisionapi.grupopmm.com/api/ (producción),
@@ -2306,12 +2319,15 @@ private fun entradaLocalEvidencePhotos(state: EntradaUiState): List<LocalEvidenc
         emptyList()
     } else {
         state.remotePhotos.asReversed().map { photo ->
+            val urls = EvidenciaFotoUrls.entrada(PMM_API_BASE, reference, photo.nLineNo, danio = false, version = photo.version)
             LocalEvidencePhoto(
                 id = "remote-${photo.idFotos}",
-                model = "${PMM_API_BASE}Foto/entrada/ver/$reference/${photo.nLineNo}",
+                model = urls.vista,
                 label = "Foto ${photo.nLineNo}",
                 status = "Guardada",
-                canDelete = canDelete
+                canDelete = canDelete,
+                thumbModel = urls.mini,
+                zoomModel = urls.original
             )
         }
     }
@@ -2349,13 +2365,16 @@ private fun entradaGalleryItems(state: EntradaUiState, viewModel: EntradaViewMod
             ))
         }
         state.remotePhotos.forEach { photo ->
+            val urls = EvidenciaFotoUrls.entrada(PMM_API_BASE, reference, photo.nLineNo, danio = false, version = photo.version)
             add(
                 EntradaGalleryItem(
                     key = "remote-${photo.idFotos}",
-                    model = "${PMM_API_BASE}Foto/entrada/ver/$reference/${photo.nLineNo}",
+                    model = urls.vista,
                     label = "Guardada ${photo.nLineNo}",
                     pending = false,
-                    onDelete = if (canDelete) ({ viewModel.deleteRemotePhoto(photo) }) else null
+                    onDelete = if (canDelete) ({ viewModel.deleteRemotePhoto(photo) }) else null,
+                    thumbModel = urls.mini,
+                    zoomModel = urls.original
                 )
             )
         }
@@ -2389,7 +2408,7 @@ private fun PhotoTile(
             .clickable(onClick = onOpen)
     ) {
         AsyncImage(
-            model = item.model,
+            model = item.thumbModel,
             contentDescription = item.label,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
@@ -2489,7 +2508,7 @@ private fun PhotoGalleryDialog(
         Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.97f))) {
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
                 val item = items.getOrNull(page) ?: return@HorizontalPager
-                ZoomableImage(model = item.model, modifier = Modifier.fillMaxSize())
+                ZoomableImage(model = item.model, zoomModel = item.zoomModel, modifier = Modifier.fillMaxSize())
             }
 
             // Barra superior: contador + eliminar + cerrar
@@ -2542,7 +2561,7 @@ private fun PhotoGalleryDialog(
                     itemsIndexed(items, key = { _, it -> "thumb-${it.key}" }) { i, item ->
                         val selected = i == currentIndex
                         AsyncImage(
-                            model = item.model,
+                            model = item.thumbModel,
                             contentDescription = item.label,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
@@ -2573,9 +2592,12 @@ private fun PhotoGalleryDialog(
     }
 }
 
-/** Imagen con pinch-to-zoom, doble-tap para acercar y arrastre para desplazar. */
+/**
+ * Imagen con pinch-to-zoom, doble-tap para acercar y arrastre para desplazar. Con [zoomModel] (fotos guardadas) se ve la
+ * vista de pantalla y el original llega solo al acercarse.
+ */
 @Composable
-private fun ZoomableImage(model: Any, modifier: Modifier = Modifier) {
+private fun ZoomableImage(model: Any, modifier: Modifier = Modifier, zoomModel: Any? = null) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     Box(
@@ -2599,18 +2621,12 @@ private fun ZoomableImage(model: Any, modifier: Modifier = Modifier) {
             },
         contentAlignment = Alignment.Center
     ) {
-        AsyncImage(
+        EvidenceZoomLayers(
             model = model,
+            zoomModel = zoomModel,
             contentDescription = "Fotografía",
-            contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                    translationX = offset.x
-                    translationY = offset.y
-                }
+            scale = { scale },
+            offset = { offset }
         )
     }
 }

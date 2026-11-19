@@ -111,6 +111,9 @@ import com.example.pmmovil.data.camera.StillCaptureMode
 import com.example.pmmovil.data.model.FotoRevisionDto
 import com.example.pmmovil.data.model.FotoSyncEntity
 import com.example.pmmovil.data.preferences.CameraPreferences
+import coil.size.Size
+import com.example.pmmovil.data.api.CasetaFotoUrls
+import com.example.pmmovil.data.api.EvidenciaFotoUrls
 import com.example.pmmovil.di.NetworkModule
 import com.example.pmmovil.ui.theme.PmmBlueDeep
 import com.example.pmmovil.ui.theme.PmmBlueLight
@@ -1142,10 +1145,16 @@ fun PhotoTile(
     }
 }
 
+/**
+ * Foto de evidencia: local (archivo) o del servidor. [tamano] dice cuál de las del servidor se pide: la miniatura (~14 KB)
+ * para cuadrículas y tiras, la vista (~130 KB) para el visor. El original solo llega al hacer zoom (ver
+ * [EvidenceOriginalAlAcercar]).
+ */
 @Composable
 fun EvidenceThumbnailImage(
     photo: EvidenceSelection,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    tamano: CasetaFotoUrls.Tamano = CasetaFotoUrls.Tamano.Mini
 ) {
     val context = LocalContext.current
     // Antes, cuando Coil fallaba en cargar la foto remota (401/404/red caída),
@@ -1161,7 +1170,7 @@ fun EvidenceThumbnailImage(
     val model = when (photo) {
         is EvidenceSelection.Local -> photo.photo.localFilePath.let(::File)
         is EvidenceSelection.Remote -> ImageRequest.Builder(context)
-            .data("${NetworkModule.BASE_URL}Foto/ver/${photo.photo.idFotos}")
+            .data(urlRemota(photo.photo, tamano))
             // NO agregar aquí el header Authorization: el ImageLoader global
             // de Coil (ver PMMovilApplication.newImageLoader) ya lo inyecta a
             // toda petición vía su propio OkHttpClient. Agregarlo también
@@ -1210,6 +1219,46 @@ fun EvidenceThumbnailImage(
     }
 }
 
+/** La dirección de una foto de revisión en el tamaño pedido; sin versión (servidor anterior) siempre la del original. */
+private fun urlRemota(foto: FotoRevisionDto, tamano: CasetaFotoUrls.Tamano): String {
+    val urls = EvidenciaFotoUrls.revision(NetworkModule.BASE_URL, foto.idFotos, foto.version)
+    return when (tamano) {
+        CasetaFotoUrls.Tamano.Mini -> urls.mini
+        CasetaFotoUrls.Tamano.Vista -> urls.vista
+        CasetaFotoUrls.Tamano.Original -> urls.original ?: urls.vista
+    }
+}
+
+/**
+ * Encima de la vista, el original de una foto del servidor en cuanto la persona se acerca (y ya no se quita de esa
+ * página). Mismo recorte que la vista, así encajan exactas; Size.ORIGINAL para que el zoom no se vea borroso.
+ */
+@Composable
+private fun EvidenceOriginalAlAcercar(photo: EvidenceSelection, acercada: Boolean) {
+    val remota = photo as? EvidenceSelection.Remote ?: return
+    val original = EvidenciaFotoUrls.revision(NetworkModule.BASE_URL, remota.photo.idFotos, remota.photo.version).original
+        ?: return
+    var traer by remember(original) { mutableStateOf(false) }
+    LaunchedEffect(acercada) {
+        if (acercada) traer = true
+    }
+    if (!traer) return
+
+    val context = LocalContext.current
+    val request = remember(original) {
+        ImageRequest.Builder(context)
+            .data(original)
+            .size(Size.ORIGINAL)
+            .build()
+    }
+    AsyncImage(
+        model = request,
+        contentDescription = null,
+        modifier = Modifier.fillMaxSize(),
+        contentScale = ContentScale.Crop
+    )
+}
+
 // ════════════════════════════════════════════════════════════════════════
 // VISOR: swipe entre fotos + zoom (doble toque, arrastre mientras hay zoom)
 // ════════════════════════════════════════════════════════════════════════
@@ -1249,8 +1298,10 @@ fun EvidenceViewerPager(
             ) {
                 EvidenceThumbnailImage(
                     photo = photo,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    tamano = CasetaFotoUrls.Tamano.Vista
                 )
+                EvidenceOriginalAlAcercar(photo = photo, acercada = zoomedPage == page)
             }
         }
 

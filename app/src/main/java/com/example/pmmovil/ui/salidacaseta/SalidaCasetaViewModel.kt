@@ -4,8 +4,7 @@ import android.content.SharedPreferences
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.pmmovil.data.camera.PhotoEncodingRules
-import com.example.pmmovil.data.camera.PhotoPipeline
+import com.example.pmmovil.data.camera.FotoParaSubir
 import com.example.pmmovil.data.model.MobileModuleIds
 import com.example.pmmovil.data.model.SalidaCarril
 import com.example.pmmovil.data.model.SalidaPatioHoy
@@ -23,18 +22,15 @@ import java.util.Locale
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * Pantalla unificada de salida de caseta.
@@ -141,11 +137,11 @@ class SalidaCasetaViewModel @Inject constructor(
     )
     val uiState: StateFlow<SalidaUiState> = _uiState.asStateFlow()
 
-    // Las fotos se comprimen apenas se toman (no al confirmar), igual que en la
-    // salida de relación original: la petición lleva todas juntas y comprimirlas
-    // de golpe justo al confirmar hacía esperar al guardia en el peor momento.
-    private val photoEncodingScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val pendingEncodedPhotos = mutableMapOf<String, Deferred<String?>>()
+    // Cada foto se prepara para subir apenas se toma (ver FotoParaSubir: queda en disco, junto a la original) y sube en
+    // segundo plano (envioFotos.subirEnSegundoPlano): al confirmar ya no hay que esperarlas. Un hilo a la vez para no
+    // competir con la cámara, que sigue abierta mientras el guardia toma las demás.
+    private val photoPrepScope = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1))
+    private val preparando = mutableMapOf<String, Job>()
 
     private val pendingCode = PendingCode()
 
@@ -208,7 +204,10 @@ class SalidaCasetaViewModel @Inject constructor(
         porRestaurar
             .filterKeys { it !in idsVigentes }
             .values.flatten()
-            .forEach { runCatching { File(it).delete() } }
+            .forEach {
+                runCatching { File(it).delete() }
+                FotoParaSubir.olvidar(it)
+            }
 
         _uiState.update { actual ->
             val vigentes = nuevos.map { it.id }.toSet()
@@ -274,6 +273,8 @@ class SalidaCasetaViewModel @Inject constructor(
     fun select(id: String) {
         if (_uiState.value.isProcessing) return
         _uiState.update { it.copy(selectedId = id, confirmVisible = false) }
+        // Fotos que volvieron del respaldo (la app se cerró o el guardia salió): empiezan a subir desde que se abre.
+        _uiState.value.selected?.let(::subirFotosEnFondo)
     }
 
     fun closeDetail() {
@@ -342,8 +343,16 @@ class SalidaCasetaViewModel @Inject constructor(
         }
         _uiState.update { it.copy(fotos = it.fotos + (item.id to it.fotosDeId(item.id) + path)) }
         guardarFotosBorrador()
-        // Arranca la compresión ya, en paralelo a que se sigan tomando fotos.
-        pendingEncodedPhotos[path] = photoEncodingScope.async { PhotoPipeline.aBase64(path) }
+        // Se prepara ya y sube en segundo plano, en paralelo a que se sigan tomando fotos.
+        preparando[path] = photoPrepScope.launch { FotoParaSubir.preparar(path) }
+        subirFotosEnFondo(item)
+    }
+
+    /** Sube lo que falte de [item] mientras el guardia sigue; solo las relaciones listas llevan fotos de salida. */
+    private fun subirFotosEnFondo(item: SalidaPatioItem) {
+        if (item.carrilEnum != SalidaCarril.LISTA || !_uiState.value.relAgregar) return
+        if (_uiState.value.fotosDe(item).isEmpty()) return
+        envioFotos.subirEnSegundoPlano(viewModelScope, item.relno) { _uiState.value.fotos[item.id].orEmpty() }
     }
 
     fun removePhoto(path: String) {
@@ -359,32 +368,20 @@ class SalidaCasetaViewModel @Inject constructor(
             return
         }
         _uiState.update { it.copy(fotos = it.fotos + (item.id to it.fotosDeId(item.id) - path)) }
-        pendingEncodedPhotos.remove(path)?.cancel()
         descartarFoto(path)
         guardarFotosBorrador()
+        // Las que estaban después se recorrieron una posición: el envío de fondo las vuelve a mandar donde ahora van.
+        subirFotosEnFondo(item)
     }
 
     private fun SalidaUiState.fotosDeId(id: String): List<String> = fotos[id].orEmpty()
 
     private fun descartarFoto(path: String) {
-        pendingEncodedPhotos.remove(path)?.cancel()
+        preparando.remove(path)?.cancel()
         envioFotos.olvidar(path)
         runCatching { File(path).delete() }
+        FotoParaSubir.olvidar(path)
     }
-
-    private suspend fun codificarFotos(paths: List<String>): List<String> =
-        withContext(Dispatchers.Default) {
-            val encoded = paths.map { path ->
-                val photo = pendingEncodedPhotos
-                    .getOrPut(path) { photoEncodingScope.async { PhotoPipeline.aBase64(path) } }
-                    .await()
-                if (photo.isNullOrBlank()) {
-                    pendingEncodedPhotos.remove(path)?.cancel()
-                }
-                photo
-            }
-            PhotoEncodingRules.requireAllEncoded(encoded)
-        }
 
     // ── Confirmación ────────────────────────────────────────────────────────
 
@@ -513,8 +510,9 @@ class SalidaCasetaViewModel @Inject constructor(
     }
 
     /**
-     * Salida con relación: prepara las fotos, las manda por lotes con avance visible y confirma (ver [SalidaFotosEnvio]).
-     * Devuelve `null` cuando las fotos no se pudieron preparar o enviar (ya se avisó al guardia; siguen guardadas).
+     * Salida con relación: manda por lotes, con avance visible, lo que el envío de fondo no alcanzó a subir y confirma
+     * (ver [SalidaFotosEnvio]). Devuelve `null` cuando las fotos no se pudieron preparar o enviar (ya se avisó al
+     * guardia; siguen guardadas).
      */
     private suspend fun confirmarRelacion(
         item: SalidaPatioItem,
@@ -527,7 +525,6 @@ class SalidaCasetaViewModel @Inject constructor(
             usuario = usuario,
             observaciones = observacion,
             rutas = fotos,
-            codificar = ::codificarFotos,
             alAvanzar = ::publicarProgreso
         )) {
             is SalidaFotosEnvio.Confirmacion.Terminada -> confirmacion.resultado.map { it.success to it.message }
@@ -572,7 +569,7 @@ class SalidaCasetaViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
-        photoEncodingScope.cancel()
+        photoPrepScope.cancel()
     }
 
     companion object {

@@ -191,7 +191,12 @@ data class EntradaPhotoInfo(
     val nLineNo: Int = 0,
     val cExtension: String = "",
     val usuCrea: String = "",
-    val fCrea: String = ""
+    val fCrea: String = "",
+    /**
+     * Versión de la foto (idfotos + fecha): va en la dirección para que la tableta la guarde para siempre. Un servidor
+     * anterior no la manda y entonces se pide solo el original (ver [com.example.pmmovil.data.api.EvidenciaFotoUrls.tres]).
+     */
+    val version: String? = null
 )
 
 data class EntradaPhotosResponse(

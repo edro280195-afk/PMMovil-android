@@ -216,7 +216,12 @@ data class CasetaEntradaDetalle(
 
 data class CasetaEntradaFotoInfo(
     val indice: Int = 0,
-    val nombreArchivo: String = ""
+    val nombreArchivo: String = "",
+    /**
+     * Cambia cuando la foto se reemplaza. Va en la dirección de la foto para que la tableta la guarde sin volver a
+     * pedirla (ver [com.example.pmmovil.data.api.CasetaFotoUrls]). Vacía con un servidor anterior.
+     */
+    val version: String? = ""
 )
 
 data class CasetaEntradaObtenerResponse(

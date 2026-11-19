@@ -1,6 +1,5 @@
 package com.example.pmmovil.ui.salidacaseta
 
-import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExperimentalAnimationApi
@@ -69,6 +68,7 @@ import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import com.example.pmmovil.data.model.SalidaCarril
 import com.example.pmmovil.data.model.SalidaPatioItem
+import com.example.pmmovil.data.api.CasetaFotoUrls
 import com.example.pmmovil.di.NetworkModule
 import com.example.pmmovil.ui.components.AnimatedCounter
 import com.example.pmmovil.ui.components.EvidenceGalleryDialog
@@ -669,7 +669,8 @@ private fun FotosDeSalida(
 @Composable
 private fun FotosDeLlegada(casetaId: String, indices: List<Int>) {
     val base = NetworkModule.BASE_URL
-    val urlDe = { indice: Int -> "${base}Foto/caseta/ver?casetaId=${Uri.encode(casetaId)}&indice=$indice" }
+    // Los cuadros piden la miniatura (~14 KB) y no el original (~800 KB) que antes se bajaba para pintar 78 dp.
+    val urlDe = { indice: Int, tamano: CasetaFotoUrls.Tamano -> CasetaFotoUrls.de(base, casetaId, indice, tamano) }
     // Índice (en el servidor) de la foto abierta en el visor grande; null = cerrado.
     var abierta by remember { mutableStateOf<Int?>(null) }
     val galeria = remember(casetaId, indices) { SalidaFotosGaleria.deLlegada(indices, urlDe) }
@@ -684,7 +685,7 @@ private fun FotosDeLlegada(casetaId: String, indices: List<Int>) {
                     .pmmTap { abierta = indice }
             ) {
                 AsyncImage(
-                    model = urlDe(indice),
+                    model = urlDe(indice, CasetaFotoUrls.Tamano.Mini),
                     contentDescription = "Foto de llegada $indice",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()

@@ -165,11 +165,23 @@ object PhotoPipeline {
         calidad: Int = CALIDAD,
         calidadMinima: Int = CALIDAD_MINIMA,
         maxBytes: Int = MAX_BYTES
-    ): String? {
+    ): String? = aBytes(path, ladoMax, calidad, calidadMinima, maxBytes)
+        ?.let { Base64.encodeToString(it, Base64.NO_WRAP) }
+
+    /**
+     * La foto lista para el API como bytes JPEG: lo que viaja cuando se manda como archivo, sin el 33 % que agrega
+     * base64. Ver [FotoParaSubir], que la prepara una sola vez y la guarda junto a la original.
+     */
+    fun aBytes(
+        path: String,
+        ladoMax: Int = LADO_MAX,
+        calidad: Int = CALIDAD,
+        calidadMinima: Int = CALIDAD_MINIMA,
+        maxBytes: Int = MAX_BYTES
+    ): ByteArray? {
         val bitmap = decodificarEscalada(path, ladoMax) ?: return null
         return try {
-            val bytes = comprimir(bitmap, calidad, calidadMinima, maxBytes)
-            Base64.encodeToString(bytes, Base64.NO_WRAP)
+            comprimir(bitmap, calidad, calidadMinima, maxBytes)
         } catch (e: Exception) {
             Log.e(TAG, "No se pudo comprimir la foto $path", e)
             null

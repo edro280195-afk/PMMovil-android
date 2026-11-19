@@ -68,6 +68,22 @@ interface PMMovilApi {
         @Body request: EntradaPhotosRequest
     ): Response<EntradaOperationResponse>
 
+    // Las mismas dos rutas con las fotos como archivos (multipart, ~25 % menos que en base64). Un API anterior no las tiene:
+    // ver FotosMultipart.sinRutaDeArchivos.
+    @Multipart
+    @POST("Entrada/fotos/archivos")
+    suspend fun saveEntradaPhotoFiles(
+        @Part("referencia") referencia: okhttp3.RequestBody,
+        @Part fotos: List<okhttp3.MultipartBody.Part>
+    ): Response<EntradaOperationResponse>
+
+    @Multipart
+    @POST("Entrada/fotos-danio/archivos")
+    suspend fun saveEntradaDamagePhotoFiles(
+        @Part("referencia") referencia: okhttp3.RequestBody,
+        @Part fotos: List<okhttp3.MultipartBody.Part>
+    ): Response<EntradaOperationResponse>
+
     // Aviso de PRUEBA al terminar la captura: el API manda un correo que llega SOLO a desarrollo3 (PMMovil no manda la
     // notificación de entrada al cliente; la manda el sistema PMM). Ver EntradaCaptureNoticeWorker.
     @POST("Entrada/{cref}/aviso-captura")
@@ -340,6 +356,17 @@ interface PMMovilApi {
     @POST("Foto/subir")
     suspend fun subirFoto(@Body request: SubirFotoRequest): Response<SubirFotoResponse>
 
+    // La misma con la foto como archivo (multipart). Un API anterior no la tiene: ver FotosMultipart.sinRutaDeArchivos.
+    @Multipart
+    @POST("Foto/subir/archivo")
+    suspend fun subirFotoArchivo(
+        @Part("creferencia") creferencia: okhttp3.RequestBody,
+        @Part("cclienteid") cclienteid: okhttp3.RequestBody,
+        @Part("extension") extension: okhttp3.RequestBody,
+        @Part("esDiscrepancia") esDiscrepancia: okhttp3.RequestBody,
+        @Part foto: okhttp3.MultipartBody.Part
+    ): Response<SubirFotoResponse>
+
     @GET("Foto/{creferencia}")
     suspend fun getFotos(@Path("creferencia") creferencia: String): Response<FotosResponse>
 
@@ -535,6 +562,17 @@ interface PMMovilApi {
         @Body request: CasetaEntradaFotosRequest
     ): Response<CasetaEntradaFotosResponse>
 
+    // Las mismas fotos como archivos (sin el 33 % del base64). Un servidor anterior responde 404 y se vuelve a la de arriba.
+    @Multipart
+    @POST("Caseta/entrada/{casetaId}/fotos/archivos")
+    suspend fun uploadCasetaEntradaPhotoFiles(
+        @Path("casetaId") casetaId: String,
+        @Part indices: List<okhttp3.MultipartBody.Part>,
+        @Part fotos: List<okhttp3.MultipartBody.Part>,
+        @Part("finalizar") finalizar: okhttp3.RequestBody,
+        @Part("actualizado") actualizado: okhttp3.RequestBody
+    ): Response<CasetaEntradaFotosResponse>
+
     @POST("Caseta/entrada/ocr-placa")
     suspend fun readCasetaEntradaPlate(
         @Body request: CasetaEntradaPlateOcrRequest
@@ -619,6 +657,15 @@ interface PMMovilApi {
     suspend fun subirFotosSalidaCaseta(
         @Path("relno") relno: String,
         @Body request: SubirFotosSalidaCasetaRequest
+    ): Response<ConfirmarSalidaCasetaResponse>
+
+    // Las mismas fotos como archivos (sin el 33 % del base64). Un servidor anterior responde 404 y se vuelve a la de arriba.
+    @Multipart
+    @POST("Caseta/{relno}/salida-fotos/archivos")
+    suspend fun subirFotosSalidaCasetaArchivos(
+        @Path("relno") relno: String,
+        @Part("indiceInicial") indiceInicial: okhttp3.RequestBody,
+        @Part fotos: List<okhttp3.MultipartBody.Part>
     ): Response<ConfirmarSalidaCasetaResponse>
 
     // ── Salida de caja de caseta (legacy Salidas.aspx) ───────────────────────
